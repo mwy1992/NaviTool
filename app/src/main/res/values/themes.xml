@@ -1,0 +1,18 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.NaviTool" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">@color/cyan_500</item>
+        <item name="colorPrimaryVariant">@color/cyan_700</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <!-- Secondary brand color. -->
+        <item name="colorSecondary">@color/cyan_500</item>
+        <item name="colorSecondaryVariant">@color/cyan_700</item>
+        <item name="colorOnSecondary">@color/white</item>
+        <!-- Accent color -->
+        <item name="colorAccent">@color/cyan_500</item>
+        <item name="android:colorAccent">@color/cyan_500</item>
+        <!-- Status bar color. -->
+        <item name="android:statusBarColor" tools:targetApi="l">?attr/colorPrimaryVariant</item>
+        <!-- Customize your theme here. -->
+    </style>
+</resources>

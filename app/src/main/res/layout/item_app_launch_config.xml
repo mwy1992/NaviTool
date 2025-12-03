@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="8dp"
+    android:layout_marginBottom="8dp"
+    android:background="@drawable/bg_rounded_border">
+
+    <Spinner
+        android:id="@+id/spinnerApp"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:minHeight="48dp"/>
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginStart="8dp">
+        
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/background_launch"
+            android:textSize="12sp"/>
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchBackground"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:scaleX="0.8"
+            android:scaleY="0.8"/>
+    </LinearLayout>
+
+    <Spinner
+        android:id="@+id/spinnerDelay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:minWidth="80dp"
+        android:minHeight="48dp"/>
+
+    <ImageButton
+        android:id="@+id/btnDelete"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:src="@drawable/ic_close"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:tint="#F44336"
+        android:layout_marginStart="8dp"/>
+
+</LinearLayout>
