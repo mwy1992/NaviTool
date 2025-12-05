@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "cn.navitool.app-mergeDebugResources-29:/values-w600dp-land-v13/values-w600dp-land-v13.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\mwy19\\.gradle\\caches\\9.0-milestone-1\\transforms\\5a1d71a04bdc553bf688ba17ca70df95\\transformed\\material-1.11.0\\res\\values-w600dp-land-v13\\values-w600dp-land-v13.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "54",
+                        "endOffsets": "105"
+                    }
+                }
+            ]
+        }
+    ]
+}

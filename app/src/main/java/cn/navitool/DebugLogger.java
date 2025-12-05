@@ -18,8 +18,12 @@ public class DebugLogger {
     private static final String PREF_NAME = "navitool_prefs";
     private static final String KEY_DEBUG_MODE = "debug_mode";
     private static final String LOG_FILE_NAME = "navitool.debug.txt";
+    private static final long LOG_COOLDOWN_MS = 60000; // 60 seconds cooldown
 
     public static boolean isDebugEnabled(Context context) {
+        if (!BuildConfig.DEBUG) {
+            return false;
+        }
         SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
         return prefs.getBoolean(KEY_DEBUG_MODE, false);
     }
@@ -61,6 +65,23 @@ public class DebugLogger {
             fos.write(logMessage.getBytes());
         } catch (IOException e) {
             Log.e("DebugLogger", "Failed to write to log file", e);
+        }
+    }
+
+    public static void logBootEvent(Context context) {
+        SharedPreferences prefs = context.getSharedPreferences("boot_log_prefs", Context.MODE_PRIVATE);
+        long lastLogTime = prefs.getLong("last_log_time", 0);
+        long currentTime = System.currentTimeMillis();
+
+        if (currentTime - lastLogTime > LOG_COOLDOWN_MS) {
+            if (isDebugEnabled(context)) {
+                String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date());
+                String logMessage = "软件已启动 " + timestamp;
+                log(context, "BootLogger", logMessage);
+            }
+            prefs.edit().putLong("last_log_time", currentTime).apply();
+        } else {
+            Log.d("BootLogger", "Skipping boot log, cooldown active.");
         }
     }
 }

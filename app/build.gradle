@@ -11,14 +11,16 @@ android {
         minSdk 28
         targetSdk 34
         versionCode 1
-        versionName "1.0"
+        versionName "0.1"
+        resConfigs "zh"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -29,6 +31,7 @@ android {
 
     buildFeatures {
         aidl true
+        buildConfig true
     }
 }
 

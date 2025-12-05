@@ -1,28 +1,27 @@
 package cn.navitool;
 
 import android.Manifest;
-import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.res.Configuration;
-import android.content.res.Resources;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.provider.Settings;
 import android.view.View;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
+import android.widget.AdapterView;
+import android.widget.ImageButton;
+import java.util.List;
+import java.util.ArrayList;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
@@ -30,17 +29,28 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.switchmaterial.SwitchMaterial;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final int PERMISSION_REQUEST_CODE = 100;
-    private LinearLayout layoutAppList;
-    private ImageButton btnAddApp;
-    private List<AppLaunchManager.AppInfo> installedApps;
+
+    private final ActivityResultLauncher<Intent> mOverlayPermissionLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(), result -> {
+                checkPermissions();
+                if (Settings.canDrawOverlays(this)) {
+                    DebugLogger.toast(this, getString(R.string.status_granted));
+                }
+            });
+
+    private final ActivityResultLauncher<Intent> mStoragePermissionLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(), result -> {
+                checkPermissions();
+                if (hasStoragePermission()) {
+                    DebugLogger.toast(this, getString(R.string.status_granted));
+                }
+            });
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,19 +61,6 @@ public class MainActivity extends AppCompatActivity {
         initUI();
         checkPermissions();
 
-        // Try to start service if permissions are granted
-        if (hasStoragePermission()) {
-            startService(new Intent(this, BootLogService.class));
-        }
-
-        // Load installed apps async
-        new Thread(() -> {
-            installedApps = AppLaunchManager.getInstalledApps(this);
-            runOnUiThread(() -> {
-                // Restore saved config
-                restoreAppConfig();
-            });
-        }).start();
     }
 
     @Override
@@ -92,8 +89,10 @@ public class MainActivity extends AppCompatActivity {
         setupStatusItem(R.id.statusAccessibility, R.string.perm_accessibility, this::requestAccessibilityPermission);
         setupStatusItem(R.id.statusBattery, R.string.perm_battery, this::requestBatteryOptimization);
 
+        setupAutoStartApps();
+
         // Buttons
-        View layoutDebugButtons = findViewById(R.id.layoutDebugButtons);
+        LinearLayout layoutDebugButtons = findViewById(R.id.layoutDebugButtons);
         findViewById(R.id.btnForceLight).setOnClickListener(v -> sendAutoNaviBroadcast(1));
         findViewById(R.id.btnForceDark).setOnClickListener(v -> sendAutoNaviBroadcast(2));
 
@@ -113,7 +112,8 @@ public class MainActivity extends AppCompatActivity {
 
         // Force Auto Day/Night Toggle
         SwitchMaterial switchForceAutoDayNight = findViewById(R.id.switchForceAutoDayNight);
-        View layoutAutoModeStatus = findViewById(R.id.layoutAutoModeStatus);
+        // View layoutAutoModeStatus = findViewById(R.id.layoutAutoModeStatus); //
+        // Removed unused variable
         TextView tvAutoModeStatus = findViewById(R.id.tvAutoModeStatus);
 
         boolean isForceAuto = prefs.getBoolean("force_auto_day_night", false);
@@ -155,30 +155,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // Auto Start Apps UI
-        SwitchMaterial switchAutoStartApps = findViewById(R.id.switchAutoStartApps);
-        btnAddApp = findViewById(R.id.btnAddApp);
-        Button btnTestLaunch = findViewById(R.id.btnTestLaunch);
-        layoutAppList = findViewById(R.id.layoutAppList);
-
-        switchAutoStartApps.setChecked(AppLaunchManager.isAutoStartEnabled(this));
-        btnAddApp.setVisibility(switchAutoStartApps.isChecked() ? View.VISIBLE : View.GONE);
-        layoutAppList.setVisibility(switchAutoStartApps.isChecked() ? View.VISIBLE : View.GONE);
-
-        switchAutoStartApps.setOnCheckedChangeListener((v, isChecked) -> {
-            AppLaunchManager.setAutoStartEnabled(this, isChecked);
-            btnAddApp.setVisibility(isChecked ? View.VISIBLE : View.GONE);
-            layoutAppList.setVisibility(isChecked ? View.VISIBLE : View.GONE);
-            if (DebugLogger.isDebugEnabled(this) && isChecked) {
-                btnTestLaunch.setVisibility(View.VISIBLE);
-            } else {
-                btnTestLaunch.setVisibility(View.GONE);
-            }
-        });
-
-        btnAddApp.setOnClickListener(v -> addAppRow(null));
-        btnTestLaunch.setOnClickListener(v -> AppLaunchManager.executeLaunch(this));
-
         // Media Buttons (Debug Only)
         View layoutMediaButtons = findViewById(R.id.layoutMediaButtons);
         findViewById(R.id.btnMediaPrev)
@@ -188,21 +164,141 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnMediaNext)
                 .setOnClickListener(v -> simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT));
 
+        // WeChat Button Function Switch
+        SwitchMaterial switchWechatButton = findViewById(R.id.switchWechatButton);
+        View layoutWechatShortPress = findViewById(R.id.layoutWechatShortPress);
+        View layoutWechatLongPress = findViewById(R.id.layoutWechatLongPress);
+        Spinner spinnerShortPressAction = findViewById(R.id.spinnerShortPressAction);
+        Spinner spinnerShortPressApp = findViewById(R.id.spinnerShortPressApp);
+        Spinner spinnerLongPressAction = findViewById(R.id.spinnerLongPressAction);
+        Spinner spinnerLongPressApp = findViewById(R.id.spinnerLongPressApp);
+
+        // Action options
+        List<String> actionOptions = new ArrayList<>();
+        actionOptions.add("- - - -");
+        actionOptions.add("启动应用");
+        ArrayAdapter<String> actionAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item,
+                actionOptions);
+        actionAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinnerShortPressAction.setAdapter(actionAdapter);
+        spinnerLongPressAction.setAdapter(actionAdapter);
+
+        // App options
+        List<AppLaunchManager.AppInfo> apps = AppLaunchManager.getInstalledApps(this);
+        List<String> appNames = new ArrayList<>();
+        appNames.add("- - - -");
+        for (AppLaunchManager.AppInfo app : apps) {
+            appNames.add(app.name);
+        }
+        ArrayAdapter<String> appAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, appNames);
+        appAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinnerShortPressApp.setAdapter(appAdapter);
+        spinnerLongPressApp.setAdapter(appAdapter);
+
+        // Load saved values
+        boolean isWechatEnabled = prefs.getBoolean("wechat_button_enabled", false);
+        switchWechatButton.setChecked(isWechatEnabled);
+
+        int shortPressActionIdx = prefs.getInt("wechat_short_press_action", 0);
+        int longPressActionIdx = prefs.getInt("wechat_long_press_action", 0);
+        spinnerShortPressAction.setSelection(shortPressActionIdx);
+        spinnerLongPressAction.setSelection(longPressActionIdx);
+
+        // Load saved app selections
+        String shortPressAppPkg = prefs.getString("wechat_short_press_app", "");
+        String longPressAppPkg = prefs.getString("wechat_long_press_app", "");
+        for (int i = 0; i < apps.size(); i++) {
+            if (apps.get(i).packageName.equals(shortPressAppPkg)) {
+                spinnerShortPressApp.setSelection(i + 1);
+            }
+            if (apps.get(i).packageName.equals(longPressAppPkg)) {
+                spinnerLongPressApp.setSelection(i + 1);
+            }
+        }
+
+        // Initial visibility
+        layoutWechatShortPress.setVisibility(isWechatEnabled ? View.VISIBLE : View.GONE);
+        layoutWechatLongPress.setVisibility(isWechatEnabled ? View.VISIBLE : View.GONE);
+        spinnerShortPressApp.setVisibility(shortPressActionIdx == 1 ? View.VISIBLE : View.GONE);
+        spinnerLongPressApp.setVisibility(longPressActionIdx == 1 ? View.VISIBLE : View.GONE);
+
+        switchWechatButton.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            prefs.edit().putBoolean("wechat_button_enabled", isChecked).apply();
+            layoutWechatShortPress.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+            layoutWechatLongPress.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+        });
+
+        spinnerShortPressAction.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                prefs.edit().putInt("wechat_short_press_action", position).apply();
+                spinnerShortPressApp.setVisibility(position == 1 ? View.VISIBLE : View.GONE);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+
+        spinnerLongPressAction.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                prefs.edit().putInt("wechat_long_press_action", position).apply();
+                spinnerLongPressApp.setVisibility(position == 1 ? View.VISIBLE : View.GONE);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+
+        spinnerShortPressApp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position > 0 && position <= apps.size()) {
+                    prefs.edit().putString("wechat_short_press_app", apps.get(position - 1).packageName).apply();
+                } else {
+                    prefs.edit().putString("wechat_short_press_app", "").apply();
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+
+        spinnerLongPressApp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (position > 0 && position <= apps.size()) {
+                    prefs.edit().putString("wechat_long_press_app", apps.get(position - 1).packageName).apply();
+                } else {
+                    prefs.edit().putString("wechat_long_press_app", "").apply();
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+            }
+        });
+
         // Debug Switch
         SwitchMaterial switchDebug = findViewById(R.id.switchDebug);
+        if (!BuildConfig.DEBUG) {
+            switchDebug.setVisibility(View.GONE);
+        }
         boolean isDebug = DebugLogger.isDebugEnabled(this);
         switchDebug.setChecked(isDebug);
 
         // Initial visibility
         layoutDebugButtons.setVisibility(isDebug ? View.VISIBLE : View.GONE);
         layoutMediaButtons.setVisibility(isDebug ? View.VISIBLE : View.GONE);
-        btnTestLaunch.setVisibility(isDebug && switchAutoStartApps.isChecked() ? View.VISIBLE : View.GONE);
 
+        // Update visibility in debug switch listener
         switchDebug.setOnCheckedChangeListener((buttonView, isChecked) -> {
             DebugLogger.setDebugEnabled(this, isChecked);
             layoutDebugButtons.setVisibility(isChecked ? View.VISIBLE : View.GONE);
             layoutMediaButtons.setVisibility(isChecked ? View.VISIBLE : View.GONE);
-            btnTestLaunch.setVisibility(isChecked && switchAutoStartApps.isChecked() ? View.VISIBLE : View.GONE);
 
             if (isChecked) {
                 DebugLogger.toast(this, getString(R.string.debug_mode_enabled));
@@ -210,6 +306,12 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(this, R.string.debug_mode_disabled, Toast.LENGTH_SHORT).show();
             }
         });
+
+        // Set Version Info
+        TextView tvAppCredit = findViewById(R.id.tvAppCredit);
+        if (tvAppCredit != null) {
+            tvAppCredit.setText(getString(R.string.app_credit, BuildConfig.VERSION_NAME));
+        }
     }
 
     private final android.content.BroadcastReceiver mDayNightStatusReceiver = new android.content.BroadcastReceiver() {
@@ -365,11 +467,9 @@ public class MainActivity extends AppCompatActivity {
         updateStatusItem(R.id.statusStorage, hasStoragePermission());
         updateStatusItem(R.id.statusAccessibility, isAccessibilityServiceEnabled());
 
-        boolean ignoringBattery = android.os.PowerManager.class.cast(getSystemService(Context.POWER_SERVICE))
-                .isIgnoringBatteryOptimizations(getPackageName());
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+        boolean ignoringBattery = pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
         updateStatusItem(R.id.statusBattery, ignoringBattery);
-
-        android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
     }
 
     private boolean hasStoragePermission() {
@@ -407,7 +507,7 @@ public class MainActivity extends AppCompatActivity {
         if (!Settings.canDrawOverlays(this)) {
             Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:" + getPackageName()));
-            startActivityForResult(intent, PERMISSION_REQUEST_CODE);
+            mOverlayPermissionLauncher.launch(intent);
         } else {
             DebugLogger.toast(this, getString(R.string.status_granted));
         }
@@ -420,11 +520,11 @@ public class MainActivity extends AppCompatActivity {
                     Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
                     intent.addCategory("android.intent.category.DEFAULT");
                     intent.setData(Uri.parse(String.format("package:%s", getApplicationContext().getPackageName())));
-                    startActivityForResult(intent, PERMISSION_REQUEST_CODE);
+                    mStoragePermissionLauncher.launch(intent);
                 } catch (Exception e) {
                     Intent intent = new Intent();
                     intent.setAction(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
-                    startActivityForResult(intent, PERMISSION_REQUEST_CODE);
+                    mStoragePermissionLauncher.launch(intent);
                 }
             } else {
                 ActivityCompat.requestPermissions(this, new String[] { Manifest.permission.WRITE_EXTERNAL_STORAGE },
@@ -459,32 +559,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void requestAutoStart() {
-        String manufacturer = Build.MANUFACTURER.toLowerCase();
-        Intent intent = new Intent();
+        Intent intent = new Intent(Settings.ACTION_SETTINGS);
         try {
-            if (manufacturer.contains("xiaomi")) {
-                intent.setComponent(new ComponentName("com.miui.securitycenter",
-                        "com.miui.permcenter.autostart.AutoStartManagementActivity"));
-            } else if (manufacturer.contains("oppo")) {
-                intent.setComponent(new ComponentName("com.coloros.safecenter",
-                        "com.coloros.safecenter.permission.startup.StartupAppListActivity"));
-            } else if (manufacturer.contains("vivo")) {
-                intent.setComponent(new ComponentName("com.vivo.permissionmanager",
-                        "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"));
-            } else if (manufacturer.contains("letv")) {
-                intent.setComponent(new ComponentName("com.letv.android.letvsafe",
-                        "com.letv.android.letvsafe.AutobootManageActivity"));
-            } else if (manufacturer.contains("honor")) {
-                intent.setComponent(new ComponentName("com.huawei.systemmanager",
-                        "com.huawei.systemmanager.optimize.process.ProtectActivity"));
-            } else {
-                intent.setAction(Settings.ACTION_SETTINGS);
-                Toast.makeText(this, R.string.auto_start_settings_not_found, Toast.LENGTH_LONG).show();
-            }
             startActivity(intent);
         } catch (Exception e) {
-            intent = new Intent(Settings.ACTION_SETTINGS);
-            startActivity(intent);
             Toast.makeText(this, R.string.failed_open_auto_start, Toast.LENGTH_LONG).show();
         }
     }
@@ -497,99 +575,161 @@ public class MainActivity extends AppCompatActivity {
         intent.putExtra("EXTRA_DAY_NIGHT_MODE", mode);
         sendBroadcast(intent);
         DebugLogger.log(this, "MainActivity", "Sent AutoNavi Broadcast: Mode " + mode);
-        DebugLogger.log(this, "MainActivity", "Sent AutoNavi Broadcast: Mode " + mode);
         DebugLogger.toast(this, getString(R.string.sent_autonavi_broadcast, mode));
     }
 
-    private void restoreAppConfig() {
-        List<AppLaunchManager.AppConfig> configs = AppLaunchManager.loadConfig(this);
-        layoutAppList.removeAllViews();
-        for (AppLaunchManager.AppConfig config : configs) {
-            addAppRow(config);
+    private void setupAutoStartApps() {
+        SwitchMaterial switchAutoStart = findViewById(R.id.switchAutoStartApps);
+        SwitchMaterial switchReturnToHome = findViewById(R.id.switchReturnToHome);
+        Button btnTestLaunch = findViewById(R.id.btnTestLaunch);
+        ImageButton btnAddApp = findViewById(R.id.btnAddApp);
+        LinearLayout llAutoStartAppsList = findViewById(R.id.llAutoStartAppsList);
+
+        boolean isAutoStartEnabled = AppLaunchManager.isAutoStartEnabled(this);
+        List<AppLaunchManager.AppConfig> savedConfigs = AppLaunchManager.loadConfig(this);
+
+        switchAutoStart.setChecked(isAutoStartEnabled);
+        switchReturnToHome.setChecked(AppLaunchManager.isReturnToHomeEnabled(this));
+
+        // Initialize List
+        llAutoStartAppsList.removeAllViews();
+        if (savedConfigs != null) {
+            for (AppLaunchManager.AppConfig config : savedConfigs) {
+                addAppConfigRow(llAutoStartAppsList, config);
+            }
         }
+
+        // Update visibility
+        if (isAutoStartEnabled) {
+            btnTestLaunch.setVisibility(View.VISIBLE);
+            btnAddApp.setVisibility(View.VISIBLE);
+            switchReturnToHome.setVisibility(View.VISIBLE);
+            llAutoStartAppsList.setVisibility(llAutoStartAppsList.getChildCount() > 0 ? View.VISIBLE : View.GONE);
+        } else {
+            btnTestLaunch.setVisibility(View.GONE);
+            btnAddApp.setVisibility(View.GONE);
+            switchReturnToHome.setVisibility(View.GONE);
+            llAutoStartAppsList.setVisibility(View.GONE);
+        }
+
+        switchAutoStart.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            AppLaunchManager.setAutoStartEnabled(MainActivity.this, isChecked);
+            if (isChecked) {
+                btnTestLaunch.setVisibility(View.VISIBLE);
+                btnAddApp.setVisibility(View.VISIBLE);
+                switchReturnToHome.setVisibility(View.VISIBLE);
+                llAutoStartAppsList.setVisibility(llAutoStartAppsList.getChildCount() > 0 ? View.VISIBLE : View.GONE);
+            } else {
+                btnTestLaunch.setVisibility(View.GONE);
+                btnAddApp.setVisibility(View.GONE);
+                switchReturnToHome.setVisibility(View.GONE);
+                llAutoStartAppsList.setVisibility(View.GONE);
+            }
+        });
+
+        switchReturnToHome.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            AppLaunchManager.setReturnToHomeEnabled(MainActivity.this, isChecked);
+        });
+
+        btnAddApp.setOnClickListener(v -> {
+            addAppConfigRow(llAutoStartAppsList, null);
+            llAutoStartAppsList.setVisibility(View.VISIBLE);
+        });
+
+        btnTestLaunch.setOnClickListener(v -> {
+            if (AppLaunchManager.loadConfig(MainActivity.this).isEmpty()) {
+                DebugLogger.toast(MainActivity.this, "请先选择需要自动启动的应用");
+            } else {
+                AppLaunchManager.executeLaunch(MainActivity.this);
+            }
+        });
     }
 
-    private void addAppRow(AppLaunchManager.AppConfig config) {
-        if (installedApps == null)
-            return;
+    private void addAppConfigRow(LinearLayout container, AppLaunchManager.AppConfig initialConfig) {
+        View itemView = getLayoutInflater().inflate(R.layout.item_app_auto_start, container, false);
 
-        View row = getLayoutInflater().inflate(R.layout.item_app_launch_config, layoutAppList, false);
+        Spinner spinner = itemView.findViewById(R.id.spinnerAppSelection);
+        android.widget.EditText etDelay = itemView.findViewById(R.id.etLaunchDelay);
+        ImageButton btnDelete = itemView.findViewById(R.id.btnDeleteConfig);
 
-        Spinner spinnerApp = row.findViewById(R.id.spinnerApp);
-        Spinner spinnerDelay = row.findViewById(R.id.spinnerDelay);
-        SwitchMaterial switchBackground = row.findViewById(R.id.switchBackground);
-        ImageButton btnDelete = row.findViewById(R.id.btnDelete);
-
-        // Setup App Spinner
-        ArrayAdapter<AppLaunchManager.AppInfo> appAdapter = new ArrayAdapter<>(this,
-                android.R.layout.simple_spinner_item, installedApps);
-        appAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinnerApp.setAdapter(appAdapter);
-
-        // Setup Delay Spinner (3s - 10s)
-        List<String> delays = new ArrayList<>();
-        for (int i = 3; i <= 10; i++) {
-            delays.add(i + getString(R.string.seconds_suffix));
+        List<AppLaunchManager.AppInfo> apps = AppLaunchManager.getInstalledApps(this);
+        List<String> displayNames = new ArrayList<>();
+        displayNames.add("- - - -");
+        for (AppLaunchManager.AppInfo app : apps) {
+            displayNames.add(app.name);
         }
-        ArrayAdapter<String> delayAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, delays);
-        delayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinnerDelay.setAdapter(delayAdapter);
 
-        // Set values if config exists
-        if (config != null) {
-            // Find app index
-            for (int i = 0; i < installedApps.size(); i++) {
-                if (installedApps.get(i).packageName.equals(config.packageName)) {
-                    spinnerApp.setSelection(i);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, displayNames);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+
+        if (initialConfig != null) {
+            etDelay.setText(String.valueOf(initialConfig.delaySeconds));
+            for (int i = 0; i < apps.size(); i++) {
+                if (apps.get(i).packageName.equals(initialConfig.packageName)) {
+                    spinner.setSelection(i + 1);
                     break;
                 }
             }
-            switchBackground.setChecked(config.background);
-            int delayIndex = config.delaySeconds - 3;
-            if (delayIndex >= 0 && delayIndex < delays.size()) {
-                spinnerDelay.setSelection(delayIndex);
-            }
         }
 
-        // Listeners to save config on change
-        AdapterView.OnItemSelectedListener saveListener = new AdapterView.OnItemSelectedListener() {
+        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                saveCurrentAppConfig();
+                saveAllConfigs();
             }
 
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
             }
-        };
-        spinnerApp.setOnItemSelectedListener(saveListener);
-        spinnerDelay.setOnItemSelectedListener(saveListener);
-        switchBackground.setOnCheckedChangeListener((v, isChecked) -> saveCurrentAppConfig());
-
-        btnDelete.setOnClickListener(v -> {
-            layoutAppList.removeView(row);
-            saveCurrentAppConfig();
         });
 
-        layoutAppList.addView(row);
-        // Save immediately if adding new row
-        if (config == null)
-            saveCurrentAppConfig();
+        etDelay.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(android.text.Editable s) {
+                saveAllConfigs();
+            }
+        });
+
+        btnDelete.setOnClickListener(v -> {
+            container.removeView(itemView);
+            saveAllConfigs();
+            if (container.getChildCount() == 0) {
+                container.setVisibility(View.GONE);
+            }
+        });
+
+        container.addView(itemView);
     }
 
-    private void saveCurrentAppConfig() {
+    private void saveAllConfigs() {
+        LinearLayout container = findViewById(R.id.llAutoStartAppsList);
         List<AppLaunchManager.AppConfig> configs = new ArrayList<>();
-        for (int i = 0; i < layoutAppList.getChildCount(); i++) {
-            View row = layoutAppList.getChildAt(i);
-            Spinner spinnerApp = row.findViewById(R.id.spinnerApp);
-            Spinner spinnerDelay = row.findViewById(R.id.spinnerDelay);
-            SwitchMaterial switchBackground = row.findViewById(R.id.switchBackground);
+        List<AppLaunchManager.AppInfo> apps = AppLaunchManager.getInstalledApps(this);
 
-            AppLaunchManager.AppInfo selectedApp = (AppLaunchManager.AppInfo) spinnerApp.getSelectedItem();
-            if (selectedApp != null) {
-                int delay = spinnerDelay.getSelectedItemPosition() + 3; // Index 0 is 3s
-                configs.add(
-                        new AppLaunchManager.AppConfig(selectedApp.packageName, switchBackground.isChecked(), delay));
+        for (int i = 0; i < container.getChildCount(); i++) {
+            View child = container.getChildAt(i);
+            Spinner spinner = child.findViewById(R.id.spinnerAppSelection);
+            android.widget.EditText etDelay = child.findViewById(R.id.etLaunchDelay);
+
+            int selectedPos = spinner.getSelectedItemPosition();
+            if (selectedPos > 0 && selectedPos <= apps.size()) {
+                AppLaunchManager.AppInfo selectedApp = apps.get(selectedPos - 1);
+                int delay = 0;
+                try {
+                    delay = Integer.parseInt(etDelay.getText().toString());
+                } catch (NumberFormatException e) {
+                    delay = 0;
+                }
+                configs.add(new AppLaunchManager.AppConfig(selectedApp.packageName, delay));
             }
         }
         AppLaunchManager.saveConfig(this, configs);

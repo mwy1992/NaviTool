@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "cn.navitool.app-mergeReleaseResources-29:/values-v18/values-v18.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\mwy19\\.gradle\\caches\\9.0-milestone-1\\transforms\\7ff9ee7482a8dc9b9850645cff3f693b\\transformed\\appcompat-1.6.1\\res\\values-v18\\values-v18.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "48",
+                        "endOffsets": "99"
+                    }
+                }
+            ]
+        }
+    ]
+}

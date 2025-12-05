@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingVertical="4dp">
+
+    <Spinner
+        android:id="@+id/spinnerAppSelection"
+        android:layout_width="0dp"
+        android:layout_height="48dp"
+        android:layout_weight="1"
+        android:layout_marginEnd="8dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/launch_delay"
+        android:layout_marginEnd="4dp"/>
+
+    <EditText
+        android:id="@+id/etLaunchDelay"
+        android:layout_width="60dp"
+        android:layout_height="wrap_content"
+        android:inputType="number"
+        android:text="0"
+        android:gravity="center"
+        android:textSize="14sp"
+        android:completionThreshold="1" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="秒"
+        android:layout_marginStart="4dp"/>
+
+    <ImageButton
+        android:id="@+id/btnDeleteConfig"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:src="@drawable/ic_close"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:layout_marginStart="16dp"
+        android:contentDescription="删除配置"/>
+</LinearLayout>

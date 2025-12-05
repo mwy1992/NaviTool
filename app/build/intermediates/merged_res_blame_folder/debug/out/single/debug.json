@@ -1,0 +1,74 @@
+[
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\drawable_ic_launcher.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\drawable\\ic_launcher.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\layout_item_app_launch_config.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\layout\\item_app_launch_config.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\drawable_ic_daymode_dark.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\drawable\\ic_daymode_dark.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\xml_data_extraction_rules.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\xml\\data_extraction_rules.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\drawable_ic_add.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\drawable\\ic_add.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\drawable_ic_launcher_round.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\drawable\\ic_launcher_round.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\layout_item_permission_status.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\layout\\item_permission_status.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\xml_accessibility_service_config.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\xml\\accessibility_service_config.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\drawable_ic_close.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\drawable\\ic_close.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\drawable_ic_daymode_light.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\drawable\\ic_daymode_light.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\drawable_bg_rounded_border.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\drawable\\bg_rounded_border.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\drawable_ic_check.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\drawable\\ic_check.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\drawable_ic_daymode_time.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\drawable\\ic_daymode_time.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\layout_item_app_auto_start.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\layout\\item_app_auto_start.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\layout_activity_main.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\layout\\activity_main.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\xml_backup_rules.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\xml\\backup_rules.xml"
+    },
+    {
+        "merged": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-merged_res-31:\\drawable_ic_daymode_auto.xml.flat",
+        "source": "C:\\Users\\mwy19\\.gradle\\daemon\\9.0-milestone-1\\cn.navitool.app-main-33:\\drawable\\ic_daymode_auto.xml"
+    },
+    {
+        "merged": "cn.navitool.app-merged_res-31:/layout_activity_main.xml.flat",
+        "source": "cn.navitool.app-main-33:/layout/activity_main.xml"
+    }
+]

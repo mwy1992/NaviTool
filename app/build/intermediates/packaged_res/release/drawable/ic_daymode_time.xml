@@ -1,0 +1,29 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 圆形太阳轮廓（直径缩小为12单位） -->
+    <path
+        android:pathData="M6,15 A6,6 0 0,1 18,15"
+        android:strokeColor="#FF444444"
+        android:strokeWidth="1"
+        android:fillColor="#FF444444" />
+
+    <!-- 12条射线 - 已修改为圆角 -->
+    <path
+        android:pathData="M12.0,7.0 L12.0,4.0
+                         M16.0,8.1 L17.5,5.5
+                         M18.9,11.0 L21.5,9.5
+                         M1.0,15.0 L23.0,15.0
+                         M5.1,11.0 L2.5,9.5
+                         M8.0,8.1 L6.5,5.5
+                         M4.4,17.0 L19.6,17.0
+                         M5.3,19.0 L18.7,19.0"
+        android:strokeColor="#FF444444"
+        android:strokeWidth="1"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+
+</vector>

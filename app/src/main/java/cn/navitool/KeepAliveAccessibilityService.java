@@ -20,6 +20,8 @@ import com.ecarx.xui.adaptapi.car.Car;
 import com.ecarx.xui.adaptapi.car.ICar;
 import com.ecarx.xui.adaptapi.car.base.ICarFunction;
 import com.ecarx.xui.adaptapi.car.vehicle.IDayMode;
+import com.ecarx.xui.adaptapi.car.sensor.ISensor;
+import com.ecarx.xui.adaptapi.car.sensor.ISensorEvent;
 
 public class KeepAliveAccessibilityService extends AccessibilityService {
 
@@ -27,6 +29,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private static final String AUTONAVI_PKG = "com.autonavi.amapauto";
 
     private ICarFunction iCarFunction;
+    private ISensor iSensor;
 
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (sharedPreferences, key) -> {
         if ("force_auto_day_night".equals(key)) {
@@ -61,8 +64,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         // Bind OneOS Service
         bindOneOSService();
 
-        Intent serviceIntent = new Intent(this, BootLogService.class);
-        startService(serviceIntent);
+        // Log boot event (with cooldown check)
+        DebugLogger.logBootEvent(this);
 
         // Register receiver for config changes
         Log.i(TAG, "Build.VERSION.SDK_INT: " + Build.VERSION.SDK_INT);
@@ -129,7 +132,15 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private boolean mIsMonitoring = false;
     private static final long MONITOR_INTERVAL_MS = 3000;
 
-    private final Runnable mMonitorRunnable=new Runnable(){@Override public void run(){if(!mIsMonitoring)return;checkAndForceAutoDayNight();mHandler.postDelayed(this,MONITOR_INTERVAL_MS);}};
+    private final Runnable mMonitorRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!mIsMonitoring)
+                return;
+            checkAndForceAutoDayNight();
+            mHandler.postDelayed(this, MONITOR_INTERVAL_MS);
+        }
+    };
 
     private void startMonitoring() {
         if (mIsMonitoring)
@@ -192,15 +203,12 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
         switch (keyCode) {
             case 200087: // R_MEDIA_NEXT
-
                 simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT);
                 break;
             case 200088: // R_MEDIA_PREVIOUS
-
                 simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS);
                 break;
             case 200085: // R_MEDIA_PLAY_PAUSE
-
                 simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
                 break;
             default:
@@ -209,16 +217,126 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }
     }
 
+    private void handleShortClick(int keyCode) {
+        Log.i(TAG, "handleShortClick: " + keyCode);
+        switch (keyCode) {
+            case 200087: // R_MEDIA_NEXT - 短按下一曲
+                simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT);
+                break;
+            case 200088: // R_MEDIA_PREVIOUS - 短按上一曲
+                simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS);
+                break;
+            case 200085: // R_MEDIA_PLAY_PAUSE - 短按播放/暂停
+                simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
+                break;
+            case 200400: // R_WECHAT - 短按微信按键
+                handleWechatShortPress();
+                break;
+            default:
+                Log.d(TAG, "Unhandled short click key code: " + keyCode);
+                break;
+        }
+    }
+
+    private void handleLongPress(int keyCode) {
+        Log.i(TAG, "handleLongPress: " + keyCode);
+        switch (keyCode) {
+            case 200087: // R_MEDIA_NEXT - 长按下一曲（快进）
+                Log.i(TAG, "Long press NEXT - fast forward");
+                break;
+            case 200088: // R_MEDIA_PREVIOUS - 长按上一曲（快退）
+                Log.i(TAG, "Long press PREVIOUS - rewind");
+                break;
+            case 200085: // R_MEDIA_PLAY_PAUSE - 长按播放/暂停
+                Log.i(TAG, "Long press PLAY_PAUSE");
+                break;
+            case 200400: // R_WECHAT - 长按微信按键
+                handleWechatLongPress();
+                break;
+            default:
+                Log.d(TAG, "Unhandled long press key code: " + keyCode);
+                break;
+        }
+    }
+
+    private void handleWechatShortPress() {
+        SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
+        boolean enabled = prefs.getBoolean("wechat_button_enabled", false);
+        if (!enabled) {
+            Log.d(TAG, "WeChat button function disabled");
+            return;
+        }
+
+        int action = prefs.getInt("wechat_short_press_action", 0);
+        if (action == 1) { // 启动应用
+            String packageName = prefs.getString("wechat_short_press_app", "");
+            if (!packageName.isEmpty()) {
+                launchApp(packageName);
+            }
+        }
+    }
+
+    private void handleWechatLongPress() {
+        SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
+        boolean enabled = prefs.getBoolean("wechat_button_enabled", false);
+        if (!enabled) {
+            Log.d(TAG, "WeChat button function disabled");
+            return;
+        }
+
+        int action = prefs.getInt("wechat_long_press_action", 0);
+        if (action == 1) { // 启动应用
+            String packageName = prefs.getString("wechat_long_press_app", "");
+            if (!packageName.isEmpty()) {
+                launchApp(packageName);
+            }
+        }
+    }
+
+    private void launchApp(String packageName) {
+        try {
+            android.content.pm.PackageManager pm = getPackageManager();
+            Intent intent = pm.getLaunchIntentForPackage(packageName);
+            if (intent != null) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(intent);
+                Log.i(TAG, "Launched app: " + packageName);
+                DebugLogger.toast(this, "正在启动: " + packageName);
+            } else {
+                Log.e(TAG, "Could not find launch intent for " + packageName);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error launching app " + packageName, e);
+        }
+    }
+
     // --- Car AdaptAPI Implementation ---
 
     private void initCar() {
         try {
-            if (iCarFunction == null) {
-                // Correctly use ICar interface
+            if (iCarFunction == null || iSensor == null) {
                 ICar car = Car.create(getApplicationContext());
                 if (car != null) {
                     iCarFunction = car.getICarFunction();
+
+                    if (car instanceof ISensor) {
+                        iSensor = (ISensor) car;
+                    }
+
+                    try {
+                        if (iSensor == null) {
+                            java.lang.reflect.Method method = car.getClass().getMethod("getSensorManager");
+                            iSensor = (ISensor) method.invoke(car);
+                        }
+                    } catch (Exception ex) {
+                        Log.w(TAG, "getSensorManager not found via reflection");
+                    }
+
                     Log.i(TAG, "Car AdaptAPI initialized successfully");
+
+                    if (iSensor != null) {
+                        registerIgnitionListener();
+                    }
                 }
             }
         } catch (Exception e) {
@@ -226,12 +344,53 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }
     }
 
-    private final BroadcastReceiver configChangeReceiver=new BroadcastReceiver(){
+    private void registerIgnitionListener() {
+        try {
+            if (iSensor != null) {
+                iSensor.registerListener(new ISensor.ISensorListener() {
+                    @Override
+                    public void onSensorValueChanged(int sensorType, float value) {
+                        if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
+                            int val = (int) value;
+                            Log.d(TAG, "Ignition State Changed (float): " + val);
+                            if (val == ISensorEvent.IGNITION_STATE_DRIVING) {
+                                Log.i(TAG, "Ignition State: DRIVING");
+                                DebugLogger.toast(KeepAliveAccessibilityService.this, "检测到行车状态");
+                                AppLaunchManager.executeLaunch(KeepAliveAccessibilityService.this);
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onSensorEventChanged(int sensorType, int value) {
+                        if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
+                            Log.d(TAG, "Ignition State Changed (int): " + value);
+                            if (value == ISensorEvent.IGNITION_STATE_DRIVING) {
+                                Log.i(TAG, "Ignition State: DRIVING");
+                                DebugLogger.toast(KeepAliveAccessibilityService.this, "检测到行车状态");
+                                AppLaunchManager.executeLaunch(KeepAliveAccessibilityService.this);
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onSensorSupportChanged(int sensorType, com.ecarx.xui.adaptapi.FunctionStatus status) {
+                    }
+                }, ISensor.SENSOR_TYPE_IGNITION_STATE);
+
+                Log.i(TAG, "Ignition listener registered");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to register ignition listener", e);
+        }
+    }
+
+    private final BroadcastReceiver configChangeReceiver = new BroadcastReceiver() {
         @Override
-        public void onReceive(Context context,Intent intent){
-            String action=intent.getAction();
-            if(Intent.ACTION_CONFIGURATION_CHANGED.equals(action)){
-                Log.d(TAG,"Configuration changed, checking day/night status...");
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (Intent.ACTION_CONFIGURATION_CHANGED.equals(action)) {
+                Log.d(TAG, "Configuration changed, checking day/night status...");
                 checkDayNightStatus(false);
             } else if ("cn.navitool.ACTION_REQUEST_ONEOS_STATUS".equals(action)) {
                 boolean isConnected = (mOneOSServiceManager != null);
@@ -306,28 +465,57 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private com.geely.lib.oneosapi.input.IInputManager mOneOSInputManager;
     private com.geely.lib.oneosapi.input.IInputListener mOneOSInputListener;
     private int mRetryCount = 0;
-    private static final int MAX_RETRIES = 10;
 
-    private final ServiceConnection mOneOSConnection=new ServiceConnection(){@Override public void onServiceConnected(ComponentName name,IBinder service){Log.i(TAG,"========================");Log.i(TAG,"OneOSApiService Connected!");Log.i(TAG,"ComponentName: "+name);Log.i(TAG,"IBinder: "+service);Log.i(TAG,"========================");DebugLogger.toast(KeepAliveAccessibilityService.this,"OneOS 服务已连接");
+    private static final int MAX_RETRIES = 40; // Increased from 10 to 40 for faster polling
 
-    try{if(service==null){Log.e(TAG,"Service IBinder is NULL!");DebugLogger.toast(KeepAliveAccessibilityService.this,"OneOS IBinder 为空");return;}
+    private final ServiceConnection mOneOSConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            Log.i(TAG, "========================");
+            Log.i(TAG, "OneOSApiService Connected!");
+            Log.i(TAG, "ComponentName: " + name);
+            Log.i(TAG, "IBinder: " + service);
+            Log.i(TAG, "========================");
+            DebugLogger.toast(KeepAliveAccessibilityService.this, "OneOS 服务已连接");
 
-    mOneOSServiceManager=com.geely.lib.oneosapi.IServiceManager.Stub.asInterface(service);Log.i(TAG,"IServiceManager.Stub.asInterface called, result: "+mOneOSServiceManager);
+            try {
+                if (service == null) {
+                    Log.e(TAG, "Service IBinder is NULL!");
+                    DebugLogger.toast(KeepAliveAccessibilityService.this, "OneOS IBinder 为空");
+                    return;
+                }
 
-    if(mOneOSServiceManager!=null){Log.i(TAG,"IServiceManager obtained successfully");DebugLogger.toast(KeepAliveAccessibilityService.this,"IServiceManager 获取成功");
-    mRetryCount = 0;
-    mOneOSInputManager = null; // Reset before trying
-    tryGetInputManager();
-    broadcastOneOSStatus(true);
-    }else{Log.e(TAG,"IServiceManager.Stub.asInterface returned NULL!");DebugLogger.toast(KeepAliveAccessibilityService.this,"IServiceManager 为空");}}catch(Exception e){Log.e(TAG,"Error in OneOS Service Connected",e);DebugLogger.toast(KeepAliveAccessibilityService.this,"OneOS 连接异常: "+e.getMessage());}}
+                mOneOSServiceManager = com.geely.lib.oneosapi.IServiceManager.Stub.asInterface(service);
+                Log.i(TAG, "IServiceManager.Stub.asInterface called, result: " + mOneOSServiceManager);
 
-    @Override public void onServiceDisconnected(ComponentName name){
-        Log.i(TAG,"OneOSApiService Disconnected");
-        DebugLogger.toast(KeepAliveAccessibilityService.this,"OneOS 服务断开");
-        mOneOSServiceManager=null;
-        mOneOSInputManager=null;
-        broadcastOneOSStatus(false);
-    }};
+                if (mOneOSServiceManager != null) {
+                    Log.i(TAG, "IServiceManager obtained successfully");
+                    DebugLogger.toast(KeepAliveAccessibilityService.this, "IServiceManager 获取成功");
+                    mRetryCount = 0;
+                    mOneOSInputManager = null; // Reset
+                                               // before
+                                               // trying
+                    tryGetInputManager();
+                    broadcastOneOSStatus(true);
+                } else {
+                    Log.e(TAG, "IServiceManager.Stub.asInterface returned NULL!");
+                    DebugLogger.toast(KeepAliveAccessibilityService.this, "IServiceManager 为空");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error in OneOS Service Connected", e);
+                DebugLogger.toast(KeepAliveAccessibilityService.this, "OneOS 连接异常: " + e.getMessage());
+            }
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            Log.i(TAG, "OneOSApiService Disconnected");
+            DebugLogger.toast(KeepAliveAccessibilityService.this, "OneOS 服务断开");
+            mOneOSServiceManager = null;
+            mOneOSInputManager = null;
+            broadcastOneOSStatus(false);
+        }
+    };
 
     private void broadcastOneOSStatus(boolean isConnected) {
         Intent intent = new Intent("cn.navitool.ACTION_ONEOS_STATUS");
@@ -336,34 +524,36 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     }
 
     private void tryGetInputManager() {
-        if (mOneOSServiceManager == null) return;
-        if (mOneOSInputManager != null) return; // Already initialized
+        if (mOneOSServiceManager == null)
+            return;
+        if (mOneOSInputManager != null)
+            return; // Already initialized
 
         try {
             // Type 8 for InputManager (based on mediacenter analysis)
-            Log.i(TAG,"Calling getService(8) for InputManager...");
-            IBinder inputBinder=mOneOSServiceManager.getService(8);
-            Log.i(TAG,"getService(8) returned: "+inputBinder);
+            Log.i(TAG, "Calling getService(8) for InputManager...");
+            IBinder inputBinder = mOneOSServiceManager.getService(8);
+            Log.i(TAG, "getService(8) returned: " + inputBinder);
 
-            if(inputBinder!=null){
-                mOneOSInputManager=com.geely.lib.oneosapi.input.IInputManager.Stub.asInterface(inputBinder);
-                Log.i(TAG,"IInputManager obtained: "+mOneOSInputManager);
-                DebugLogger.toast(KeepAliveAccessibilityService.this,"IInputManager 获取成功");
+            if (inputBinder != null) {
+                mOneOSInputManager = com.geely.lib.oneosapi.input.IInputManager.Stub.asInterface(inputBinder);
+                Log.i(TAG, "IInputManager obtained: " + mOneOSInputManager);
+                DebugLogger.toast(KeepAliveAccessibilityService.this, "IInputManager 获取成功");
                 registerOneOSListener();
-            }else{
-                Log.e(TAG,"Failed to get InputManager binder (type 8) - returned NULL");
+            } else {
+                Log.e(TAG, "Failed to get InputManager binder (type 8) - returned NULL");
                 if (mRetryCount < MAX_RETRIES) {
                     mRetryCount++;
                     Log.w(TAG, "InputManager not ready, retrying... (" + mRetryCount + ")");
                     DebugLogger.toast(KeepAliveAccessibilityService.this, "OneOS 初始化中... (" + mRetryCount + ")");
-                    mHandler.postDelayed(this::tryGetInputManager, 2000);
+                    mHandler.postDelayed(this::tryGetInputManager, 500); // Reduced from 2000ms to 500ms
                 } else {
                     Log.e(TAG, "Failed to get InputManager after max retries");
                     DebugLogger.toast(KeepAliveAccessibilityService.this, "OneOS 初始化失败: 重试超时");
                 }
             }
         } catch (Exception e) {
-             Log.e(TAG, "Error getting InputManager", e);
+            Log.e(TAG, "Error getting InputManager", e);
         }
     }
 
@@ -397,10 +587,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     }
 
     private void registerOneOSListener() {
-        Log.i(TAG, "========================");
-        Log.i(TAG, "registerOneOSListener() called");
-        Log.i(TAG, "mOneOSInputManager: " + mOneOSInputManager);
-        Log.i(TAG, "========================");
+        Log.i(TAG, "registerOneOSListener() called, mOneOSInputManager: " + mOneOSInputManager);
 
         if (mOneOSInputManager == null) {
             Log.e(TAG, "mOneOSInputManager is NULL, cannot register");
@@ -410,7 +597,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
         try {
             int[] keyCodes = {
-                    200087, 200088, 200085
+                    200087, 200088, 200085, 200400 // 媒体按键 + 微信按键
             };
 
             Log.i(TAG, "Creating IInputListener stub...");
@@ -428,28 +615,30 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     @Override
                     public void onShortClick(int keyCode, int softKeyFunction) throws RemoteException {
                         Log.i(TAG, "OneOS onShortClick: keyCode=" + keyCode);
-                        DebugLogger.toast(KeepAliveAccessibilityService.this, "OneOS按键(ShortClick): " + keyCode);
-                        // handleHardKey(keyCode); // Removed to prevent double triggering (handled in onKeyEvent)
+                        DebugLogger.toast(KeepAliveAccessibilityService.this, "按键短按: " + keyCode);
+                        handleShortClick(keyCode);
                     }
 
                     @Override
                     public void onLongPressTriggered(int keyCode, int softKeyFunction) throws RemoteException {
-                        Log.i(TAG, "OneOS onLongPressTriggered: " + keyCode);
+                        Log.i(TAG, "OneOS onLongPressTriggered: keyCode=" + keyCode);
+                        DebugLogger.toast(KeepAliveAccessibilityService.this, "按键长按: " + keyCode);
+                        handleLongPress(keyCode);
                     }
 
                     @Override
                     public void onHoldingPressStopped(int keyCode, int softKeyFunction) throws RemoteException {
-                        Log.i(TAG, "OneOS onHoldingPressStopped: " + keyCode);
+                        Log.i(TAG, "OneOS onHoldingPressStopped: keyCode=" + keyCode);
                     }
 
                     @Override
                     public void onLongPress(int keyCode, int softKeyFunction) throws RemoteException {
-                        Log.i(TAG, "OneOS onLongPress: " + keyCode);
+                        Log.i(TAG, "OneOS onLongPress: keyCode=" + keyCode);
                     }
 
                     @Override
                     public void onDoubleClick(int keyCode, int softKeyFunction) throws RemoteException {
-                        Log.i(TAG, "OneOS onDoubleClick: " + keyCode);
+                        Log.i(TAG, "OneOS onDoubleClick: keyCode=" + keyCode);
                     }
                 };
             }
@@ -459,15 +648,15 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             Log.i(TAG, "Package name: " + packageName);
             Log.i(TAG, "Key codes to register: " + java.util.Arrays.toString(keyCodes));
 
-            // Correct signature: registerListener(IInputListener listener, String packageName, int[] keyCodes)
-            // Note: The error message said "Found: int[],IInputListener", implying the previous call was registerListener(keyCodes, mOneOSInputListener)
+            // Correct signature: registerListener(IInputListener listener, String
+            // packageName, int[] keyCodes)
+            // Note: The error message said "Found: int[],IInputListener", implying the
+            // previous call was registerListener(keyCodes, mOneOSInputListener)
             // But the error also said "Required: IInputListener,String,int[]"
             // So we must use the 3-argument version.
             mOneOSInputManager.registerListener(mOneOSInputListener, packageName, keyCodes);
 
-            Log.i(TAG, "========================");
             Log.i(TAG, "registerListener() COMPLETED SUCCESSFULLY!");
-            Log.i(TAG, "========================");
 
             DebugLogger.toast(this, "OneOS 监听已注册");
 
@@ -475,39 +664,5 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             Log.e(TAG, "========================");
             DebugLogger.toast(this, "OneOS 注册失败: " + e.getMessage());
         }
-    }
-
-    @Override
-    protected boolean onKeyEvent(android.view.KeyEvent event) { 
-    int keyCode = event.getKeyCode();
-        int action = event.getAction();
-
-        Log.i(TAG, "onKeyEvent: keyCode=" + keyCode + ", action=" + action);
-
-        // Only handle ACTION_DOWN to prevent double triggering
-        if (action == android.view.KeyEvent.ACTION_DOWN) {
-            // DebugLogger.toast(this, "系统按键: " + keyCode);
-
-            // Check for our specific "R_" keys if they come through as standard events
-            // or if they are mapped to standard keys but we want to intercept them
-            switch (keyCode) {
-                case 200085: // R_MEDIA_PLAY_PAUSE
-                    // We might want to handle this if the default behavior isn't working
-                    Log.i(TAG, "Captured Play/Pause in onKeyEvent");
-                    break;
-                case 200087: // R_MEDIA_NEXT
-
-                    Log.i(TAG, "Captured Next in onKeyEvent");
-                    break;
-                case 200088: // R_MEDIA_PREVIOUS
-
-                    Log.i(TAG, "Captured Previous in onKeyEvent");
-                    break;
-            }
-        }
-
-        // Return false to allow the event to propagate to other apps/system
-        // unless we explicitly want to block it.
-        return super.onKeyEvent(event);
     }
 }

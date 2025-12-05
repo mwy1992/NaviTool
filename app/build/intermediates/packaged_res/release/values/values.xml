@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:ns1="http://schemas.android.com/tools">
+    <color name="black">#FF000000</color>
+    <color name="cyan_200">#80DEEA</color>
+    <color name="cyan_500">#00BCD4</color>
+    <color name="cyan_700">#0097A7</color>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="white">#FFFFFFFF</color>
+    <string name="activate_steering_wheel">激活方控功能</string>
+    <string name="app_credit">v%1$s by @马大师 Powered by Gemini</string>
+    <string name="app_name">车机助手</string>
+    <string name="auto_start_apps">行车自动启动应用</string>
+    <string name="auto_start_settings_not_found">未找到自启动设置，正在打开设置。</string>
+    <string name="auto_switch_theme">自动切换高德日夜模式</string>
+    <string name="auto_theme_sync_disabled">自动日夜模式同步已禁用</string>
+    <string name="auto_theme_sync_enabled">自动日夜模式同步已启用</string>
+    <string name="boot_event_detected">NaviTool 检测到开机/电源事件</string>
+    <string name="debug_mode">调试模式</string>
+    <string name="debug_mode_disabled">调试模式已禁用</string>
+    <string name="debug_mode_enabled">调试模式已启用</string>
+    <string name="enable_accessibility_toast">请在辅助功能设置中开启 \'NaviTool\'</string>
+    <string name="failed_open_auto_start">无法打开自启动设置，正在打开设置。</string>
+    <string name="fix_permission">修复</string>
+    <string name="force_auto_day_night">开启车机自动日夜模式</string>
+    <string name="force_auto_mode">强制车机自动日夜模式</string>
+    <string name="force_dark">切换高德暗色</string>
+    <string name="force_light">切换高德亮色</string>
+    <string name="key_next_track">下一曲 (87)</string>
+    <string name="key_play_pause">播放/暂停 (85)</string>
+    <string name="key_prev_track">上一曲 (88)</string>
+    <string name="key_unknown">未知</string>
+    <string name="language">语言</string>
+    <string name="launch_delay">启动延迟</string>
+    <string name="launching_app">正在启动: %1$s</string>
+    <string name="media_key_service_title">媒体按键监听服务</string>
+    <string name="media_next">下一曲</string>
+    <string name="media_play_pause">播放/暂停</string>
+    <string name="media_prev">上一曲</string>
+    <string name="mode_auto">自动</string>
+    <string name="mode_custom">自定义</string>
+    <string name="mode_day">浅色</string>
+    <string name="mode_night">深色</string>
+    <string name="mode_sunrise_sunset">日出日落</string>
+    <string name="mode_unknown">未知</string>
+    <string name="perm_accessibility">无障碍服务</string>
+    <string name="perm_auto_start">自启动权限</string>
+    <string name="perm_battery">忽略电池优化</string>
+    <string name="perm_overlay">显示在其他应用上层</string>
+    <string name="perm_storage">存储权限</string>
+    <string name="return_to_home">启动后返回桌面</string>
+    <string name="sent_autonavi_broadcast">已发送高德广播: 模式 %1$d</string>
+    <string name="simulated_media_key">模拟媒体按键: %1$s</string>
+    <string name="status_auto_day_night">自动日夜模式</string>
+    <string name="status_auto_mode">当前车机主题模式：%1$s</string>
+    <string name="status_granted">已授权</string>
+    <string name="steering_wheel_disabled">方控功能已禁用</string>
+    <string name="steering_wheel_enabled">方控功能已启用</string>
+    <string name="wechat_button_function">微信按键功能</string>
+    <string name="wechat_long_press">长按功能</string>
+    <string name="wechat_short_press">短按功能</string>
+    <style name="Theme.NaviTool" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        
+        <item name="colorPrimary">@color/cyan_500</item>
+        <item name="colorPrimaryVariant">@color/cyan_700</item>
+        <item name="colorOnPrimary">@color/white</item>
+        
+        <item name="colorSecondary">@color/cyan_500</item>
+        <item name="colorSecondaryVariant">@color/cyan_700</item>
+        <item name="colorOnSecondary">@color/white</item>
+        
+        <item name="colorAccent">@color/cyan_500</item>
+        <item name="android:colorAccent">@color/cyan_500</item>
+        
+        <item name="android:statusBarColor" ns1:targetApi="l">?attr/colorPrimaryVariant</item>
+        
+    </style>
+</resources>

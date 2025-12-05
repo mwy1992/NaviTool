@@ -22,15 +22,14 @@ public class AppLaunchManager {
     private static final String PREFS_NAME = "navitool_prefs";
     private static final String KEY_APP_CONFIG = "app_launch_config";
     private static final String KEY_AUTO_START_APPS_ENABLED = "auto_start_apps_enabled";
+    private static final String KEY_RETURN_TO_HOME = "return_to_home_after_launch";
 
     public static class AppConfig {
         public String packageName;
-        public boolean background;
         public int delaySeconds;
 
-        public AppConfig(String packageName, boolean background, int delaySeconds) {
+        public AppConfig(String packageName, int delaySeconds) {
             this.packageName = packageName;
-            this.background = background;
             this.delaySeconds = delaySeconds;
         }
     }
@@ -43,7 +42,7 @@ public class AppLaunchManager {
             this.name = name;
             this.packageName = packageName;
         }
-        
+
         @Override
         public String toString() {
             return name;
@@ -60,13 +59,22 @@ public class AppLaunchManager {
                 .getBoolean(KEY_AUTO_START_APPS_ENABLED, false);
     }
 
+    public static void setReturnToHomeEnabled(Context context, boolean enabled) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_RETURN_TO_HOME, enabled).apply();
+    }
+
+    public static boolean isReturnToHomeEnabled(Context context) {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_RETURN_TO_HOME, false);
+    }
+
     public static void saveConfig(Context context, List<AppConfig> configs) {
         JSONArray jsonArray = new JSONArray();
         for (AppConfig config : configs) {
             try {
                 JSONObject jsonObject = new JSONObject();
                 jsonObject.put("pkg", config.packageName);
-                jsonObject.put("bg", config.background);
                 jsonObject.put("delay", config.delaySeconds);
                 jsonArray.put(jsonObject);
             } catch (JSONException e) {
@@ -87,9 +95,7 @@ public class AppLaunchManager {
                 JSONObject obj = jsonArray.getJSONObject(i);
                 configs.add(new AppConfig(
                         obj.getString("pkg"),
-                        obj.getBoolean("bg"),
-                        obj.getInt("delay")
-                ));
+                        obj.getInt("delay")));
             }
         } catch (JSONException e) {
             e.printStackTrace();
@@ -101,7 +107,7 @@ public class AppLaunchManager {
         List<AppInfo> apps = new ArrayList<>();
         PackageManager pm = context.getPackageManager();
         List<ApplicationInfo> packages = pm.getInstalledApplications(PackageManager.GET_META_DATA);
-        
+
         for (ApplicationInfo appInfo : packages) {
             // Filter out system apps unless updated, or just show all launchable apps?
             // Better to show only apps with launch intents
@@ -122,9 +128,19 @@ public class AppLaunchManager {
 
         List<AppConfig> configs = loadConfig(context);
         Handler handler = new Handler(Looper.getMainLooper());
+        boolean returnToHome = isReturnToHomeEnabled(context);
+
+        // Calculate max delay for returning to home
+        int maxDelaySeconds = 0;
+        for (AppConfig config : configs) {
+            if (config.packageName != null && !config.packageName.isEmpty()) {
+                maxDelaySeconds = Math.max(maxDelaySeconds, config.delaySeconds);
+            }
+        }
 
         for (AppConfig config : configs) {
-            if (config.packageName == null || config.packageName.isEmpty()) continue;
+            if (config.packageName == null || config.packageName.isEmpty())
+                continue;
 
             handler.postDelayed(() -> {
                 try {
@@ -133,19 +149,10 @@ public class AppLaunchManager {
                     if (intent != null) {
                         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                        
-                        if (config.background) {
-                            // Try to launch in background
-                            // Check for Overlay permission which is often required for background starts
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M 
-                                    && !android.provider.Settings.canDrawOverlays(context)) {
-                                DebugLogger.toast(context, context.getString(R.string.background_launch_warning));
-                                Log.w(TAG, "Background launch might fail without Overlay permission.");
-                            }
-                        }
-                        
+
                         context.startActivity(intent);
-                        DebugLogger.toast(context, String.format(context.getString(R.string.launching_app), config.packageName));
+                        DebugLogger.toast(context,
+                                String.format(context.getString(R.string.launching_app), config.packageName));
                         Log.d(TAG, "Launched " + config.packageName);
                     } else {
                         Log.e(TAG, "Could not find launch intent for " + config.packageName);
@@ -154,6 +161,17 @@ public class AppLaunchManager {
                     Log.e(TAG, "Error launching " + config.packageName, e);
                 }
             }, config.delaySeconds * 1000L);
+        }
+
+        // Return to home screen after all launches complete
+        if (returnToHome && maxDelaySeconds >= 0) {
+            handler.postDelayed(() -> {
+                Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+                homeIntent.addCategory(Intent.CATEGORY_HOME);
+                homeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(homeIntent);
+                Log.d(TAG, "Returned to home screen");
+            }, (maxDelaySeconds + 5) * 1000L);
         }
     }
 }

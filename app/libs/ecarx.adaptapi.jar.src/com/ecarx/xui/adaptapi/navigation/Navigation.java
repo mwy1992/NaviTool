@@ -1,0 +1,39 @@
+/*    */ package com.ecarx.xui.adaptapi.navigation;
+/*    */ 
+/*    */ import android.content.Context;
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ 
+/*    */ public class Navigation
+/*    */ {
+/*    */   public static INavigation create(Context paramContext) {
+/* 31 */     return NavigationImp.create(paramContext);
+/*    */   }
+/*    */ }
+
+
+/* Location:              C:\Users\mwy19\Desktop\Monjaro\jd-gui-windows-1.6.6\ecarx.adaptapi.jar!\com\ecarx\xui\adaptapi\navigation\Navigation.class
+ * Java compiler version: 8 (52.0)
+ * JD-Core Version:       1.1.3
+ */
