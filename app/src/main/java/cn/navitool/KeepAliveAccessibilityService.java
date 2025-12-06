@@ -588,7 +588,12 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     @Override
                     public void onKeyEvent(int keyCode, int event, int softKeyFunction) throws RemoteException {
                         Log.i(TAG, "OneOS onKeyEvent: keyCode=" + keyCode + ", event=" + event);
-                        // 不在此处理，由 onShortClick/onLongPressTriggered 处理
+                        if (event == 1) { // ACTION_UP
+                            // 只处理媒体按键，微信按键由 onShortClick/onLongPressTriggered 处理
+                            if (keyCode == 200087 || keyCode == 200088 || keyCode == 200085) {
+                                handleShortClick(keyCode);
+                            }
+                        }
                     }
 
                     @Override

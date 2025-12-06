@@ -1,0 +1,10 @@
+# 项目排除路径
+/.gradle/
+/.idea/
+/.vscode/
+/app/build/
+/app/debug/
+/app/libs/*
+/app/release/
+/app/build/intermediates/javac/debug/classes/
+/build/
