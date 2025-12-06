@@ -198,25 +198,6 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }).start();
     }
 
-    private void handleHardKey(int keyCode) {
-        DebugLogger.toast(this, "收到方控按键: " + keyCode);
-
-        switch (keyCode) {
-            case 200087: // R_MEDIA_NEXT
-                simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT);
-                break;
-            case 200088: // R_MEDIA_PREVIOUS
-                simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS);
-                break;
-            case 200085: // R_MEDIA_PLAY_PAUSE
-                simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
-                break;
-            default:
-                Log.d(TAG, "Unhandled key code: " + keyCode);
-                break;
-        }
-    }
-
     private void handleShortClick(int keyCode) {
         Log.i(TAG, "handleShortClick: " + keyCode);
         switch (keyCode) {
@@ -607,9 +588,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     @Override
                     public void onKeyEvent(int keyCode, int event, int softKeyFunction) throws RemoteException {
                         Log.i(TAG, "OneOS onKeyEvent: keyCode=" + keyCode + ", event=" + event);
-                        if (event == 1) { // ACTION_UP
-                            handleHardKey(keyCode);
-                        }
+                        // 不在此处理，由 onShortClick/onLongPressTriggered 处理
                     }
 
                     @Override
