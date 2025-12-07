@@ -200,6 +200,15 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
     private void handleShortClick(int keyCode) {
         Log.i(TAG, "handleShortClick: " + keyCode);
+
+        // 检测是否有通话，有通话时不处理媒体按键
+        if (keyCode == 200087 || keyCode == 200088 || keyCode == 200085) {
+            if (isPhoneCallActive()) {
+                Log.i(TAG, "Phone call active, skipping media key handling");
+                return;
+            }
+        }
+
         switch (keyCode) {
             case 200087: // R_MEDIA_NEXT - 短按下一曲
                 simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT);
@@ -222,15 +231,15 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private void handleLongPress(int keyCode) {
         Log.i(TAG, "handleLongPress: " + keyCode);
         switch (keyCode) {
-            case 200087: // R_MEDIA_NEXT - 长按下一曲（快进）
-                Log.i(TAG, "Long press NEXT - fast forward");
-                break;
-            case 200088: // R_MEDIA_PREVIOUS - 长按上一曲（快退）
-                Log.i(TAG, "Long press PREVIOUS - rewind");
-                break;
-            case 200085: // R_MEDIA_PLAY_PAUSE - 长按播放/暂停
-                Log.i(TAG, "Long press PLAY_PAUSE");
-                break;
+            // case 200087: // R_MEDIA_NEXT - 长按下一曲（快进）
+            // Log.i(TAG, "Long press NEXT - fast forward");
+            // break;
+            // case 200088: // R_MEDIA_PREVIOUS - 长按上一曲（快退）
+            // Log.i(TAG, "Long press PREVIOUS - rewind");
+            // break;
+            // case 200085: // R_MEDIA_PLAY_PAUSE - 长按播放/暂停
+            // Log.i(TAG, "Long press PLAY_PAUSE");
+            // break;
             case 200400: // R_WECHAT - 长按微信按键
                 handleWechatLongPress();
                 break;
@@ -238,6 +247,20 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 Log.d(TAG, "Unhandled long press key code: " + keyCode);
                 break;
         }
+    }
+
+    private boolean isPhoneCallActive() {
+        try {
+            android.telephony.TelephonyManager tm = (android.telephony.TelephonyManager) getSystemService(
+                    Context.TELEPHONY_SERVICE);
+            if (tm != null) {
+                int state = tm.getCallState();
+                return state != android.telephony.TelephonyManager.CALL_STATE_IDLE;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error checking phone call state", e);
+        }
+        return false;
     }
 
     private void handleWechatShortPress() {
@@ -474,8 +497,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     DebugLogger.toast(KeepAliveAccessibilityService.this, "IServiceManager 获取成功");
                     mRetryCount = 0;
                     mOneOSInputManager = null; // Reset
-                                               // before
-                                               // trying
+                    // before
+                    // trying
                     tryGetInputManager();
                     broadcastOneOSStatus(true);
                 } else {
@@ -599,15 +622,21 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     @Override
                     public void onShortClick(int keyCode, int softKeyFunction) throws RemoteException {
                         Log.i(TAG, "OneOS onShortClick: keyCode=" + keyCode);
-                        DebugLogger.toast(KeepAliveAccessibilityService.this, "按键短按: " + keyCode);
-                        handleShortClick(keyCode);
+                        // 只处理微信按键，媒体按键已由 onKeyEvent 处理
+                        if (keyCode == 200400) {
+                            DebugLogger.toast(KeepAliveAccessibilityService.this, "微信按键短按");
+                            handleShortClick(keyCode);
+                        }
                     }
 
                     @Override
                     public void onLongPressTriggered(int keyCode, int softKeyFunction) throws RemoteException {
                         Log.i(TAG, "OneOS onLongPressTriggered: keyCode=" + keyCode);
-                        DebugLogger.toast(KeepAliveAccessibilityService.this, "按键长按: " + keyCode);
-                        handleLongPress(keyCode);
+                        // 只处理微信按键
+                        if (keyCode == 200400) {
+                            DebugLogger.toast(KeepAliveAccessibilityService.this, "微信按键长按");
+                            handleLongPress(keyCode);
+                        }
                     }
 
                     @Override
