@@ -12,5 +12,5 @@ interface IInputManager {
     /** Transaction 4 */
     void unregisterListener(IInputListener listener, String packageName);
     /** Transaction 5 */
-    int getSomething();
+    int getControlIndex();
 }

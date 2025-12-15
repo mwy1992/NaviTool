@@ -2,15 +2,15 @@ package com.geely.lib.oneosapi.input;
 
 interface IInputListener {
     /** Transaction 1 */
-    void onKeyEvent(int keyCode, int event, int softKeyFunction);
+    void onKeyEvent(int keyCode, int event, int keyController);
     /** Transaction 2 */
-    void onShortClick(int keyCode, int softKeyFunction);
+    void onShortClick(int keyCode, int keyController);
     /** Transaction 3 */
-    void onLongPressTriggered(int keyCode, int softKeyFunction);
+    void onHoldingPressStarted(int keyCode, int keyController);
     /** Transaction 4 */
-    void onHoldingPressStopped(int keyCode, int softKeyFunction);
+    void onHoldingPressStopped(int keyCode, int keyController);
     /** Transaction 5 */
-    void onLongPress(int keyCode, int softKeyFunction);
+    void onLongPressTriggered(int keyCode, int keyController);
     /** Transaction 6 */
-    void onDoubleClick(int keyCode, int softKeyFunction);
+    void onDoubleClick(int keyCode, int keyController);
 }

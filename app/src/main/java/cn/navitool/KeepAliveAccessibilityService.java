@@ -201,10 +201,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private void handleShortClick(int keyCode) {
         Log.i(TAG, "handleShortClick: " + keyCode);
 
-        // 检测是否有通话，有通话时不处理媒体按键
         if (keyCode == 200087 || keyCode == 200088 || keyCode == 200085) {
-            if (isPhoneCallActive()) {
-                Log.i(TAG, "Phone call active, skipping media key handling");
+            SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
+            boolean enabled = prefs.getBoolean("steering_wheel_control", false);
+            if (!enabled) {
+                Log.d(TAG, "Steering wheel control disabled, skipping media key");
                 return;
             }
         }
@@ -247,20 +248,6 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 Log.d(TAG, "Unhandled long press key code: " + keyCode);
                 break;
         }
-    }
-
-    private boolean isPhoneCallActive() {
-        try {
-            android.telephony.TelephonyManager tm = (android.telephony.TelephonyManager) getSystemService(
-                    Context.TELEPHONY_SERVICE);
-            if (tm != null) {
-                int state = tm.getCallState();
-                return state != android.telephony.TelephonyManager.CALL_STATE_IDLE;
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error checking phone call state", e);
-        }
-        return false;
     }
 
     private void handleWechatShortPress() {
@@ -543,6 +530,15 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 mOneOSInputManager = com.geely.lib.oneosapi.input.IInputManager.Stub.asInterface(inputBinder);
                 Log.i(TAG, "IInputManager obtained: " + mOneOSInputManager);
                 DebugLogger.toast(KeepAliveAccessibilityService.this, "IInputManager 获取成功");
+
+                try {
+                    int controllerId = mOneOSInputManager.getControlIndex();
+                    Log.i(TAG, "getControlIndex() returned: " + controllerId);
+                    DebugLogger.toast(KeepAliveAccessibilityService.this, "Controller ID: " + controllerId);
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to call getControlIndex(): " + e.getMessage());
+                }
+
                 registerOneOSListener();
             } else {
                 Log.e(TAG, "Failed to get InputManager binder (type 8) - returned NULL");
@@ -609,19 +605,36 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             if (mOneOSInputListener == null) {
                 mOneOSInputListener = new com.geely.lib.oneosapi.input.IInputListener.Stub() {
                     @Override
-                    public void onKeyEvent(int keyCode, int event, int softKeyFunction) throws RemoteException {
-                        Log.i(TAG, "OneOS onKeyEvent: keyCode=" + keyCode + ", event=" + event);
+                    public void onKeyEvent(int keyCode, int event, int keyController) throws RemoteException {
+                        int currentIndex = -1;
+                        if (mOneOSInputManager != null) {
+                            try {
+                                currentIndex = mOneOSInputManager.getControlIndex();
+                            } catch (Exception e) {
+                                Log.e(TAG, "Failed to get control index in onKeyEvent", e);
+                            }
+                        }
+
+                        Log.i(TAG, "OneOS onKeyEvent: keyCode=" + keyCode + ", event=" + event
+                                + ", paramKeyController=" + keyController + ", globalControlIndex=" + currentIndex);
+
                         if (event == 1) { // ACTION_UP
-                            // 只处理媒体按键，微信按键由 onShortClick/onLongPressTriggered 处理
-                            if (keyCode == 200087 || keyCode == 200088 || keyCode == 200085) {
-                                handleShortClick(keyCode);
+                            // 关键逻辑修改：不再依赖参数 keyController (始终为0)，而是依赖 getControlIndex() (返回2)
+                            // 如果全局 Index 为 2，说明处于媒体控制模式，此时处理按键是安全的
+                            if (currentIndex == 2) {
+                                if (keyCode == 200087 || keyCode == 200088 || keyCode == 200085) {
+                                    handleShortClick(keyCode);
+                                }
+                            } else {
+                                Log.w(TAG, "Ignored media key because globalControlIndex is " + currentIndex
+                                        + " (expected 2)");
                             }
                         }
                     }
 
                     @Override
-                    public void onShortClick(int keyCode, int softKeyFunction) throws RemoteException {
-                        Log.i(TAG, "OneOS onShortClick: keyCode=" + keyCode);
+                    public void onShortClick(int keyCode, int keyController) throws RemoteException {
+                        Log.i(TAG, "OneOS onShortClick: keyCode=" + keyCode + ", keyController=" + keyController);
                         // 只处理微信按键，媒体按键已由 onKeyEvent 处理
                         if (keyCode == 200400) {
                             DebugLogger.toast(KeepAliveAccessibilityService.this, "微信按键短按");
@@ -630,8 +643,19 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     }
 
                     @Override
-                    public void onLongPressTriggered(int keyCode, int softKeyFunction) throws RemoteException {
-                        Log.i(TAG, "OneOS onLongPressTriggered: keyCode=" + keyCode);
+                    public void onHoldingPressStarted(int keyCode, int keyController) throws RemoteException {
+                        Log.i(TAG, "OneOS onHoldingPressStarted: keyCode=" + keyCode);
+                    }
+
+                    @Override
+                    public void onHoldingPressStopped(int keyCode, int keyController) throws RemoteException {
+                        Log.i(TAG, "OneOS onHoldingPressStopped: keyCode=" + keyCode);
+                    }
+
+                    @Override
+                    public void onLongPressTriggered(int keyCode, int keyController) throws RemoteException {
+                        Log.i(TAG,
+                                "OneOS onLongPressTriggered: keyCode=" + keyCode + ", keyController=" + keyController);
                         // 只处理微信按键
                         if (keyCode == 200400) {
                             DebugLogger.toast(KeepAliveAccessibilityService.this, "微信按键长按");
@@ -640,33 +664,18 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     }
 
                     @Override
-                    public void onHoldingPressStopped(int keyCode, int softKeyFunction) throws RemoteException {
-                        Log.i(TAG, "OneOS onHoldingPressStopped: keyCode=" + keyCode);
-                    }
-
-                    @Override
-                    public void onLongPress(int keyCode, int softKeyFunction) throws RemoteException {
-                        Log.i(TAG, "OneOS onLongPress: keyCode=" + keyCode);
-                    }
-
-                    @Override
-                    public void onDoubleClick(int keyCode, int softKeyFunction) throws RemoteException {
+                    public void onDoubleClick(int keyCode, int keyController) throws RemoteException {
                         Log.i(TAG, "OneOS onDoubleClick: keyCode=" + keyCode);
                     }
                 };
             }
 
             Log.i(TAG, "Registering listener: " + mOneOSInputListener);
+
             String packageName = getPackageName();
             Log.i(TAG, "Package name: " + packageName);
             Log.i(TAG, "Key codes to register: " + java.util.Arrays.toString(keyCodes));
 
-            // Correct signature: registerListener(IInputListener listener, String
-            // packageName, int[] keyCodes)
-            // Note: The error message said "Found: int[],IInputListener", implying the
-            // previous call was registerListener(keyCodes, mOneOSInputListener)
-            // But the error also said "Required: IInputListener,String,int[]"
-            // So we must use the 3-argument version.
             mOneOSInputManager.registerListener(mOneOSInputListener, packageName, keyCodes);
 
             Log.i(TAG, "registerListener() COMPLETED SUCCESSFULLY!");
@@ -674,7 +683,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             DebugLogger.toast(this, "OneOS 监听已注册");
 
         } catch (Exception e) {
-            Log.e(TAG, "========================");
+            Log.e(TAG, "OneOS 注册失败: " + e.getMessage());
             DebugLogger.toast(this, "OneOS 注册失败: " + e.getMessage());
         }
     }
