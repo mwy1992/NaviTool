@@ -11,6 +11,7 @@
     
     <!-- UI Elements -->
     <string name="debug_mode">调试模式</string>
+    <string name="adb_auto_connect">ADB 自动连接 (无线调试)</string>
     <string name="auto_switch_theme">自动切换高德日夜模式</string>
     <string name="force_light">切换高德亮色</string>
     <string name="force_dark">切换高德暗色</string>
@@ -52,9 +53,25 @@
     <string name="debug_mode_enabled">调试模式已启用</string>
     <string name="media_key_service_title">媒体按键监听服务</string>
     <string name="launching_app">正在启动: %1$s</string>
-    <string name="auto_start_apps">行车自动启动应用</string>
+    <string name="auto_start_apps">自动启动应用</string>
     <string name="return_to_home">启动后返回桌面</string>
     <string name="wechat_button_function">微信按键功能</string>
     <string name="wechat_short_press">短按功能</string>
     <string name="wechat_long_press">长按功能</string>
+
+    <string name="perm_secure_settings">修改安全设置权限</string>
+    <string name="perm_secure_settings_guide">请使用 ADB 授权: pm grant %1$s android.permission.WRITE_SECURE_SETTINGS</string>
+
+    <!-- Extracted Strings -->
+    <string name="unit_seconds">秒</string>
+    <string name="desc_delete_config">删除配置</string>
+    <string name="app_necessary_permissions">应用必要权限</string>
+    <string name="adb_system_status">ADB / 系统状态</string>
+    <string name="status_not_connected">未连接</string>
+    <string name="toast_return_home_enabled">已启用启动后返回桌面</string>
+    <string name="toast_return_home_disabled">已禁用启动后返回桌面</string>
+    <string name="toast_test_start">开始测试启动...</string>
+    <string name="toast_no_auto_start_config">未配置自启动应用</string>
+    <string name="error_launch_failed">无法启动: %1$s</string>
+    <string name="error_launch_exception">启动错误: %1$s</string>
 </resources>

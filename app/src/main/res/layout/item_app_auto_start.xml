@@ -32,7 +32,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="秒"
+        android:text="@string/unit_seconds"
         android:layout_marginStart="4dp"/>
 
     <ImageButton
@@ -42,5 +42,5 @@
         android:src="@drawable/ic_close"
         android:background="?android:attr/selectableItemBackgroundBorderless"
         android:layout_marginStart="16dp"
-        android:contentDescription="删除配置"/>
+        android:contentDescription="@string/desc_delete_config"/>
 </LinearLayout>

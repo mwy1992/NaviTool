@@ -38,7 +38,12 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             } else {
                 stopMonitoring();
             }
-
+        } else if ("adb_wireless_enabled".equals(key)) {
+            if (sharedPreferences.getBoolean(key, false)) {
+                AdbShell.getInstance(KeepAliveAccessibilityService.this).connect();
+            } else {
+                AdbShell.getInstance(KeepAliveAccessibilityService.this).close();
+            }
         }
     };
 
@@ -59,6 +64,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         // Initial check for auto day/night mode
         if (prefs.getBoolean("force_auto_day_night", false)) {
             startMonitoring();
+        }
+
+        // Initialize ADB Loopback if enabled
+        if (prefs.getBoolean("adb_wireless_enabled", false)) {
+            AdbShell.getInstance(this).connect();
         }
 
         // Bind OneOS Service
@@ -330,8 +340,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     }
                 }
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to initialize Car AdaptAPI", e);
+        } catch (Throwable e) {
+            Log.e(TAG, "Failed to initialize Car AdaptAPI: " + e.getMessage());
+            DebugLogger.log(this, TAG, "Car AdaptAPI Init Error: " + e.getMessage());
         }
     }
 

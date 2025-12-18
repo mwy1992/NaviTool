@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -51,263 +52,336 @@
 
     </LinearLayout>
 
-    <!-- Main Content Area -->
+    <!-- Main Content Body -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="horizontal"
-        android:padding="16dp">
+        android:orientation="horizontal">
 
-        <!-- Left Pane: Controls (70%) -->
-        <ScrollView
+        <!-- Left Sidebar (10%) -->
+        <RadioGroup
+            android:id="@+id/rgNavigation"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="7"
-            android:paddingEnd="16dp">
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="top">
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:background="#1A000000"
+            android:paddingTop="16dp">
 
-            <!-- Auto Switch Toggle -->
-            <LinearLayout
+            <RadioButton
+                android:id="@+id/rbBasic"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
+                android:text="基础"
+                android:textSize="18sp"
                 android:gravity="center_vertical"
-                android:layout_marginBottom="16dp">
+                android:padding="16dp"
+                android:button="@null"
+                android:background="?android:attr/selectableItemBackground"
+                android:textColor="@drawable/selector_nav_text"
+                android:checked="true"/>
 
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/auto_switch_theme"
-                    android:textSize="16sp"
-                    android:textColor="?android:attr/textColorPrimary"/>
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchAutoTheme"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"/>
-            </LinearLayout>
-
-            <!-- Manual Buttons -->
-            <LinearLayout
-                android:id="@+id/layoutDebugButtons"
+            <RadioButton
+                android:id="@+id/rbButtons"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="16dp">
-
-                <Button
-                    android:id="@+id/btnForceLight"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/force_light"
-                    android:layout_marginEnd="8dp"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
-
-                <Button
-                    android:id="@+id/btnForceDark"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/force_dark"
-                    android:layout_marginStart="8dp"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
-            </LinearLayout>
-
-            <!-- Force Auto Day/Night Toggle -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
+                android:text="按键"
+                android:textSize="18sp"
                 android:gravity="center_vertical"
-                android:layout_marginBottom="16dp">
+                android:padding="16dp"
+                android:button="@null"
+                android:background="?android:attr/selectableItemBackground"
+                android:textColor="@drawable/selector_nav_text"/>
 
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/force_auto_mode"
-                    android:textSize="16sp"
-                    android:textColor="?android:attr/textColorPrimary"/>
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchForceAutoDayNight"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"/>
-            </LinearLayout>
-
-
-
-            <!-- Steering Wheel Control Toggle -->
-            <LinearLayout
+            <RadioButton
+                android:id="@+id/rbAutoStart"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
+                android:text="自启动"
+                android:textSize="18sp"
                 android:gravity="center_vertical"
-                android:layout_marginBottom="16dp">
+                android:padding="16dp"
+                android:button="@null"
+                android:background="?android:attr/selectableItemBackground"
+                android:textColor="@drawable/selector_nav_text"/>
 
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/activate_steering_wheel"
-                    android:textSize="16sp"
-                    android:textColor="?android:attr/textColorPrimary"/>
-
-                <com.google.android.material.switchmaterial.SwitchMaterial
-                    android:id="@+id/switchSteeringWheel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"/>
-            </LinearLayout>
-
-            <!-- Media Control Buttons (Debug Only) -->
-            <LinearLayout
-                android:id="@+id/layoutMediaButtons"
+            <RadioButton
+                android:id="@+id/rbADB"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="16dp"
-                android:visibility="gone">
+                android:text="ADB"
+                android:textSize="18sp"
+                android:gravity="center_vertical"
+                android:padding="16dp"
+                android:button="@null"
+                android:background="?android:attr/selectableItemBackground"
+                android:textColor="@drawable/selector_nav_text"/>
 
-                <Button
-                    android:id="@+id/btnMediaPrev"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/media_prev"
-                    android:layout_marginEnd="4dp"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+        </RadioGroup>
 
-                <Button
-                    android:id="@+id/btnMediaPlayPause"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/media_play_pause"
-                    android:layout_marginHorizontal="4dp"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+        <!-- Right Content Area (90%) -->
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="9"
+            android:padding="24dp">
 
-                <Button
-                    android:id="@+id/btnMediaNext"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/media_next"
-                    android:layout_marginStart="4dp"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
-            </LinearLayout>
-
-                <!-- WeChat Button Function -->
+            <!-- 1. Basic Settings Layout -->
+            <ScrollView
+                android:id="@+id/layoutContentBasic"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:layout_marginBottom="16dp">
+                    android:orientation="vertical">
 
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/wechat_button_function"
-                        android:textSize="16sp"
-                        android:textColor="?android:attr/textColorPrimary"/>
-
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/switchWechatButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"/>
-                </LinearLayout>
-
-                <!-- WeChat Short Press Function -->
-                <LinearLayout
-                    android:id="@+id/layoutWechatShortPress"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingStart="24dp"
-                    android:layout_marginBottom="16dp"
-                    android:visibility="gone">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/wechat_short_press"
-                        android:textSize="14sp"
-                        android:textColor="?android:attr/textColorSecondary"
-                        android:layout_marginEnd="8dp"/>
-
-                    <Spinner
-                        android:id="@+id/spinnerShortPressAction"
-                        android:layout_width="150dp"
-                        android:layout_height="wrap_content"/>
-
-                    <Spinner
-                        android:id="@+id/spinnerShortPressApp"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:visibility="gone"/>
-                </LinearLayout>
-
-                <!-- WeChat Long Press Function -->
-                <LinearLayout
-                    android:id="@+id/layoutWechatLongPress"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingStart="24dp"
-                    android:layout_marginBottom="16dp"
-                    android:visibility="gone">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/wechat_long_press"
-                        android:textSize="14sp"
-                        android:textColor="?android:attr/textColorSecondary"
-                        android:layout_marginEnd="8dp"/>
-
-                    <Spinner
-                        android:id="@+id/spinnerLongPressAction"
-                        android:layout_width="150dp"
-                        android:layout_height="wrap_content"/>
-
-                    <Spinner
-                        android:id="@+id/spinnerLongPressApp"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:visibility="gone"/>
-                </LinearLayout>
-
-                <!-- Auto Start Apps Group -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:layout_marginBottom="16dp">
-
-                    <!-- Top Row: Label, Buttons, Switch -->
+                    <!-- Auto Switch Toggle -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
-                        android:gravity="center_vertical">
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="16dp">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/auto_switch_theme"
+                            android:textSize="18sp"
+                            android:textColor="?android:attr/textColorPrimary"/>
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switchAutoTheme"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"/>
+                    </LinearLayout>
+
+                    <!-- Manual Buttons -->
+                    <LinearLayout
+                        android:id="@+id/layoutDebugButtons"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginBottom="24dp">
+                        <Button
+                            android:id="@+id/btnForceLight"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/force_light"
+                            android:layout_marginEnd="8dp"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+                        <Button
+                            android:id="@+id/btnForceDark"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/force_dark"
+                            android:layout_marginStart="8dp"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+                    </LinearLayout>
+
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?android:attr/listDivider" android:layout_marginBottom="24dp"/>
+
+                    <!-- Force Auto Day/Night Toggle -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="16dp">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/force_auto_mode"
+                            android:textSize="18sp"
+                            android:textColor="?android:attr/textColorPrimary"/>
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switchForceAutoDayNight"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"/>
+                    </LinearLayout>
+
+
+
+                </LinearLayout>
+            </ScrollView>
+
+            <!-- 2. Buttons Settings Layout -->
+            <ScrollView
+                android:id="@+id/layoutContentButtons"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <!-- Steering Wheel Control Toggle -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="16dp">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/activate_steering_wheel"
+                            android:textSize="18sp"
+                            android:textColor="?android:attr/textColorPrimary"/>
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switchSteeringWheel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"/>
+                    </LinearLayout>
+
+
+
+                    <!-- Simulated Media Buttons (Debug Only) -->
+                    <LinearLayout
+                        android:id="@+id/layoutMediaButtons"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:layout_marginBottom="24dp"
+                        android:visibility="gone">
+                        <Button
+                            android:id="@+id/btnMediaPrev"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/media_prev"
+                            android:layout_marginEnd="4dp"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+                        <Button
+                            android:id="@+id/btnMediaPlayPause"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/media_play_pause"
+                            android:layout_marginHorizontal="4dp"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+                        <Button
+                            android:id="@+id/btnMediaNext"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/media_next"
+                            android:layout_marginStart="4dp"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+                    </LinearLayout>
+
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?android:attr/listDivider" android:layout_marginBottom="24dp"/>
+
+                    <!-- WeChat Button Function -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="16dp">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/wechat_button_function"
+                            android:textSize="18sp"
+                            android:textColor="?android:attr/textColorPrimary"/>
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switchWechatButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"/>
+                    </LinearLayout>
+
+                    <!-- WeChat Short Press -->
+                    <LinearLayout
+                        android:id="@+id/layoutWechatShortPress"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="12dp"
+                        android:visibility="gone">
+                        <TextView
+                            android:layout_width="80dp"
+                            android:layout_height="wrap_content"
+                            android:text="@string/wechat_short_press"
+                            android:textSize="16sp"
+                            android:textColor="?android:attr/textColorSecondary"/>
+                        <Spinner
+                            android:id="@+id/spinnerShortPressAction"
+                            android:layout_width="140dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="8dp"/>
+                        <Spinner
+                            android:id="@+id/spinnerShortPressApp"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:visibility="gone"/>
+                    </LinearLayout>
+
+                    <!-- WeChat Long Press -->
+                    <LinearLayout
+                        android:id="@+id/layoutWechatLongPress"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="16dp"
+                        android:visibility="gone">
+                        <TextView
+                            android:layout_width="80dp"
+                            android:layout_height="wrap_content"
+                            android:text="@string/wechat_long_press"
+                            android:textSize="16sp"
+                            android:textColor="?android:attr/textColorSecondary"/>
+                        <Spinner
+                            android:id="@+id/spinnerLongPressAction"
+                            android:layout_width="140dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="8dp"/>
+                        <Spinner
+                            android:id="@+id/spinnerLongPressApp"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:visibility="gone"/>
+                    </LinearLayout>
+
+                </LinearLayout>
+            </ScrollView>
+
+            <!-- 3. AutoStart Settings Layout -->
+            <ScrollView
+                android:id="@+id/layoutContentAutoStart"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <!-- Header Row: Title + Controls -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="16dp">
 
                         <TextView
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:text="@string/auto_start_apps"
-                            android:textSize="16sp"
+                            android:textSize="18sp"
+                            android:textStyle="bold"
                             android:textColor="?android:attr/textColorPrimary"/>
 
                         <com.google.android.material.switchmaterial.SwitchMaterial
@@ -315,15 +389,17 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/return_to_home"
-                            android:visibility="gone"
                             android:layout_marginEnd="8dp"/>
 
                         <Button
                             android:id="@+id/btnTestLaunch"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Test"
-                            android:visibility="gone"
+                            android:text="TEST"
+                            android:minWidth="0dp"
+                            android:minHeight="0dp"
+                            android:paddingHorizontal="12dp"
+                            android:paddingVertical="8dp"
                             android:layout_marginEnd="8dp"
                             style="@style/Widget.MaterialComponents.Button.TextButton"/>
 
@@ -333,14 +409,18 @@
                             android:layout_height="40dp"
                             android:src="@drawable/ic_add"
                             android:background="?android:attr/selectableItemBackgroundBorderless"
-                            android:layout_marginEnd="16dp"
-                            android:visibility="gone"/>
+                            android:layout_marginEnd="8dp"/>
 
                         <com.google.android.material.switchmaterial.SwitchMaterial
                             android:id="@+id/switchAutoStartApps"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"/>
                     </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="?android:attr/listDivider"/>
 
                     <!-- Dynamic Config Container -->
                     <LinearLayout
@@ -349,110 +429,131 @@
                         android:layout_height="wrap_content"
                         android:orientation="vertical"
                         android:visibility="gone" />
-
                 </LinearLayout>
-            </LinearLayout>
-        </ScrollView>
+            </ScrollView>
 
-        <!-- Divider -->
-        <View
-            android:layout_width="1dp"
-            android:layout_height="match_parent"
-            android:background="?android:attr/listDivider"
-            android:layout_marginHorizontal="8dp"/>
-
-        <!-- Right Pane: Status & Settings (30%) -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="match_parent"
-            android:layout_weight="3"
-            android:orientation="vertical"
-            android:paddingStart="8dp"
-            android:animateLayoutChanges="true">
-
-            <!-- Top Row: Permission Status Header -->
-            <TextView
+            <!-- 4. ADB (System Status) Layout -->
+            <ScrollView
+                android:id="@+id/layoutContentADB"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="服务及权限状态"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:layout_marginBottom="16dp"
-                android:textColor="?android:attr/textColorPrimary"/>
-
-            <!-- Permission Status List -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <!-- Auto Mode Status -->
+                android:layout_height="match_parent"
+                android:visibility="gone">
                 <LinearLayout
-                    android:id="@+id/layoutAutoModeStatus"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:minHeight="48dp"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:paddingHorizontal="8dp"
-                    android:paddingVertical="4dp"
-                    android:background="?android:attr/selectableItemBackground">
-
-                    <ImageView
-                        android:id="@+id/imgAutoModeIcon"
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
-                        android:src="@drawable/ic_close"
-                        android:layout_marginEnd="16dp"
-                        android:contentDescription="@string/force_auto_mode"/>
+                    android:orientation="vertical"
+                    android:paddingTop="8dp">
 
                     <TextView
-                        android:id="@+id/tvAutoModeStatus"
-                        android:layout_width="0dp"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:textSize="15sp"
+                        android:text="@string/adb_system_status"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="16dp"
                         android:textColor="?android:attr/textColorPrimary"/>
-                </LinearLayout>
 
-                <!-- Media Key Service Status -->
-                <LinearLayout
-                    android:id="@+id/layoutMediaKeyServiceStatus"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:background="?android:attr/selectableItemBackground"
-                    android:gravity="center_vertical"
-                    android:minHeight="48dp"
-                    android:orientation="horizontal"
-                    android:paddingHorizontal="8dp"
-                    android:paddingVertical="4dp">
-
-                    <ImageView
-                        android:id="@+id/imgMediaKeyServiceIcon"
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
-                        android:layout_marginEnd="16dp"
-                        android:contentDescription="@string/media_key_service_title"
-                        android:src="@drawable/ic_close" />
-
-                    <TextView
-                        android:id="@+id/tvMediaKeyServiceStatus"
-                        android:layout_width="0dp"
+                    <!-- Wireless ADB Switch -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/media_key_service_title"
-                        android:textColor="?android:attr/textColorPrimary"
-                        android:textSize="15sp" />
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingVertical="12dp">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/adb_auto_connect"
+                                android:textSize="16sp"
+                                android:textColor="?android:attr/textColorPrimary"/>
+                            <TextView
+                                android:id="@+id/tvAdbStatus"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/status_not_connected"
+                                android:textSize="12sp"
+                                android:textColor="?android:attr/textColorSecondary"
+                                android:layout_marginTop="2dp"/>
+                        </LinearLayout>
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switchAdbWireless"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"/>
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="?android:attr/listDivider"/>
+
+                    <!-- Auto Mode Status -->
+                    <LinearLayout
+                        android:id="@+id/layoutAutoModeStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingVertical="12dp">
+                        <ImageView
+                            android:id="@+id/imgAutoModeIcon"
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:src="@drawable/ic_close"
+                            android:layout_marginEnd="16dp"
+                            android:contentDescription="@string/force_auto_mode"/>
+                        <TextView
+                            android:id="@+id/tvAutoModeStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:textSize="16sp"
+                            android:textColor="?android:attr/textColorPrimary"/>
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="?android:attr/listDivider"/>
+
+                    <!-- Media Key Service Status -->
+                    <LinearLayout
+                        android:id="@+id/layoutMediaKeyServiceStatus"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:paddingVertical="12dp">
+                        <ImageView
+                            android:id="@+id/imgMediaKeyServiceIcon"
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_marginEnd="16dp"
+                            android:contentDescription="@string/media_key_service_title"
+                            android:src="@drawable/ic_close" />
+                        <TextView
+                            android:id="@+id/tvMediaKeyServiceStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/media_key_service_title"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:textSize="16sp" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="?android:attr/listDivider"/>
+
+                    <include layout="@layout/item_permission_status" android:id="@+id/statusAppPermissions"/>
+
                 </LinearLayout>
+            </ScrollView>
 
-                <include layout="@layout/item_permission_status" android:id="@+id/statusAutoStart"/>
-                <include layout="@layout/item_permission_status" android:id="@+id/statusOverlay"/>
-                <include layout="@layout/item_permission_status" android:id="@+id/statusStorage"/>
-                <include layout="@layout/item_permission_status" android:id="@+id/statusAccessibility"/>
-                <include layout="@layout/item_permission_status" android:id="@+id/statusBattery"/>
-
-            </LinearLayout>
-        </LinearLayout>
+        </FrameLayout>
     </LinearLayout>
 
 </LinearLayout>

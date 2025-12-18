@@ -106,14 +106,28 @@ public class AppLaunchManager {
     public static List<AppInfo> getInstalledApps(Context context) {
         List<AppInfo> apps = new ArrayList<>();
         PackageManager pm = context.getPackageManager();
-        List<ApplicationInfo> packages = pm.getInstalledApplications(PackageManager.GET_META_DATA);
+        Intent intent = new Intent(Intent.ACTION_MAIN, null);
+        intent.addCategory(Intent.CATEGORY_LAUNCHER);
+        List<android.content.pm.ResolveInfo> activities = pm.queryIntentActivities(intent, 0);
 
-        for (ApplicationInfo appInfo : packages) {
-            // Filter out system apps unless updated, or just show all launchable apps?
-            // Better to show only apps with launch intents
-            if (pm.getLaunchIntentForPackage(appInfo.packageName) != null) {
-                String label = pm.getApplicationLabel(appInfo).toString();
-                apps.add(new AppInfo(label, appInfo.packageName));
+        for (android.content.pm.ResolveInfo resolveInfo : activities) {
+            String packageName = resolveInfo.activityInfo.packageName;
+            String label = resolveInfo.loadLabel(pm).toString();
+            // Avoid duplicates if multiple activities point to same package?
+            // Usually we want the main one. We can check if package is already in list or
+            // allow multiple entries?
+            // For simplicity, let's keep it simple unique by package name if desired, or
+            // just allow all entry points.
+            // But AppConfig logic uses packageName, so we only need one entry per package.
+            boolean exists = false;
+            for (AppInfo info : apps) {
+                if (info.packageName.equals(packageName)) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                apps.add(new AppInfo(label, packageName));
             }
         }
         Collections.sort(apps, (a, b) -> a.name.compareToIgnoreCase(b.name));
@@ -172,6 +186,27 @@ public class AppLaunchManager {
                 context.startActivity(homeIntent);
                 Log.d(TAG, "Returned to home screen");
             }, (maxDelaySeconds + 5) * 1000L);
+        }
+    }
+
+    public static void launchApp(Context context, String packageName) {
+        try {
+            PackageManager pm = context.getPackageManager();
+            Intent intent = pm.getLaunchIntentForPackage(packageName);
+            if (intent != null) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                context.startActivity(intent);
+                DebugLogger.toast(context,
+                        String.format(context.getString(R.string.launching_app), packageName));
+            } else {
+                DebugLogger.toast(context, String.format(context.getString(R.string.error_launch_failed), packageName));
+                Log.e(TAG, "No launch intent for " + packageName);
+            }
+        } catch (Exception e) {
+            DebugLogger.toast(context,
+                    String.format(context.getString(R.string.error_launch_exception), e.getMessage()));
+            Log.e(TAG, "Error launching " + packageName, e);
         }
     }
 }

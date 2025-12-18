@@ -51,3 +51,7 @@
 -dontwarn libcore.io.IoUtils
 -dontwarn android.car.**
 -dontwarn com.ecarx.**
+-dontwarn ecarx.**
+-dontwarn ecarx.adaptapi.**
+-ignorewarnings
+

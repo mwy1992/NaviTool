@@ -22,6 +22,7 @@ public class BootReceiver extends BroadcastReceiver {
 
             // Log boot event via DebugLogger
             DebugLogger.logBootEvent(context);
+
         }
     }
 }

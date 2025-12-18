@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
@@ -11,30 +12,38 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.Settings;
 import android.view.View;
+import android.view.Window;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.RadioGroup;
+import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.Spinner;
-import android.widget.ArrayAdapter;
-import android.widget.AdapterView;
-import android.widget.ImageButton;
-import java.util.List;
-import java.util.ArrayList;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.google.android.material.switchmaterial.SwitchMaterial;
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final int PERMISSION_REQUEST_CODE = 100;
+
+    private androidx.appcompat.app.AlertDialog permissionDialog;
+    private View mPermissionDialogView;
 
     private final ActivityResultLauncher<Intent> mOverlayPermissionLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(), result -> {
@@ -52,6 +61,12 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
 
+    // Navigation Views
+    private ScrollView mLayoutBasic;
+    private ScrollView mLayoutButtons;
+    private ScrollView mLayoutAutoStart;
+    private ScrollView mLayoutADB;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -59,8 +74,8 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         initUI();
+        initNavigation();
         checkPermissions();
-
     }
 
     @Override
@@ -72,6 +87,16 @@ public class MainActivity extends AppCompatActivity {
         filter.addAction("cn.navitool.ACTION_DAY_NIGHT_STATUS");
         registerReceiver(mDayNightStatusReceiver, filter);
 
+        android.content.IntentFilter adbFilter = new android.content.IntentFilter("cn.navitool.ADB_STATUS_CHANGED");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(adbStatusReceiver, adbFilter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(adbStatusReceiver, adbFilter);
+        }
+
+        // Refresh ADB Status
+        AdbShell.getInstance(this).broadcastStatus();
+
         android.content.IntentFilter oneOSFilter = new android.content.IntentFilter();
         oneOSFilter.addAction("cn.navitool.ACTION_ONEOS_STATUS");
         registerReceiver(mOneOSStatusReceiver, oneOSFilter);
@@ -81,90 +106,159 @@ public class MainActivity extends AppCompatActivity {
         sendBroadcast(new Intent("cn.navitool.ACTION_REQUEST_ONEOS_STATUS"));
     }
 
-    private void initUI() {
-        // Setup Permission Status Items
-        setupStatusItem(R.id.statusAutoStart, R.string.perm_auto_start, this::requestAutoStart);
-        setupStatusItem(R.id.statusOverlay, R.string.perm_overlay, this::requestOverlayPermission);
-        setupStatusItem(R.id.statusStorage, R.string.perm_storage, this::requestStoragePermission);
-        setupStatusItem(R.id.statusAccessibility, R.string.perm_accessibility, this::requestAccessibilityPermission);
-        setupStatusItem(R.id.statusBattery, R.string.perm_battery, this::requestBatteryOptimization);
+    @Override
+    protected void onPause() {
+        super.onPause();
+        unregisterReceiver(mDayNightStatusReceiver);
+        unregisterReceiver(mOneOSStatusReceiver);
+        unregisterReceiver(adbStatusReceiver);
+    }
 
+    private void initNavigation() {
+        RadioGroup rgNavigation = findViewById(R.id.rgNavigation);
+        mLayoutBasic = findViewById(R.id.layoutContentBasic);
+        mLayoutButtons = findViewById(R.id.layoutContentButtons);
+        mLayoutAutoStart = findViewById(R.id.layoutContentAutoStart);
+        mLayoutADB = findViewById(R.id.layoutContentADB);
+
+        rgNavigation.setOnCheckedChangeListener((group, checkedId) -> {
+            mLayoutBasic.setVisibility(View.GONE);
+            mLayoutButtons.setVisibility(View.GONE);
+            mLayoutAutoStart.setVisibility(View.GONE);
+            mLayoutADB.setVisibility(View.GONE);
+
+            if (checkedId == R.id.rbBasic) {
+                mLayoutBasic.setVisibility(View.VISIBLE);
+            } else if (checkedId == R.id.rbButtons) {
+                mLayoutButtons.setVisibility(View.VISIBLE);
+            } else if (checkedId == R.id.rbAutoStart) {
+                mLayoutAutoStart.setVisibility(View.VISIBLE);
+            } else if (checkedId == R.id.rbADB) {
+                mLayoutADB.setVisibility(View.VISIBLE);
+            }
+        });
+    }
+
+    private void initUI() {
+        // --- Header / Debug ---
+        setupDebugSwitch();
+        setVersionInfo();
+
+        // --- Basic Tab ---
+        setupThemeSettings();
+        setupForceAutoDayNight();
+
+        // --- Buttons Tab ---
+        setupSteeringWheelControl();
+        setupWeChatButton();
+        setupMediaButtons(); // Debug only
+
+        // --- AutoStart Tab ---
         setupAutoStartApps();
 
-        // Buttons
-        LinearLayout layoutDebugButtons = findViewById(R.id.layoutDebugButtons);
-        findViewById(R.id.btnForceLight).setOnClickListener(v -> sendAutoNaviBroadcast(1));
-        findViewById(R.id.btnForceDark).setOnClickListener(v -> sendAutoNaviBroadcast(2));
+        // --- ADB Tab (Permissions) ---
+        setupPermissionStatuses();
+        setupAdbWireless();
+    }
 
+    private void setVersionInfo() {
+        TextView tvAppCredit = findViewById(R.id.tvAppCredit);
+        if (tvAppCredit != null) {
+            tvAppCredit.setText(getString(R.string.app_credit, BuildConfig.VERSION_NAME));
+        }
+    }
+
+    private void setupDebugSwitch() {
+        SwitchMaterial switchDebug = findViewById(R.id.switchDebug);
+        if (!BuildConfig.DEBUG) {
+            switchDebug.setVisibility(View.GONE);
+        }
+
+        // Layouts controlled by debug switch
+        View layoutDebugButtons = findViewById(R.id.layoutDebugButtons); // In Basic
+        View layoutMediaButtons = findViewById(R.id.layoutMediaButtons); // In Buttons
+
+        boolean isDebug = DebugLogger.isDebugEnabled(this);
+        switchDebug.setChecked(isDebug);
+        updateDebugViewsVisibility(isDebug, layoutDebugButtons, layoutMediaButtons);
+
+        switchDebug.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            DebugLogger.setDebugEnabled(this, isChecked);
+            updateDebugViewsVisibility(isChecked, layoutDebugButtons, layoutMediaButtons);
+            if (isChecked) {
+                DebugLogger.toast(this, getString(R.string.debug_mode_enabled));
+            } else {
+                Toast.makeText(this, R.string.debug_mode_disabled, Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void updateDebugViewsVisibility(boolean isDebug, View debugButtons, View mediaButtons) {
+        if (debugButtons != null) {
+            debugButtons.setVisibility(isDebug ? View.VISIBLE : View.GONE);
+        }
+        if (mediaButtons != null) {
+            mediaButtons.setVisibility(isDebug ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    // --- Basic Tab Logic ---
+
+    private void setupThemeSettings() {
         android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
-
-        // Auto Switch Toggle
         SwitchMaterial switchAutoTheme = findViewById(R.id.switchAutoTheme);
         switchAutoTheme.setChecked(prefs.getBoolean("auto_theme_sync", true));
         switchAutoTheme.setOnCheckedChangeListener((buttonView, isChecked) -> {
             prefs.edit().putBoolean("auto_theme_sync", isChecked).apply();
-            if (isChecked) {
-                DebugLogger.toast(this, getString(R.string.auto_theme_sync_enabled));
-            } else {
-                DebugLogger.toast(this, getString(R.string.auto_theme_sync_disabled));
-            }
+            DebugLogger.toast(this,
+                    getString(isChecked ? R.string.auto_theme_sync_enabled : R.string.auto_theme_sync_disabled));
         });
 
-        // Force Auto Day/Night Toggle
+        findViewById(R.id.btnForceLight).setOnClickListener(v -> sendAutoNaviBroadcast(1));
+        findViewById(R.id.btnForceDark).setOnClickListener(v -> sendAutoNaviBroadcast(2));
+    }
+
+    private void setupForceAutoDayNight() {
+        android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
         SwitchMaterial switchForceAutoDayNight = findViewById(R.id.switchForceAutoDayNight);
-        // View layoutAutoModeStatus = findViewById(R.id.layoutAutoModeStatus); //
-        // Removed unused variable
         TextView tvAutoModeStatus = findViewById(R.id.tvAutoModeStatus);
 
         boolean isForceAuto = prefs.getBoolean("force_auto_day_night", false);
         switchForceAutoDayNight.setChecked(isForceAuto);
-        // layoutAutoModeStatus.setVisibility(isForceAuto ? View.VISIBLE : View.GONE);
-        // // Always visible
 
-        // Set initial text to avoid showing placeholder
         if (tvAutoModeStatus != null) {
             tvAutoModeStatus.setText(getString(R.string.status_auto_mode, getString(R.string.mode_unknown)));
         }
 
         switchForceAutoDayNight.setOnCheckedChangeListener((buttonView, isChecked) -> {
             prefs.edit().putBoolean("force_auto_day_night", isChecked).apply();
-            // layoutAutoModeStatus.setVisibility(isChecked ? View.VISIBLE : View.GONE); //
-            // Always visible
 
-            // Notify service immediately about the change
             Intent intent = new Intent("cn.navitool.ACTION_FORCE_AUTO_MODE_CHANGED");
             intent.putExtra("enabled", isChecked);
             sendBroadcast(intent);
 
-            // Request immediate status update if enabling
             if (isChecked) {
                 Intent requestIntent = new Intent("cn.navitool.ACTION_REQUEST_DAY_NIGHT_STATUS");
                 sendBroadcast(requestIntent);
             }
         });
+    }
 
-        // Steering Wheel Toggle
+    // --- Buttons Tab Logic ---
+
+    private void setupSteeringWheelControl() {
+        android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
         SwitchMaterial switchSteeringWheel = findViewById(R.id.switchSteeringWheel);
         switchSteeringWheel.setChecked(prefs.getBoolean("steering_wheel_control", false));
         switchSteeringWheel.setOnCheckedChangeListener((buttonView, isChecked) -> {
             prefs.edit().putBoolean("steering_wheel_control", isChecked).apply();
-            if (isChecked) {
-                DebugLogger.toast(this, getString(R.string.steering_wheel_enabled));
-            } else {
-                DebugLogger.toast(this, getString(R.string.steering_wheel_disabled));
-            }
+            DebugLogger.toast(this,
+                    getString(isChecked ? R.string.steering_wheel_enabled : R.string.steering_wheel_disabled));
         });
+    }
 
-        // Media Buttons (Debug Only)
-        View layoutMediaButtons = findViewById(R.id.layoutMediaButtons);
-        findViewById(R.id.btnMediaPrev)
-                .setOnClickListener(v -> simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS));
-        findViewById(R.id.btnMediaPlayPause)
-                .setOnClickListener(v -> simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
-        findViewById(R.id.btnMediaNext)
-                .setOnClickListener(v -> simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT));
-
-        // WeChat Button Function Switch
+    private void setupWeChatButton() {
+        android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
         SwitchMaterial switchWechatButton = findViewById(R.id.switchWechatButton);
         View layoutWechatShortPress = findViewById(R.id.layoutWechatShortPress);
         View layoutWechatLongPress = findViewById(R.id.layoutWechatLongPress);
@@ -173,7 +267,7 @@ public class MainActivity extends AppCompatActivity {
         Spinner spinnerLongPressAction = findViewById(R.id.spinnerLongPressAction);
         Spinner spinnerLongPressApp = findViewById(R.id.spinnerLongPressApp);
 
-        // Action options
+        // Populate Spinners
         List<String> actionOptions = new ArrayList<>();
         actionOptions.add("- - - -");
         actionOptions.add("启动应用");
@@ -183,7 +277,7 @@ public class MainActivity extends AppCompatActivity {
         spinnerShortPressAction.setAdapter(actionAdapter);
         spinnerLongPressAction.setAdapter(actionAdapter);
 
-        // App options
+        // Apps
         List<AppLaunchManager.AppInfo> apps = AppLaunchManager.getInstalledApps(this);
         List<String> appNames = new ArrayList<>();
         appNames.add("- - - -");
@@ -195,7 +289,7 @@ public class MainActivity extends AppCompatActivity {
         spinnerShortPressApp.setAdapter(appAdapter);
         spinnerLongPressApp.setAdapter(appAdapter);
 
-        // Load saved values
+        // Load Values
         boolean isWechatEnabled = prefs.getBoolean("wechat_button_enabled", false);
         switchWechatButton.setChecked(isWechatEnabled);
 
@@ -204,76 +298,58 @@ public class MainActivity extends AppCompatActivity {
         spinnerShortPressAction.setSelection(shortPressActionIdx);
         spinnerLongPressAction.setSelection(longPressActionIdx);
 
-        // Load saved app selections
         String shortPressAppPkg = prefs.getString("wechat_short_press_app", "");
         String longPressAppPkg = prefs.getString("wechat_long_press_app", "");
         for (int i = 0; i < apps.size(); i++) {
-            if (apps.get(i).packageName.equals(shortPressAppPkg)) {
+            if (apps.get(i).packageName.equals(shortPressAppPkg))
                 spinnerShortPressApp.setSelection(i + 1);
-            }
-            if (apps.get(i).packageName.equals(longPressAppPkg)) {
+            if (apps.get(i).packageName.equals(longPressAppPkg))
                 spinnerLongPressApp.setSelection(i + 1);
-            }
         }
 
-        // Initial visibility
+        // Visibility
         layoutWechatShortPress.setVisibility(isWechatEnabled ? View.VISIBLE : View.GONE);
         layoutWechatLongPress.setVisibility(isWechatEnabled ? View.VISIBLE : View.GONE);
         spinnerShortPressApp.setVisibility(shortPressActionIdx == 1 ? View.VISIBLE : View.GONE);
         spinnerLongPressApp.setVisibility(longPressActionIdx == 1 ? View.VISIBLE : View.GONE);
 
+        // Listeners
         switchWechatButton.setOnCheckedChangeListener((buttonView, isChecked) -> {
             prefs.edit().putBoolean("wechat_button_enabled", isChecked).apply();
             layoutWechatShortPress.setVisibility(isChecked ? View.VISIBLE : View.GONE);
             layoutWechatLongPress.setVisibility(isChecked ? View.VISIBLE : View.GONE);
         });
 
-        spinnerShortPressAction.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+        setupSpinnerListener(spinnerShortPressAction, spinnerShortPressApp, "wechat_short_press_action", prefs);
+        setupSpinnerListener(spinnerLongPressAction, spinnerLongPressApp, "wechat_long_press_action", prefs);
+        setupAppSpinnerListener(spinnerShortPressApp, apps, "wechat_short_press_app", prefs);
+        setupAppSpinnerListener(spinnerLongPressApp, apps, "wechat_long_press_app", prefs);
+    }
+
+    private void setupSpinnerListener(Spinner actionSpinner, Spinner appSpinner, String prefKey,
+            android.content.SharedPreferences prefs) {
+        actionSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                prefs.edit().putInt("wechat_short_press_action", position).apply();
-                spinnerShortPressApp.setVisibility(position == 1 ? View.VISIBLE : View.GONE);
+                prefs.edit().putInt(prefKey, position).apply();
+                appSpinner.setVisibility(position == 1 ? View.VISIBLE : View.GONE);
             }
 
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
             }
         });
+    }
 
-        spinnerLongPressAction.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                prefs.edit().putInt("wechat_long_press_action", position).apply();
-                spinnerLongPressApp.setVisibility(position == 1 ? View.VISIBLE : View.GONE);
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-            }
-        });
-
-        spinnerShortPressApp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (position > 0 && position <= apps.size()) {
-                    prefs.edit().putString("wechat_short_press_app", apps.get(position - 1).packageName).apply();
-                } else {
-                    prefs.edit().putString("wechat_short_press_app", "").apply();
-                }
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> parent) {
-            }
-        });
-
-        spinnerLongPressApp.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+    private void setupAppSpinnerListener(Spinner appSpinner, List<AppLaunchManager.AppInfo> apps, String prefKey,
+            android.content.SharedPreferences prefs) {
+        appSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 if (position > 0 && position <= apps.size()) {
-                    prefs.edit().putString("wechat_long_press_app", apps.get(position - 1).packageName).apply();
+                    prefs.edit().putString(prefKey, apps.get(position - 1).packageName).apply();
                 } else {
-                    prefs.edit().putString("wechat_long_press_app", "").apply();
+                    prefs.edit().putString(prefKey, "").apply();
                 }
             }
 
@@ -281,317 +357,33 @@ public class MainActivity extends AppCompatActivity {
             public void onNothingSelected(AdapterView<?> parent) {
             }
         });
-
-        // Debug Switch
-        SwitchMaterial switchDebug = findViewById(R.id.switchDebug);
-        if (!BuildConfig.DEBUG) {
-            switchDebug.setVisibility(View.GONE);
-        }
-        boolean isDebug = DebugLogger.isDebugEnabled(this);
-        switchDebug.setChecked(isDebug);
-
-        // Initial visibility
-        layoutDebugButtons.setVisibility(isDebug ? View.VISIBLE : View.GONE);
-        layoutMediaButtons.setVisibility(isDebug ? View.VISIBLE : View.GONE);
-
-        // Update visibility in debug switch listener
-        switchDebug.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            DebugLogger.setDebugEnabled(this, isChecked);
-            layoutDebugButtons.setVisibility(isChecked ? View.VISIBLE : View.GONE);
-            layoutMediaButtons.setVisibility(isChecked ? View.VISIBLE : View.GONE);
-
-            if (isChecked) {
-                DebugLogger.toast(this, getString(R.string.debug_mode_enabled));
-            } else {
-                Toast.makeText(this, R.string.debug_mode_disabled, Toast.LENGTH_SHORT).show();
-            }
-        });
-
-        // Set Version Info
-        TextView tvAppCredit = findViewById(R.id.tvAppCredit);
-        if (tvAppCredit != null) {
-            tvAppCredit.setText(getString(R.string.app_credit, BuildConfig.VERSION_NAME));
-        }
     }
 
-    private final android.content.BroadcastReceiver mDayNightStatusReceiver = new android.content.BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if ("cn.navitool.ACTION_DAY_NIGHT_STATUS".equals(action)) {
-                int mode = intent.getIntExtra("mode", 0);
-                updateAutoModeStatus(mode);
-            }
-        }
-    };
-
-    private final android.content.BroadcastReceiver mOneOSStatusReceiver = new android.content.BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if ("cn.navitool.ACTION_ONEOS_STATUS".equals(action)) {
-                boolean isConnected = intent.getBooleanExtra("is_connected", false);
-                updateOneOSStatus(isConnected);
-            }
-        }
-    };
-
-    private void updateAutoModeStatus(int mode) {
-        TextView tvAutoModeStatus = findViewById(R.id.tvAutoModeStatus);
-        ImageView imgAutoModeIcon = findViewById(R.id.imgAutoModeIcon); // Need to add ID to layout first
-        if (tvAutoModeStatus == null)
-            return;
-
-        String modeStr;
-        int iconRes;
-
-        switch (mode) {
-            case 0x20150103: // DAYMODE_SETTING_AUTO
-                modeStr = getString(R.string.mode_auto);
-                iconRes = R.drawable.ic_daymode_auto;
-                break;
-            case 0x20150101: // DAYMODE_SETTING_DAY
-                modeStr = getString(R.string.mode_day);
-                iconRes = R.drawable.ic_daymode_light;
-                break;
-            case 0x20150102: // DAYMODE_SETTING_NIGHT
-                modeStr = getString(R.string.mode_night);
-                iconRes = R.drawable.ic_daymode_dark;
-                break;
-            case 0x20150104: // VALUE_DAYMODE_CUSTOM
-                modeStr = getString(R.string.mode_custom);
-                iconRes = R.drawable.ic_daymode_auto; // Use auto icon for now
-                break;
-            case 0x20150105: // VALUE_DAYMODE_SUNRISE_AND_SUNSET
-                modeStr = getString(R.string.mode_sunrise_sunset);
-                iconRes = R.drawable.ic_daymode_time;
-                break;
-            default:
-                modeStr = getString(R.string.mode_unknown);
-                iconRes = R.drawable.ic_close;
-                break;
-        }
-        tvAutoModeStatus.setText(getString(R.string.status_auto_mode, modeStr));
-        if (imgAutoModeIcon != null) {
-            imgAutoModeIcon.setImageResource(iconRes);
-        }
+    private void setupMediaButtons() {
+        findViewById(R.id.btnMediaPrev)
+                .setOnClickListener(v -> simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS));
+        findViewById(R.id.btnMediaPlayPause)
+                .setOnClickListener(v -> simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
+        findViewById(R.id.btnMediaNext)
+                .setOnClickListener(v -> simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT));
     }
 
-    private void updateOneOSStatus(boolean isConnected) {
-        ImageView imgStatus = findViewById(R.id.imgMediaKeyServiceIcon);
-        if (imgStatus == null)
-            return;
-
-        if (isConnected) {
-            imgStatus.setImageResource(R.drawable.ic_check);
-            imgStatus.setColorFilter(ContextCompat.getColor(this, android.R.color.holo_green_dark));
-        } else {
-            imgStatus.setImageResource(R.drawable.ic_close);
-            imgStatus.setColorFilter(ContextCompat.getColor(this, android.R.color.holo_red_dark));
-        }
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        unregisterReceiver(mDayNightStatusReceiver);
-        unregisterReceiver(mOneOSStatusReceiver);
-    }
-
-    private void simulateMediaKey(int keyCode) {
-        long eventTime = android.os.SystemClock.uptimeMillis();
-        android.view.KeyEvent keyDown = new android.view.KeyEvent(eventTime, eventTime,
-                android.view.KeyEvent.ACTION_DOWN, keyCode, 0);
-        dispatchMediaKey(keyDown);
-
-        android.view.KeyEvent keyUp = new android.view.KeyEvent(eventTime, eventTime, android.view.KeyEvent.ACTION_UP,
-                keyCode, 0);
-        dispatchMediaKey(keyUp);
-
-        String keyName = getString(R.string.key_unknown);
-        if (keyCode == android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
-            keyName = getString(R.string.key_next_track);
-        else if (keyCode == android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
-            keyName = getString(R.string.key_prev_track);
-        else if (keyCode == android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
-            keyName = getString(R.string.key_play_pause);
-
-        DebugLogger.toast(this, getString(R.string.simulated_media_key, keyName));
-    }
-
-    private void dispatchMediaKey(android.view.KeyEvent keyEvent) {
-        // Method 1: Dispatch via AudioManager
-        android.media.AudioManager audioManager = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        if (audioManager != null) {
-            audioManager.dispatchMediaKeyEvent(keyEvent);
-        }
-
-        // Method 2: Send as broadcast (backup)
-        Intent mediaIntent = new Intent(Intent.ACTION_MEDIA_BUTTON);
-        mediaIntent.putExtra(Intent.EXTRA_KEY_EVENT, keyEvent);
-        mediaIntent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
-        mediaIntent.addFlags(Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP);
-        sendBroadcast(mediaIntent);
-    }
-
-    private void setupStatusItem(int viewId, int nameResId, Runnable onClickAction) {
-        View view = findViewById(viewId);
-        TextView txtName = view.findViewById(R.id.txtPermissionName);
-        txtName.setText(nameResId);
-
-        // Set click listener on the whole view AND the fix button
-        view.setOnClickListener(v -> onClickAction.run());
-        Button btnFix = view.findViewById(R.id.btnFix);
-        btnFix.setOnClickListener(v -> onClickAction.run());
-    }
-
-    private void updateStatusItem(int viewId, boolean granted) {
-        View view = findViewById(viewId);
-        ImageView imgStatus = view.findViewById(R.id.imgStatus);
-        Button btnFix = view.findViewById(R.id.btnFix);
-
-        if (granted) {
-            imgStatus.setImageResource(R.drawable.ic_check);
-            imgStatus.setColorFilter(ContextCompat.getColor(this, android.R.color.holo_green_dark));
-            btnFix.setVisibility(View.GONE);
-        } else {
-            imgStatus.setImageResource(R.drawable.ic_close);
-            imgStatus.setColorFilter(ContextCompat.getColor(this, android.R.color.holo_red_dark));
-            btnFix.setVisibility(View.VISIBLE);
-        }
-    }
-
-    private void checkPermissions() {
-        updateStatusItem(R.id.statusAutoStart, true); // Can't easily check, assume true or user manual check
-        updateStatusItem(R.id.statusOverlay, Settings.canDrawOverlays(this));
-        updateStatusItem(R.id.statusStorage, hasStoragePermission());
-        updateStatusItem(R.id.statusAccessibility, isAccessibilityServiceEnabled());
-
-        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
-        boolean ignoringBattery = pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
-        updateStatusItem(R.id.statusBattery, ignoringBattery);
-    }
-
-    private boolean hasStoragePermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            return Environment.isExternalStorageManager();
-        } else {
-            return ContextCompat.checkSelfPermission(this,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
-        }
-    }
-
-    private boolean isAccessibilityServiceEnabled() {
-        ComponentName expectedComponentName = new ComponentName(this, KeepAliveAccessibilityService.class);
-        String enabledServicesSetting = Settings.Secure.getString(getContentResolver(),
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
-        if (enabledServicesSetting == null)
-            return false;
-
-        android.text.TextUtils.SimpleStringSplitter colonSplitter = new android.text.TextUtils.SimpleStringSplitter(
-                ':');
-        colonSplitter.setString(enabledServicesSetting);
-
-        while (colonSplitter.hasNext()) {
-            String componentNameString = colonSplitter.next();
-            ComponentName enabledComponent = ComponentName.unflattenFromString(componentNameString);
-            if (enabledComponent != null && enabledComponent.equals(expectedComponentName))
-                return true;
-        }
-        return false;
-    }
-
-    // Permission Request Methods
-
-    private void requestOverlayPermission() {
-        if (!Settings.canDrawOverlays(this)) {
-            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:" + getPackageName()));
-            mOverlayPermissionLauncher.launch(intent);
-        } else {
-            DebugLogger.toast(this, getString(R.string.status_granted));
-        }
-    }
-
-    private void requestStoragePermission() {
-        if (!hasStoragePermission()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                try {
-                    Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                    intent.addCategory("android.intent.category.DEFAULT");
-                    intent.setData(Uri.parse(String.format("package:%s", getApplicationContext().getPackageName())));
-                    mStoragePermissionLauncher.launch(intent);
-                } catch (Exception e) {
-                    Intent intent = new Intent();
-                    intent.setAction(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
-                    mStoragePermissionLauncher.launch(intent);
-                }
-            } else {
-                ActivityCompat.requestPermissions(this, new String[] { Manifest.permission.WRITE_EXTERNAL_STORAGE },
-                        PERMISSION_REQUEST_CODE);
-            }
-        } else {
-            DebugLogger.toast(this, getString(R.string.status_granted));
-        }
-    }
-
-    private void requestBatteryOptimization() {
-        Intent intent = new Intent();
-        String packageName = getPackageName();
-        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
-        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
-            intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-            intent.setData(Uri.parse("package:" + packageName));
-            startActivity(intent);
-        } else {
-            DebugLogger.toast(this, getString(R.string.status_granted));
-        }
-    }
-
-    private void requestAccessibilityPermission() {
-        if (!isAccessibilityServiceEnabled()) {
-            Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
-            startActivity(intent);
-            Toast.makeText(this, R.string.enable_accessibility_toast, Toast.LENGTH_LONG).show();
-        } else {
-            DebugLogger.toast(this, getString(R.string.status_granted));
-        }
-    }
-
-    private void requestAutoStart() {
-        Intent intent = new Intent(Settings.ACTION_SETTINGS);
-        try {
-            startActivity(intent);
-        } catch (Exception e) {
-            Toast.makeText(this, R.string.failed_open_auto_start, Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private void sendAutoNaviBroadcast(int mode) {
-        Intent intent = new Intent("AUTONAVI_STANDARD_BROADCAST_RECV");
-        intent.setComponent(new ComponentName("com.autonavi.amapauto",
-                "com.autonavi.amapauto.adapter.internal.AmapAutoBroadcastReceiver"));
-        intent.putExtra("KEY_TYPE", 10048);
-        intent.putExtra("EXTRA_DAY_NIGHT_MODE", mode);
-        sendBroadcast(intent);
-        DebugLogger.log(this, "MainActivity", "Sent AutoNavi Broadcast: Mode " + mode);
-        DebugLogger.toast(this, getString(R.string.sent_autonavi_broadcast, mode));
-    }
+    // --- AutoStart Tab Logic ---
 
     private void setupAutoStartApps() {
         SwitchMaterial switchAutoStart = findViewById(R.id.switchAutoStartApps);
         SwitchMaterial switchReturnToHome = findViewById(R.id.switchReturnToHome);
-        Button btnTestLaunch = findViewById(R.id.btnTestLaunch);
         ImageButton btnAddApp = findViewById(R.id.btnAddApp);
+        Button btnTestLaunch = findViewById(R.id.btnTestLaunch);
         LinearLayout llAutoStartAppsList = findViewById(R.id.llAutoStartAppsList);
 
         boolean isAutoStartEnabled = AppLaunchManager.isAutoStartEnabled(this);
+        boolean isReturnToHomeEnabled = AppLaunchManager.isReturnToHomeEnabled(this);
         List<AppLaunchManager.AppConfig> savedConfigs = AppLaunchManager.loadConfig(this);
 
         switchAutoStart.setChecked(isAutoStartEnabled);
-        switchReturnToHome.setChecked(AppLaunchManager.isReturnToHomeEnabled(this));
+        switchReturnToHome.setChecked(isReturnToHomeEnabled);
 
-        // Initialize List
         llAutoStartAppsList.removeAllViews();
         if (savedConfigs != null) {
             for (AppLaunchManager.AppConfig config : savedConfigs) {
@@ -599,36 +391,17 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        // Update visibility
-        if (isAutoStartEnabled) {
-            btnTestLaunch.setVisibility(View.VISIBLE);
-            btnAddApp.setVisibility(View.VISIBLE);
-            switchReturnToHome.setVisibility(View.VISIBLE);
-            llAutoStartAppsList.setVisibility(llAutoStartAppsList.getChildCount() > 0 ? View.VISIBLE : View.GONE);
-        } else {
-            btnTestLaunch.setVisibility(View.GONE);
-            btnAddApp.setVisibility(View.GONE);
-            switchReturnToHome.setVisibility(View.GONE);
-            llAutoStartAppsList.setVisibility(View.GONE);
-        }
+        updateAutoStartUI(isAutoStartEnabled, btnAddApp, llAutoStartAppsList, switchReturnToHome, btnTestLaunch);
 
         switchAutoStart.setOnCheckedChangeListener((buttonView, isChecked) -> {
             AppLaunchManager.setAutoStartEnabled(MainActivity.this, isChecked);
-            if (isChecked) {
-                btnTestLaunch.setVisibility(View.VISIBLE);
-                btnAddApp.setVisibility(View.VISIBLE);
-                switchReturnToHome.setVisibility(View.VISIBLE);
-                llAutoStartAppsList.setVisibility(llAutoStartAppsList.getChildCount() > 0 ? View.VISIBLE : View.GONE);
-            } else {
-                btnTestLaunch.setVisibility(View.GONE);
-                btnAddApp.setVisibility(View.GONE);
-                switchReturnToHome.setVisibility(View.GONE);
-                llAutoStartAppsList.setVisibility(View.GONE);
-            }
+            updateAutoStartUI(isChecked, btnAddApp, llAutoStartAppsList, switchReturnToHome, btnTestLaunch);
         });
 
         switchReturnToHome.setOnCheckedChangeListener((buttonView, isChecked) -> {
             AppLaunchManager.setReturnToHomeEnabled(MainActivity.this, isChecked);
+            DebugLogger.toast(this, isChecked ? getString(R.string.toast_return_home_enabled)
+                    : getString(R.string.toast_return_home_disabled));
         });
 
         btnAddApp.setOnClickListener(v -> {
@@ -637,19 +410,48 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnTestLaunch.setOnClickListener(v -> {
-            if (AppLaunchManager.loadConfig(MainActivity.this).isEmpty()) {
-                DebugLogger.toast(MainActivity.this, "请先选择需要自动启动的应用");
-            } else {
-                AppLaunchManager.executeLaunch(MainActivity.this);
+            DebugLogger.toast(this, getString(R.string.toast_test_start));
+            List<AppLaunchManager.AppConfig> configs = AppLaunchManager.loadConfig(this);
+            if (configs == null || configs.isEmpty()) {
+                DebugLogger.toast(this, getString(R.string.toast_no_auto_start_config));
+                return;
+            }
+            // Simple sequential launch for test
+            for (AppLaunchManager.AppConfig config : configs) {
+                if (!android.text.TextUtils.isEmpty(config.packageName)) {
+                    AppLaunchManager.launchApp(this, config.packageName);
+                }
+            }
+            if (switchReturnToHome.isChecked()) {
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                    Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+                    homeIntent.addCategory(Intent.CATEGORY_HOME);
+                    homeIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(homeIntent);
+                }, 5000); // 5s delay for home return test
             }
         });
+    }
+
+    private void updateAutoStartUI(boolean enabled, View btnAdd, View list, View switchReturn, View btnTest) {
+        int visibility = enabled ? View.VISIBLE : View.GONE;
+        btnAdd.setVisibility(visibility);
+        switchReturn.setVisibility(visibility);
+        btnTest.setVisibility(visibility); // Hide Test button too
+        // switchReturn is the switchReturnToHome
+
+        if (enabled && ((LinearLayout) list).getChildCount() > 0) {
+            list.setVisibility(View.VISIBLE);
+        } else {
+            list.setVisibility(View.GONE);
+        }
     }
 
     private void addAppConfigRow(LinearLayout container, AppLaunchManager.AppConfig initialConfig) {
         View itemView = getLayoutInflater().inflate(R.layout.item_app_auto_start, container, false);
 
         Spinner spinner = itemView.findViewById(R.id.spinnerAppSelection);
-        android.widget.EditText etDelay = itemView.findViewById(R.id.etLaunchDelay);
+        EditText etDelay = itemView.findViewById(R.id.etLaunchDelay);
         ImageButton btnDelete = itemView.findViewById(R.id.btnDeleteConfig);
 
         List<AppLaunchManager.AppInfo> apps = AppLaunchManager.getInstalledApps(this);
@@ -673,7 +475,7 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+        AdapterView.OnItemSelectedListener saveListener = new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 saveAllConfigs();
@@ -682,7 +484,8 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onNothingSelected(AdapterView<?> parent) {
             }
-        });
+        };
+        spinner.setOnItemSelectedListener(saveListener);
 
         etDelay.addTextChangedListener(new android.text.TextWatcher() {
             @Override
@@ -718,7 +521,7 @@ public class MainActivity extends AppCompatActivity {
         for (int i = 0; i < container.getChildCount(); i++) {
             View child = container.getChildAt(i);
             Spinner spinner = child.findViewById(R.id.spinnerAppSelection);
-            android.widget.EditText etDelay = child.findViewById(R.id.etLaunchDelay);
+            EditText etDelay = child.findViewById(R.id.etLaunchDelay);
 
             int selectedPos = spinner.getSelectedItemPosition();
             if (selectedPos > 0 && selectedPos <= apps.size()) {
@@ -735,4 +538,487 @@ public class MainActivity extends AppCompatActivity {
         AppLaunchManager.saveConfig(this, configs);
     }
 
+    // --- ADB Tab Logic ---
+
+    private void setupPermissionStatuses() {
+        View view = findViewById(R.id.statusAppPermissions);
+        if (view == null)
+            return;
+
+        TextView txtName = view.findViewById(R.id.txtPermissionName);
+        txtName.setText("应用必要权限");
+
+        view.setOnClickListener(v -> showPermissionDialog());
+        Button btnFix = view.findViewById(R.id.btnFix);
+        btnFix.setText("详情");
+        btnFix.setOnClickListener(v -> showPermissionDialog());
+    }
+
+    private void showPermissionDialog() {
+        if (permissionDialog != null && permissionDialog.isShowing()) {
+            return;
+        }
+
+        androidx.appcompat.app.AlertDialog.Builder builder = new androidx.appcompat.app.AlertDialog.Builder(this);
+        mPermissionDialogView = getLayoutInflater().inflate(R.layout.dialog_permissions, null);
+        builder.setView(mPermissionDialogView);
+        builder.setCancelable(true);
+
+        permissionDialog = builder.create();
+        permissionDialog.show();
+
+        // Initial Refresh
+        refreshPermissionDialog(mPermissionDialogView);
+
+        // Setup Clicks for Items inside Dialog
+        setupDialogItem(mPermissionDialogView, R.id.dialogStatusAccessibility, R.string.perm_accessibility,
+                this::requestAccessibilityPermission);
+        setupDialogItem(mPermissionDialogView, R.id.dialogStatusOverlay, R.string.perm_overlay,
+                this::requestOverlayPermission);
+        setupDialogItem(mPermissionDialogView, R.id.dialogStatusStorage, R.string.perm_storage,
+                this::requestStoragePermission);
+        setupDialogItem(mPermissionDialogView, R.id.dialogStatusBattery, R.string.perm_battery,
+                this::requestBatteryOptimization);
+        setupDialogItem(mPermissionDialogView, R.id.dialogStatusAutoStart, R.string.perm_auto_start,
+                this::requestAutoStart);
+        setupDialogItem(mPermissionDialogView, R.id.dialogStatusSecureSettings, R.string.perm_secure_settings,
+                this::showSecureSettingsGuide);
+    }
+
+    private void setupDialogItem(View dialogView, int viewId, int nameResId, Runnable onClickAction) {
+        View view = dialogView.findViewById(viewId);
+        TextView txtName = view.findViewById(R.id.txtPermissionName);
+        txtName.setText(nameResId);
+
+        view.setOnClickListener(v -> onClickAction.run());
+        Button btnFix = view.findViewById(R.id.btnFix);
+        btnFix.setText("修复");
+        btnFix.setOnClickListener(v -> onClickAction.run());
+    }
+
+    private void refreshPermissionDialog(View dialogView) {
+        if (dialogView == null)
+            return;
+
+        updateDialogStatusItem(dialogView, R.id.dialogStatusAccessibility, isAccessibilityServiceEnabled());
+        updateDialogStatusItem(dialogView, R.id.dialogStatusOverlay, Settings.canDrawOverlays(this));
+        updateDialogStatusItem(dialogView, R.id.dialogStatusStorage, hasStoragePermission());
+
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+        boolean ignoringBattery = pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
+        updateDialogStatusItem(dialogView, R.id.dialogStatusBattery, ignoringBattery);
+
+        updateDialogStatusItem(dialogView, R.id.dialogStatusAutoStart, true);
+        updateDialogStatusItem(dialogView, R.id.dialogStatusSecureSettings, hasSecureSettingsPermission());
+    }
+
+    private boolean hasSecureSettingsPermission() {
+        return androidx.core.content.ContextCompat.checkSelfPermission(this,
+                android.Manifest.permission.WRITE_SECURE_SETTINGS) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void updateDialogStatusItem(View dialogView, int viewId, boolean granted) {
+        View view = dialogView.findViewById(viewId);
+        ImageView imgStatus = view.findViewById(R.id.imgStatus);
+        Button btnFix = view.findViewById(R.id.btnFix);
+
+        if (granted) {
+            imgStatus.setImageResource(R.drawable.ic_check);
+            imgStatus.setColorFilter(android.graphics.Color.parseColor("#4CAF50"));
+            btnFix.setVisibility(View.GONE);
+        } else {
+            imgStatus.setImageResource(R.drawable.ic_close);
+            imgStatus.setColorFilter(android.graphics.Color.parseColor("#F44336"));
+            btnFix.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void checkPermissions() {
+        boolean isAutoStartGranted = true;
+        boolean isOverlayGranted = Settings.canDrawOverlays(this);
+        boolean isStorageGranted = hasStoragePermission();
+        boolean isAccessibilityGranted = isAccessibilityServiceEnabled();
+
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+        boolean isBatteryGranted = pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
+        boolean isSecureSettingsGranted = hasSecureSettingsPermission();
+
+        boolean allGranted = isOverlayGranted && isStorageGranted && isAccessibilityGranted && isBatteryGranted
+                && isSecureSettingsGranted;
+
+        View view = findViewById(R.id.statusAppPermissions);
+        if (view == null)
+            return;
+
+        ImageView imgStatus = view.findViewById(R.id.imgStatus);
+        Button btnFix = view.findViewById(R.id.btnFix);
+
+        if (allGranted) {
+            imgStatus.setImageResource(R.drawable.ic_check);
+            imgStatus.setColorFilter(android.graphics.Color.parseColor("#4CAF50"));
+            btnFix.setVisibility(View.GONE);
+        } else {
+            imgStatus.setImageResource(R.drawable.ic_close);
+            imgStatus.setColorFilter(android.graphics.Color.parseColor("#F44336"));
+        }
+
+        if (permissionDialog != null && permissionDialog.isShowing() && mPermissionDialogView != null) {
+            refreshPermissionDialog(mPermissionDialogView);
+        }
+    }
+
+    private void tryAdbGrant(String command, String successToast, Runnable fallbackAction) {
+        if (AdbShell.getInstance(this).isConnected()) {
+            AdbShell.getInstance(this).exec(command);
+            DebugLogger.toast(this, "正在尝试通过 ADB 授权...");
+            // Poll for status update
+            android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+            int[] delays = { 500, 1000, 1500, 2000, 3000, 5000 };
+            for (int delay : delays) {
+                handler.postDelayed(this::checkPermissions, delay);
+            }
+        } else {
+            fallbackAction.run();
+        }
+    }
+
+    private void showSecureSettingsGuide() {
+        tryAdbGrant("pm grant " + getPackageName() + " android.permission.WRITE_SECURE_SETTINGS",
+                "正在授权 Secure Settings...",
+                () -> DebugLogger.toast(this,
+                        String.format(getString(R.string.perm_secure_settings_guide), getPackageName())));
+    }
+
+    private boolean hasStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return Environment.isExternalStorageManager();
+        } else {
+            return ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+        }
+    }
+
+    private boolean isAccessibilityServiceEnabled() {
+        ComponentName expectedComponentName = new ComponentName(this, KeepAliveAccessibilityService.class);
+        String enabledServicesSetting = Settings.Secure.getString(getContentResolver(),
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        if (enabledServicesSetting == null)
+            return false;
+
+        android.text.TextUtils.SimpleStringSplitter colonSplitter = new android.text.TextUtils.SimpleStringSplitter(
+                ':');
+        colonSplitter.setString(enabledServicesSetting);
+
+        while (colonSplitter.hasNext()) {
+            String componentNameString = colonSplitter.next();
+            ComponentName enabledComponent = ComponentName.unflattenFromString(componentNameString);
+            if (enabledComponent != null && enabledComponent.equals(expectedComponentName))
+                return true;
+        }
+        return false;
+    }
+
+    // Permission Request Methods
+    private void requestOverlayPermission() {
+        if (!Settings.canDrawOverlays(this)) {
+            tryAdbGrant("appops set " + getPackageName() + " SYSTEM_ALERT_WINDOW allow",
+                    "正在通过 ADB 授权悬浮窗...",
+                    () -> {
+                        Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:" + getPackageName()));
+                        mOverlayPermissionLauncher.launch(intent);
+                    });
+        } else {
+            DebugLogger.toast(this, getString(R.string.status_granted));
+        }
+    }
+
+    private void requestStoragePermission() {
+        if (!hasStoragePermission()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                    intent.addCategory("android.intent.category.DEFAULT");
+                    intent.setData(Uri.parse(String.format("package:%s", getApplicationContext().getPackageName())));
+                    mStoragePermissionLauncher.launch(intent);
+                } catch (Exception e) {
+                    Intent intent = new Intent();
+                    intent.setAction(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                    mStoragePermissionLauncher.launch(intent);
+                }
+            } else {
+                ActivityCompat.requestPermissions(this, new String[] { Manifest.permission.WRITE_EXTERNAL_STORAGE },
+                        PERMISSION_REQUEST_CODE);
+            }
+        } else {
+            DebugLogger.toast(this, getString(R.string.status_granted));
+        }
+    }
+
+    private void requestBatteryOptimization() {
+        Intent intent = new Intent();
+        String packageName = getPackageName();
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+            tryAdbGrant("dumpsys deviceidle whitelist +" + packageName,
+                    "正在通过 ADB 添加电池白名单...",
+                    () -> {
+                        intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                        intent.setData(Uri.parse("package:" + packageName));
+                        startActivity(intent);
+                    });
+        } else {
+            DebugLogger.toast(this, getString(R.string.status_granted));
+        }
+    }
+
+    private void requestAccessibilityPermission() {
+        if (!isAccessibilityServiceEnabled()) {
+            if (ContextCompat.checkSelfPermission(this,
+                    Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED) {
+                // Auto-enable
+                try {
+                    String enabledServices = Settings.Secure.getString(getContentResolver(),
+                            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+                    String serviceName = new ComponentName(this, KeepAliveAccessibilityService.class).flattenToString();
+
+                    if (enabledServices == null || enabledServices.isEmpty()) {
+                        enabledServices = serviceName;
+                    } else {
+                        enabledServices += ":" + serviceName;
+                    }
+
+                    Settings.Secure.putString(getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                            enabledServices);
+                    Settings.Secure.putString(getContentResolver(), Settings.Secure.ACCESSIBILITY_ENABLED, "1");
+
+                    DebugLogger.toast(this, "已自动开启无障碍服务");
+                    checkPermissions(); // Refresh UI
+                } catch (Exception e) {
+                    DebugLogger.toast(this, "自动开启失败: " + e.getMessage());
+                    openAccessibilitySettings();
+                }
+            } else {
+                // Manual enable
+                Toast.makeText(this, "请授予应用 ADB WRITE_SECURE_SETTINGS 权限以自动开启，或手动开启。", Toast.LENGTH_LONG).show();
+                openAccessibilitySettings();
+            }
+        } else {
+            DebugLogger.toast(this, getString(R.string.status_granted));
+        }
+    }
+
+    private void openAccessibilitySettings() {
+        Intent intent = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+        startActivity(intent);
+        Toast.makeText(this, R.string.enable_accessibility_toast, Toast.LENGTH_LONG).show();
+    }
+
+    private void requestAutoStart() {
+        Intent intent = new Intent(Settings.ACTION_SETTINGS);
+        try {
+            startActivity(intent);
+        } catch (Exception e) {
+            Toast.makeText(this, R.string.failed_open_auto_start, Toast.LENGTH_LONG).show();
+        }
+    }
+
+    // Helper Methods
+    private void sendAutoNaviBroadcast(int mode) {
+        Intent intent = new Intent("AUTONAVI_STANDARD_BROADCAST_RECV");
+        intent.setComponent(new ComponentName("com.autonavi.amapauto",
+                "com.autonavi.amapauto.adapter.internal.AmapAutoBroadcastReceiver"));
+        intent.putExtra("KEY_TYPE", 10048);
+        intent.putExtra("EXTRA_DAY_NIGHT_MODE", mode);
+        sendBroadcast(intent);
+        DebugLogger.log(this, "MainActivity", "Sent AutoNavi Broadcast: Mode " + mode);
+        DebugLogger.toast(this, getString(R.string.sent_autonavi_broadcast, mode));
+    }
+
+    private void simulateMediaKey(int keyCode) {
+        long eventTime = android.os.SystemClock.uptimeMillis();
+        android.view.KeyEvent keyDown = new android.view.KeyEvent(eventTime, eventTime,
+                android.view.KeyEvent.ACTION_DOWN, keyCode, 0);
+        dispatchMediaKey(keyDown);
+        android.view.KeyEvent keyUp = new android.view.KeyEvent(eventTime, eventTime, android.view.KeyEvent.ACTION_UP,
+                keyCode, 0);
+        dispatchMediaKey(keyUp);
+
+        String keyName = getString(R.string.key_unknown);
+        if (keyCode == android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
+            keyName = getString(R.string.key_next_track);
+        else if (keyCode == android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            keyName = getString(R.string.key_prev_track);
+        else if (keyCode == android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            keyName = getString(R.string.key_play_pause);
+
+        DebugLogger.toast(this, getString(R.string.simulated_media_key, keyName));
+    }
+
+    private void dispatchMediaKey(android.view.KeyEvent keyEvent) {
+        android.media.AudioManager audioManager = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (audioManager != null) {
+            audioManager.dispatchMediaKeyEvent(keyEvent);
+        }
+
+        Intent mediaIntent = new Intent(Intent.ACTION_MEDIA_BUTTON);
+        mediaIntent.putExtra(Intent.EXTRA_KEY_EVENT, keyEvent);
+        mediaIntent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
+        mediaIntent.addFlags(Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP);
+        sendBroadcast(mediaIntent);
+    }
+
+    private final android.content.BroadcastReceiver mDayNightStatusReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if ("cn.navitool.ACTION_DAY_NIGHT_STATUS".equals(intent.getAction())) {
+                updateAutoModeStatus(intent.getIntExtra("mode", 0));
+            }
+        }
+    };
+
+    private final android.content.BroadcastReceiver mOneOSStatusReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if ("cn.navitool.ACTION_ONEOS_STATUS".equals(intent.getAction())) {
+                updateOneOSStatus(intent.getBooleanExtra("is_connected", false));
+            }
+        }
+    };
+
+    private void updateAutoModeStatus(int mode) {
+        TextView tvAutoModeStatus = findViewById(R.id.tvAutoModeStatus);
+        ImageView imgAutoModeIcon = findViewById(R.id.imgAutoModeIcon);
+        if (tvAutoModeStatus == null)
+            return;
+
+        String modeStr;
+        int iconRes;
+        switch (mode) {
+            case 0x20150103:
+                modeStr = getString(R.string.mode_auto);
+                iconRes = R.drawable.ic_daymode_auto;
+                break;
+            case 0x20150101:
+                modeStr = getString(R.string.mode_day);
+                iconRes = R.drawable.ic_daymode_light;
+                break;
+            case 0x20150102:
+                modeStr = getString(R.string.mode_night);
+                iconRes = R.drawable.ic_daymode_dark;
+                break;
+            case 0x20150104:
+                modeStr = getString(R.string.mode_custom);
+                iconRes = R.drawable.ic_daymode_auto;
+                break;
+            case 0x20150105:
+                modeStr = getString(R.string.mode_sunrise_sunset);
+                iconRes = R.drawable.ic_daymode_time;
+                break;
+            default:
+                modeStr = getString(R.string.mode_unknown);
+                iconRes = R.drawable.ic_close;
+                break;
+        }
+        tvAutoModeStatus.setText(getString(R.string.status_auto_mode, modeStr));
+        if (imgAutoModeIcon != null) {
+            imgAutoModeIcon.setImageResource(iconRes);
+            if (mode == 0x20150103) { // Auto
+                imgAutoModeIcon.setColorFilter(ContextCompat.getColor(this, android.R.color.holo_green_dark));
+            } else if (mode == 0) { // Unknown/Init
+                imgAutoModeIcon.setColorFilter(ContextCompat.getColor(this, android.R.color.holo_red_dark));
+            } else {
+                // Other valid modes (Day/Night etc) - maybe just use primary text color or keep
+                // original if they are colored icons
+                // For consistency, let's say "Auto" is the goal, so Auto=Green. Others=Standard
+                // color?
+                // Let's stick to: Valid Mode = Green? No, Day/Night are valid too.
+                // Let's just create a consistent style.
+                // If the user says "cross mark" (ic_close) is inconsistent, it means the
+                // FAILURE state.
+                // In AutoMode, default is ic_close.
+                if (iconRes == R.drawable.ic_close) {
+                    imgAutoModeIcon.setColorFilter(ContextCompat.getColor(this, android.R.color.holo_red_dark));
+                } else {
+                    imgAutoModeIcon.setColorFilter(ContextCompat.getColor(this, android.R.color.holo_green_dark));
+                }
+            }
+        }
+    }
+
+    private void updateOneOSStatus(boolean isConnected) {
+        ImageView imgStatus = findViewById(R.id.imgMediaKeyServiceIcon);
+        if (imgStatus == null)
+            return;
+        if (isConnected) {
+            imgStatus.setImageResource(R.drawable.ic_check);
+            imgStatus.setColorFilter(android.graphics.Color.parseColor("#4CAF50"));
+        } else {
+            imgStatus.setImageResource(R.drawable.ic_close);
+            imgStatus.setColorFilter(android.graphics.Color.parseColor("#F44336"));
+        }
+    }
+
+    // --- ADB Wireless Logic ---
+
+    private void setupAdbWireless() {
+        com.google.android.material.switchmaterial.SwitchMaterial switchAdbWireless = findViewById(
+                R.id.switchAdbWireless);
+        if (switchAdbWireless == null)
+            return;
+
+        SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
+        boolean isEnabled = prefs.getBoolean("adb_wireless_enabled", false);
+        switchAdbWireless.setChecked(isEnabled);
+
+        switchAdbWireless.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            prefs.edit().putBoolean("adb_wireless_enabled", isChecked).apply();
+
+            // Only trigger connection logic if user clicked (or we want to enforce state)
+            // But since we want auto-connect on resume if enabled, we should let it flow,
+            // but we must avoid race with AdbShell internal check.
+
+            if (isChecked) {
+                if (buttonView.isPressed()) {
+                    DebugLogger.toast(this, "正在尝试连接本地 ADB...");
+                }
+                AdbShell.getInstance(this).connect();
+            } else {
+                AdbShell.getInstance(this).close();
+            }
+        });
+
+        // Trigger initial connection if enabled
+        if (isEnabled) {
+            AdbShell.getInstance(this).connect();
+        }
+    }
+
+    private final android.content.BroadcastReceiver adbStatusReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if ("cn.navitool.ADB_STATUS_CHANGED".equals(intent.getAction())) {
+                String status = intent.getStringExtra("status");
+                android.widget.TextView tvAdbStatus = findViewById(R.id.tvAdbStatus);
+                if (tvAdbStatus != null && status != null) {
+                    tvAdbStatus.setText(status);
+                    if (status.contains("已连接")) {
+                        tvAdbStatus.setTextColor(androidx.core.content.ContextCompat.getColor(MainActivity.this,
+                                android.R.color.holo_green_dark));
+                        DebugLogger.toastAlways(MainActivity.this, status);
+                    } else if (status.contains("连接失败")) {
+                        tvAdbStatus.setTextColor(androidx.core.content.ContextCompat.getColor(MainActivity.this,
+                                android.R.color.holo_red_dark));
+                        DebugLogger.toastAlways(MainActivity.this, status);
+                    } else if (status.contains("正在连接")) {
+                        tvAdbStatus.setTextColor(androidx.core.content.ContextCompat.getColor(MainActivity.this,
+                                android.R.color.darker_gray));
+                    } else {
+                        tvAdbStatus.setTextColor(androidx.core.content.ContextCompat.getColor(MainActivity.this,
+                                android.R.color.holo_red_dark));
+                    }
+                }
+            }
+        }
+    };
 }

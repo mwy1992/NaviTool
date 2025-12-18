@@ -56,6 +56,14 @@ public class DebugLogger {
         }
     }
 
+    public static void toastAlways(Context context, String message) {
+        new android.os.Handler(android.os.Looper.getMainLooper())
+                .post(() -> Toast.makeText(context, message, Toast.LENGTH_SHORT).show());
+        if (isDebugEnabled(context)) {
+            writeToFile("TOAST: " + message);
+        }
+    }
+
     private static void writeToFile(String message) {
         File file = new File(Environment.getExternalStorageDirectory(), LOG_FILE_NAME);
         String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date());
