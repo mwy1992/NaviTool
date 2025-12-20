@@ -144,17 +144,14 @@ public class AppLaunchManager {
         Handler handler = new Handler(Looper.getMainLooper());
         boolean returnToHome = isReturnToHomeEnabled(context);
 
-        // Calculate max delay for returning to home
-        int maxDelaySeconds = 0;
-        for (AppConfig config : configs) {
-            if (config.packageName != null && !config.packageName.isEmpty()) {
-                maxDelaySeconds = Math.max(maxDelaySeconds, config.delaySeconds);
-            }
-        }
+        long accumulatedDelayMs = 0;
 
         for (AppConfig config : configs) {
             if (config.packageName == null || config.packageName.isEmpty())
                 continue;
+
+            // Cumulative delay: wait for previous launches + this app's specific delay
+            accumulatedDelayMs += config.delaySeconds * 1000L;
 
             handler.postDelayed(() -> {
                 try {
@@ -174,18 +171,19 @@ public class AppLaunchManager {
                 } catch (Exception e) {
                     Log.e(TAG, "Error launching " + config.packageName, e);
                 }
-            }, config.delaySeconds * 1000L);
+            }, accumulatedDelayMs);
         }
 
         // Return to home screen after all launches complete
-        if (returnToHome && maxDelaySeconds >= 0) {
+        if (returnToHome) {
+            // Add a fixed buffer (e.g., 5 seconds) after the last app launch
             handler.postDelayed(() -> {
                 Intent homeIntent = new Intent(Intent.ACTION_MAIN);
                 homeIntent.addCategory(Intent.CATEGORY_HOME);
                 homeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 context.startActivity(homeIntent);
                 Log.d(TAG, "Returned to home screen");
-            }, (maxDelaySeconds + 5) * 1000L);
+            }, accumulatedDelayMs + 5000L);
         }
     }
 

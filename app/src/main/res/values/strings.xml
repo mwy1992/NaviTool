@@ -11,10 +11,10 @@
     
     <!-- UI Elements -->
     <string name="debug_mode">调试模式</string>
-    <string name="adb_auto_connect">ADB 自动连接 (无线调试)</string>
-    <string name="auto_switch_theme">自动切换高德日夜模式</string>
-    <string name="force_light">切换高德亮色</string>
-    <string name="force_dark">切换高德暗色</string>
+    <string name="adb_auto_connect">ADB连接</string>
+    <string name="auto_switch_theme">自动切换高德主题</string>
+    <string name="force_light">切换高德白天</string>
+    <string name="force_dark">切换高德黑夜</string>
     <string name="language">语言</string>
     <string name="debug_mode_disabled">调试模式已禁用</string>
     <string name="enable_accessibility_toast">请在辅助功能设置中开启 \'NaviTool\'</string>
@@ -24,6 +24,9 @@
     <string name="media_prev">上一曲</string>
     <string name="media_play_pause">播放/暂停</string>
     <string name="media_next">下一曲</string>
+    <string name="tab_lights">灯光</string>
+    <string name="tab_brightness">亮度</string>
+    <string name="tab_sound">声音</string>
     <string name="launch_delay">启动延迟</string>
 
     <!-- Toast Messages -->
@@ -43,10 +46,11 @@
     <string name="force_auto_day_night">开启车机自动日夜模式</string>
     <string name="status_auto_day_night">自动日夜模式</string>
     <string name="force_auto_mode">强制车机自动日夜模式</string>
+    <string name="switch_24_25_light_sensor">24-25款开启车机主题光感切换</string>
     <string name="status_auto_mode">当前车机主题模式：%1$s</string>
     <string name="mode_auto">自动</string>
-    <string name="mode_day">浅色</string>
-    <string name="mode_night">深色</string>
+    <string name="mode_day">白天</string>
+    <string name="mode_night">夜晚</string>
     <string name="mode_unknown">未知</string>
     <string name="mode_custom">自定义</string>
     <string name="mode_sunrise_sunset">日出日落</string>
@@ -74,4 +78,38 @@
     <string name="toast_no_auto_start_config">未配置自启动应用</string>
     <string name="error_launch_failed">无法启动: %1$s</string>
     <string name="error_launch_exception">启动错误: %1$s</string>
+    <string name="tab_theme">主题</string>
+    <string name="tab_buttons">按键</string>
+    <string name="tab_autostart">自启动</string>
+    <string name="tab_adb">状态</string>
+    <string name="btn_test">TEST</string>
+    
+    <string name="title_app_permissions">应用必要权限</string>
+    <string name="btn_details">详情</string>
+    <string name="btn_fix">修复</string>
+    
+    <string name="spinner_default">- - - -</string>
+    <string name="action_launch_app">启动应用</string>
+    <string name="action_kill_app">结束任务</string>
+    <string name="msg_kill_app_success">已结束应用: %1$s</string>
+    <string name="msg_kill_app_failed">结束应用失败: %1$s</string>
+    
+    <string name="msg_adb_granting">正在尝试通过 ADB 授权...</string>
+    <string name="msg_granting_secure">正在授权 Secure Settings...</string>
+    <string name="msg_granting_overlay">正在通过 ADB 授权悬浮窗...</string>
+    <string name="msg_granting_battery">正在通过 ADB 添加电池白名单...</string>
+    <string name="brightness_override_title">锁定亮度</string>
+    <string name="brightness_override_desc">强制锁定亮度，防止系统自动调节</string>
+    <string name="label_brightness_day">日间亮度</string>
+    <string name="label_brightness_night">夜间亮度</string>
+    <string name="label_brightness_avm">360全景亮度</string>
+    <string name="format_brightness_value">%d / 15</string>
+    <string name="status_light_sensor">光线感应状态：%1$s</string>
+    <string name="label_light_sensor_value">光线感应状态</string>
+    <string name="label_psd_always_on">副驾屏常亮</string>
+    <string name="warn_psd_burn_in">背光常亮有烧屏风险，请谨慎使用</string>
+    <string name="theme_mode_auto">自动</string>
+    <string name="theme_mode_auto_sunset">自动 (日出日落)</string>
+    <string name="theme_mode_day">白天</string>
+    <string name="theme_mode_night">黑夜</string>
 </resources>

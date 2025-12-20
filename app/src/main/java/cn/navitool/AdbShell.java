@@ -64,7 +64,7 @@ public class AdbShell {
                 Log.i(TAG, "ADB Connected successfully");
                 sendBroadcast("已连接");
 
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 Log.e(TAG, "ADB Connection failed", e);
                 isConnected.set(false);
                 sendBroadcast("连接失败: " + e.getMessage());
@@ -109,16 +109,29 @@ public class AdbShell {
         }
 
         new Thread(() -> {
+            AdbStream stream = null;
             try {
-                AdbStream stream = connection.open("shell:" + command);
-                // We're not reading output for now, just executing
-                // To safely execute, we should read until closed
+                stream = connection.open("shell:" + command);
+                // Read output to keep stream alive until command finishes
                 while (!stream.isClosed()) {
-                    stream.read();
+                    try {
+                        stream.read();
+                    } catch (java.io.IOException e) {
+                        // "Stream closed" is often expected EOF from ADB
+                        break;
+                    }
                 }
                 Log.d(TAG, "Executed: " + command);
-            } catch (Exception e) {
-                Log.e(TAG, "Command execution failed: " + command, e);
+            } catch (Throwable e) {
+                // Log but don't crash
+                Log.e(TAG, "Command execution error (safe to ignore if successful): " + e.getMessage());
+            } finally {
+                if (stream != null) {
+                    try {
+                        stream.close();
+                    } catch (Exception e) {
+                        /* ignore */ }
+                }
             }
         }).start();
     }

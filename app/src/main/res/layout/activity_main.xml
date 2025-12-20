@@ -69,10 +69,10 @@
             android:paddingTop="16dp">
 
             <RadioButton
-                android:id="@+id/rbBasic"
+                android:id="@+id/rbADB"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="基础"
+                android:text="@string/tab_adb"
                 android:textSize="18sp"
                 android:gravity="center_vertical"
                 android:padding="16dp"
@@ -82,10 +82,58 @@
                 android:checked="true"/>
 
             <RadioButton
+                android:id="@+id/rbTheme"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/tab_theme"
+                android:textSize="18sp"
+                android:gravity="center_vertical"
+                android:padding="16dp"
+                android:button="@null"
+                android:background="?android:attr/selectableItemBackground"
+                android:textColor="@drawable/selector_nav_text"/>
+
+            <RadioButton
                 android:id="@+id/rbButtons"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="按键"
+                android:text="@string/tab_buttons"
+                android:textSize="18sp"
+                android:gravity="center_vertical"
+                android:padding="16dp"
+                android:button="@null"
+                android:background="?android:attr/selectableItemBackground"
+                android:textColor="@drawable/selector_nav_text"/>
+
+            <RadioButton
+                android:id="@+id/rbBrightness"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/tab_brightness"
+                android:textSize="18sp"
+                android:gravity="center_vertical"
+                android:padding="16dp"
+                android:button="@null"
+                android:background="?android:attr/selectableItemBackground"
+                android:textColor="@drawable/selector_nav_text"/>
+
+            <RadioButton
+                android:id="@+id/rbLights"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/tab_lights"
+                android:textSize="18sp"
+                android:gravity="center_vertical"
+                android:padding="16dp"
+                android:button="@null"
+                android:background="?android:attr/selectableItemBackground"
+                android:textColor="@drawable/selector_nav_text"/>
+
+            <RadioButton
+                android:id="@+id/rbSound"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/tab_sound"
                 android:textSize="18sp"
                 android:gravity="center_vertical"
                 android:padding="16dp"
@@ -97,7 +145,7 @@
                 android:id="@+id/rbAutoStart"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="自启动"
+                android:text="@string/tab_autostart"
                 android:textSize="18sp"
                 android:gravity="center_vertical"
                 android:padding="16dp"
@@ -105,17 +153,7 @@
                 android:background="?android:attr/selectableItemBackground"
                 android:textColor="@drawable/selector_nav_text"/>
 
-            <RadioButton
-                android:id="@+id/rbADB"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="ADB"
-                android:textSize="18sp"
-                android:gravity="center_vertical"
-                android:padding="16dp"
-                android:button="@null"
-                android:background="?android:attr/selectableItemBackground"
-                android:textColor="@drawable/selector_nav_text"/>
+
 
         </RadioGroup>
 
@@ -126,9 +164,9 @@
             android:layout_weight="9"
             android:padding="24dp">
 
-            <!-- 1. Basic Settings Layout -->
+            <!-- 1. Theme Settings Layout -->
             <ScrollView
-                android:id="@+id/layoutContentBasic"
+                android:id="@+id/layoutContentTheme"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent">
                 <LinearLayout
@@ -199,6 +237,28 @@
                             android:textColor="?android:attr/textColorPrimary"/>
                         <com.google.android.material.switchmaterial.SwitchMaterial
                             android:id="@+id/switchForceAutoDayNight"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"/>
+                    </LinearLayout>
+
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?android:attr/listDivider" android:layout_marginBottom="16dp"/>
+
+                    <!-- 24-25 Model Light Sensor Toggle -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="16dp">
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/switch_24_25_light_sensor"
+                            android:textSize="18sp"
+                            android:textColor="?android:attr/textColorPrimary"/>
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switch2425LightSensor"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"/>
                     </LinearLayout>
@@ -304,7 +364,7 @@
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
-                        android:layout_marginBottom="12dp"
+                        android:layout_marginBottom="24dp"
                         android:visibility="gone">
                         <TextView
                             android:layout_width="80dp"
@@ -332,7 +392,7 @@
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
-                        android:layout_marginBottom="16dp"
+                        android:layout_marginBottom="24dp"
                         android:visibility="gone">
                         <TextView
                             android:layout_width="80dp"
@@ -395,7 +455,7 @@
                             android:id="@+id/btnTestLaunch"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="TEST"
+                            android:text="@string/btn_test"
                             android:minWidth="0dp"
                             android:minHeight="0dp"
                             android:paddingHorizontal="12dp"
@@ -444,47 +504,42 @@
                     android:orientation="vertical"
                     android:paddingTop="8dp">
 
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="@string/adb_system_status"
-                        android:textSize="18sp"
-                        android:textStyle="bold"
-                        android:layout_marginBottom="16dp"
-                        android:textColor="?android:attr/textColorPrimary"/>
 
-                    <!-- Wireless ADB Switch -->
+
+                    <!-- Wireless ADB Status (Icon) -->
                     <LinearLayout
+                        android:id="@+id/layoutAdbStatus"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="horizontal"
                         android:gravity="center_vertical"
-                        android:paddingVertical="12dp">
-                        <LinearLayout
+                        android:paddingVertical="12dp"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true">
+                        <ImageView
+                            android:id="@+id/imgAdbStatus"
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:src="@drawable/ic_close"
+                            android:layout_marginEnd="16dp"
+                            android:contentDescription="ADB Status"/>
+
+                        <TextView
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:orientation="vertical">
-                            <TextView
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/adb_auto_connect"
-                                android:textSize="16sp"
-                                android:textColor="?android:attr/textColorPrimary"/>
-                            <TextView
-                                android:id="@+id/tvAdbStatus"
-                                android:layout_width="wrap_content"
-                                android:layout_height="wrap_content"
-                                android:text="@string/status_not_connected"
-                                android:textSize="12sp"
-                                android:textColor="?android:attr/textColorSecondary"
-                                android:layout_marginTop="2dp"/>
-                        </LinearLayout>
-                        <com.google.android.material.switchmaterial.SwitchMaterial
-                            android:id="@+id/switchAdbWireless"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"/>
+                            android:text="@string/adb_auto_connect"
+                            android:textSize="18sp"
+                            android:textColor="?android:attr/textColorPrimary"/>
                     </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:background="?android:attr/listDivider"/>
+
+                    <include layout="@layout/item_permission_status" android:id="@+id/statusAppPermissions"/>
 
                     <View
                         android:layout_width="match_parent"
@@ -543,13 +598,231 @@
                             android:textSize="16sp" />
                     </LinearLayout>
 
-                    <View
+
+
+                </LinearLayout>
+            </ScrollView>
+
+            <!-- 5. Lights Layout -->
+            <ScrollView
+                android:id="@+id/layoutContentLights"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingTop="8dp">
+
+                    <TextView
                         android:layout_width="match_parent"
-                        android:layout_height="1dp"
-                        android:background="?android:attr/listDivider"/>
+                        android:layout_height="wrap_content"
+                        android:text="@string/tab_lights"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="16dp"
+                        android:textColor="?android:attr/textColorPrimary"/>
+                    <!-- Placeholder content -->
+                </LinearLayout>
+            </ScrollView>
 
-                    <include layout="@layout/item_permission_status" android:id="@+id/statusAppPermissions"/>
+            <!-- 6. Brightness Layout -->
+            <ScrollView
+                android:id="@+id/layoutContentBrightness"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
 
+                    <!-- Header Row: Title + Switch -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/brightness_override_title"
+                            android:textSize="20sp"
+                            android:textStyle="bold"
+                            android:textColor="?android:attr/textColorPrimary"/>
+
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switchBrightnessOverride"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:minHeight="48dp"/>
+                    </LinearLayout>
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/brightness_override_desc"
+                        android:textSize="14sp"
+                        android:layout_marginBottom="24dp"
+                        android:textColor="?android:attr/textColorSecondary"/>
+
+                    <!-- Sliders Container (Hidden by default) -->
+                    <LinearLayout
+                        android:id="@+id/layoutBrightnessSliders"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:visibility="gone">
+
+                        <!-- Day Brightness -->
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/label_brightness_day"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:layout_marginBottom="4dp"/>
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <SeekBar
+                                android:id="@+id/seekBrightnessDay"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:max="15"
+                                android:min="1"
+                                android:paddingVertical="12dp"/>
+                            <TextView
+                                android:id="@+id/tvBrightnessDay"
+                                android:layout_width="48dp"
+                                android:layout_height="wrap_content"
+                                android:gravity="end"
+                                android:text="5/15"
+                                android:textColor="?android:attr/textColorSecondary"/>
+                        </LinearLayout>
+                        <View android:layout_width="match_parent" android:layout_height="16dp"/>
+
+                        <!-- Night Brightness -->
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/label_brightness_night"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:layout_marginBottom="4dp"/>
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <SeekBar
+                                android:id="@+id/seekBrightnessNight"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:max="15"
+                                android:min="1"
+                                android:paddingVertical="12dp"/>
+                            <TextView
+                                android:id="@+id/tvBrightnessNight"
+                                android:layout_width="48dp"
+                                android:layout_height="wrap_content"
+                                android:gravity="end"
+                                android:text="3/15"
+                                android:textColor="?android:attr/textColorSecondary"/>
+                        </LinearLayout>
+                        <View android:layout_width="match_parent" android:layout_height="16dp"/>
+
+                        <!-- AVM Brightness -->
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="@string/label_brightness_avm"
+                            android:textColor="?android:attr/textColorPrimary"
+                            android:layout_marginBottom="4dp"/>
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="horizontal"
+                            android:gravity="center_vertical">
+                            <SeekBar
+                                android:id="@+id/seekBrightnessAvm"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:max="15"
+                                android:min="1"
+                                android:paddingVertical="12dp"/>
+                            <TextView
+                                android:id="@+id/tvBrightnessAvm"
+                                android:layout_width="48dp"
+                                android:layout_height="wrap_content"
+                                android:gravity="end"
+                                android:text="15/15"
+                                android:textColor="?android:attr/textColorSecondary"/>
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?android:attr/listDivider" android:layout_marginVertical="16dp"/>
+
+                    <!-- PSD Screen Always On -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/label_psd_always_on"
+                                android:textSize="16sp"
+                                android:textColor="?android:attr/textColorPrimary"/>
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="@string/warn_psd_burn_in"
+                                android:textSize="12sp"
+                                android:textColor="#F44336"
+                                android:layout_marginTop="2dp"/>
+                        </LinearLayout>
+                       <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switchPsdAlwaysOn"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"/>
+                    </LinearLayout>
+                </LinearLayout>
+            </ScrollView>
+
+            <!-- 7. Sound Layout -->
+            <ScrollView
+                android:id="@+id/layoutContentSound"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone">
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingTop="8dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/tab_sound"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="16dp"
+                        android:textColor="?android:attr/textColorPrimary"/>
+                    <!-- Placeholder content -->
                 </LinearLayout>
             </ScrollView>
 

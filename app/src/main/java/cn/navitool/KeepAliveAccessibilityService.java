@@ -20,6 +20,8 @@ import com.ecarx.xui.adaptapi.car.Car;
 import com.ecarx.xui.adaptapi.car.ICar;
 import com.ecarx.xui.adaptapi.car.base.ICarFunction;
 import com.ecarx.xui.adaptapi.car.vehicle.IDayMode;
+import com.ecarx.xui.adaptapi.car.vehicle.IVehicle;
+import com.ecarx.xui.adaptapi.car.vehicle.IPAS;
 import com.ecarx.xui.adaptapi.car.sensor.ISensor;
 import com.ecarx.xui.adaptapi.car.sensor.ISensorEvent;
 
@@ -29,11 +31,57 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private static final String AUTONAVI_PKG = "com.autonavi.amapauto";
 
     private ICarFunction iCarFunction;
+
     private ISensor iSensor;
 
+    // Brightness Polling
+    private boolean mIsOverrideEnabled = false;
+    private int mTargetBrightnessDay = 5;
+    private int mTargetBrightnessNight = 3;
+    private int mTargetBrightnessAvm = 15;
+    private int mLastAvmValue = 0;
+    private int mLastDayNightSensorValue = -1;
+    private int mLastBrightnessDayValue = -1;
+    private int mLastBrightnessNightValue = -1;
+    private int mLastThemeMode = -1;
+    private float mLastLightSensorValue = -1f;
+
+    // Polling Handler
+    private final android.os.Handler mOverrideHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable mOverrideRunnable = new Runnable() {
+        @Override
+        public void run() {
+            checkAndEnforceBrightness();
+            // 150ms interval for aggressive enforcement
+            mOverrideHandler.postDelayed(this, 150);
+        }
+    };
+
+    // PSD Polling (10s interval)
+    private boolean mIsPsdAlwaysOnEnabled = false;
+    private final android.os.Handler mPsdHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable mPsdRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (mIsPsdAlwaysOnEnabled && iCarFunction != null) {
+                try {
+                    // Force PSD ON (1)
+                    iCarFunction.setFunctionValue(FUNC_PSD_SCREEN_SWITCH, ZONE_ALL, 1);
+                    Log.d(TAG, "Enforced PSD Screen ON");
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to enforce PSD Screen ON", e);
+                }
+            }
+            // 10s interval
+            mPsdHandler.postDelayed(this, 10000);
+        }
+    };
+
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (sharedPreferences, key) -> {
-        if ("force_auto_day_night".equals(key)) {
-            if (sharedPreferences.getBoolean(key, false)) {
+        if ("force_auto_day_night".equals(key) || "enable_24_25_light_sensor".equals(key)) {
+            boolean forceAuto = sharedPreferences.getBoolean("force_auto_day_night", false);
+            boolean sensor2425 = sharedPreferences.getBoolean("enable_24_25_light_sensor", false);
+            if (forceAuto || sensor2425) {
                 startMonitoring();
             } else {
                 stopMonitoring();
@@ -43,6 +91,41 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 AdbShell.getInstance(KeepAliveAccessibilityService.this).connect();
             } else {
                 AdbShell.getInstance(KeepAliveAccessibilityService.this).close();
+            }
+        } else if ("override_brightness_enabled".equals(key)) {
+            mIsOverrideEnabled = sharedPreferences.getBoolean(key, false);
+            if (mIsOverrideEnabled) {
+                mOverrideHandler.post(mOverrideRunnable);
+            } else {
+                mOverrideHandler.removeCallbacks(mOverrideRunnable);
+            }
+        } else if ("override_day_value".equals(key)) {
+            mTargetBrightnessDay = sharedPreferences.getInt(key, 5);
+        } else if ("override_night_value".equals(key)) {
+            mTargetBrightnessNight = sharedPreferences.getInt(key, 3);
+        } else if ("override_avm_value".equals(key)) {
+            mTargetBrightnessAvm = sharedPreferences.getInt(key, 15);
+        } else if ("psd_always_on_enabled".equals(key)) {
+            mIsPsdAlwaysOnEnabled = sharedPreferences.getBoolean(key, false);
+            if (mIsPsdAlwaysOnEnabled) {
+                mPsdHandler.removeCallbacks(mPsdRunnable);
+                mPsdHandler.post(mPsdRunnable); // Start immediately
+            } else {
+                mPsdHandler.removeCallbacks(mPsdRunnable);
+                // Optional: Turn off when disabled? User didn't specify, but safer to just stop
+                // enforcing.
+                // If user wants to turn it off, they might need manual control or it just
+                // reverts to system behavior.
+                // For now, let's just stop enforcing.
+                // Actually, if I toggle it OFF, I should probably send a 0?
+                // "开关开启后...常开". Implies switch OFF = Not always on (or OFF).
+                // Let's send 0 once to be responsive.
+                if (iCarFunction != null) {
+                    try {
+                        iCarFunction.setFunctionValue(FUNC_PSD_SCREEN_SWITCH, ZONE_ALL, 0);
+                    } catch (Exception e) {
+                    }
+                }
             }
         }
     };
@@ -61,14 +144,37 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
         prefs.registerOnSharedPreferenceChangeListener(prefsListener);
 
-        // Initial check for auto day/night mode
-        if (prefs.getBoolean("force_auto_day_night", false)) {
+        // Initial check for auto day/night mode or 24-25 sensor
+        boolean forceAuto = prefs.getBoolean("force_auto_day_night", false);
+        boolean sensor2425 = prefs.getBoolean("enable_24_25_light_sensor", false);
+
+        // Unconditionally initialize Car API (Sensor listeners)
+        checkDayNightStatus(false);
+
+        if (forceAuto || sensor2425) {
             startMonitoring();
         }
 
         // Initialize ADB Loopback if enabled
+        // Initialize ADB Loopback if enabled
         if (prefs.getBoolean("adb_wireless_enabled", false)) {
             AdbShell.getInstance(this).connect();
+        }
+
+        // Initialize Brightness Override
+        mIsOverrideEnabled = prefs.getBoolean("override_brightness_enabled", false);
+        mTargetBrightnessDay = prefs.getInt("override_day_value", 5);
+        mTargetBrightnessNight = prefs.getInt("override_night_value", 3);
+        mTargetBrightnessAvm = prefs.getInt("override_avm_value", 15);
+
+        if (mIsOverrideEnabled) {
+            mOverrideHandler.post(mOverrideRunnable);
+        }
+
+        // Initialize PSD
+        mIsPsdAlwaysOnEnabled = prefs.getBoolean("psd_always_on_enabled", false);
+        if (mIsPsdAlwaysOnEnabled) {
+            mPsdHandler.post(mPsdRunnable);
         }
 
         // Bind OneOS Service
@@ -83,7 +189,16 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_CONFIGURATION_CHANGED);
         filter.addAction("cn.navitool.ACTION_REQUEST_ONEOS_STATUS");
-        ContextCompat.registerReceiver(this, configChangeReceiver, filter, ContextCompat.RECEIVER_EXPORTED);
+        try {
+            ContextCompat.registerReceiver(this, configChangeReceiver, filter, ContextCompat.RECEIVER_EXPORTED);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to register configChangeReceiver with EXPORTED flag. Retrying without flag...", e);
+            try {
+                registerReceiver(configChangeReceiver, filter);
+            } catch (Exception ex) {
+                Log.e(TAG, "Failed to register configChangeReceiver fallback", ex);
+            }
+        }
 
     }
 
@@ -92,6 +207,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         super.onDestroy();
         Log.i(TAG, "Service destroying, cleaning up resources...");
         stopMonitoring();
+        mOverrideHandler.removeCallbacks(mOverrideRunnable);
+        mPsdHandler.removeCallbacks(mPsdRunnable);
 
         SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
         prefs.unregisterOnSharedPreferenceChangeListener(prefsListener);
@@ -131,16 +248,31 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
     // Day/Night Mode Constants
     private static final int FUNC_DAYMODE_SETTING = 0x20150100;
+    // Removed local SENSOR_TYPE_DAY_NIGHT, using ISensor.SENSOR_TYPE_DAY_NIGHT
+    private static final int FUNC_PSD_SCREEN_SWITCH = 539495936; // SETTING_FUNC_PSD_SCREEN_SWITCH
+
+    // Restored Constants
+    private static final int FUNC_AVM_STATUS = IPAS.PAS_FUNC_PAC_ACTIVATION;
+    private static final int FUNC_BRIGHTNESS_DAY = IVehicle.SETTING_FUNC_BRIGHTNESS_DAY;
+    private static final int FUNC_BRIGHTNESS_NIGHT = IVehicle.SETTING_FUNC_BRIGHTNESS_NIGHT;
+    private static final int FUNC_BRIGHTNESS_DIM = 687998208; // SETTING_FUNC_BRIGHTNESS_DIM
+    private static final int FUNC_BRIGHTNESS_BACKLIGHT = 687997184; // Unified Vehicle Brightness
+
     private static final int ZONE_ALL = 0x80000000;
+    private static final int ZONE_PSD = 4; // Passenger Screen Zone ID
     private static final int VALUE_DAYMODE_DAY = 0x20150101;
     private static final int VALUE_DAYMODE_NIGHT = 0x20150102;
     private static final int VALUE_DAYMODE_AUTO = 0x20150103;
     private static final int VALUE_DAYMODE_CUSTOM = 0x20150104;
     private static final int VALUE_DAYMODE_SUNRISE_AND_SUNSET = 0x20150105;
 
+    // 24-25 Model Light Sensor (Found in ISensor.java)
+    // SENSOR_TYPE_LIGHT = 2100992 (0x200F00)
+    private static final int SENSOR_TYPE_LIGHT = 0x200F00;
+
     private final android.os.Handler mHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private boolean mIsMonitoring = false;
-    private static final long MONITOR_INTERVAL_MS = 3000;
+    private static final long MONITOR_INTERVAL_MS = 1000; // Updated to 1s (User Request)
 
     private final Runnable mMonitorRunnable = new Runnable() {
         @Override
@@ -148,7 +280,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             if (!mIsMonitoring)
                 return;
             checkAndForceAutoDayNight();
-            mHandler.postDelayed(this, MONITOR_INTERVAL_MS);
+            mHandler.postDelayed(this, 1000); // 1s Interval
         }
     };
 
@@ -167,7 +299,67 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     }
 
     private void checkAndForceAutoDayNight() {
+        checkAndEnforceBrightness();
+        pollAndBroadcastBrightness();
         checkDayNightStatus(true);
+    }
+
+    private int mLastSetBrightness = -1;
+
+    private void pollAndBroadcastBrightness() {
+        if (iCarFunction == null)
+            return;
+        try {
+            boolean changed = false;
+
+            float brightDay = iCarFunction.getCustomizeFunctionValue(FUNC_BRIGHTNESS_DAY, ZONE_ALL);
+            if (brightDay != -1f && (int) brightDay != mLastBrightnessDayValue) {
+                mLastBrightnessDayValue = (int) brightDay;
+                changed = true;
+            }
+
+            // Poll Night Brightness
+            float brightNight = iCarFunction.getCustomizeFunctionValue(FUNC_BRIGHTNESS_NIGHT, ZONE_ALL);
+            if (brightNight != -1f && (int) brightNight != mLastBrightnessNightValue) {
+                mLastBrightnessNightValue = (int) brightNight;
+                changed = true;
+            }
+
+            // Poll Day/Night Sensor (Fix for Unknown Status)
+            if (iSensor != null) {
+                int dayNight = iSensor.getSensorEvent(ISensor.SENSOR_TYPE_DAY_NIGHT);
+                if (dayNight != -1 && dayNight != mLastDayNightSensorValue) {
+                    mLastDayNightSensorValue = dayNight;
+                    changed = true;
+                }
+            }
+
+            if (changed) {
+                Log.d(TAG, "Polled Brightness Changed - Day: " + mLastBrightnessDayValue + ", Night: "
+                        + mLastBrightnessNightValue);
+                broadcastSensorValues(mLastDayNightSensorValue,
+                        mLastAvmValue, mLastBrightnessDayValue, mLastBrightnessNightValue);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error polling brightness", e);
+        }
+    }
+
+    private void broadcastSensorValues(int dayNightValue, int avmValue,
+            int brightnessDay, int brightnessNight) {
+        mLastDayNightSensorValue = dayNightValue;
+        mLastAvmValue = avmValue;
+        mLastBrightnessDayValue = brightnessDay;
+        mLastBrightnessNightValue = brightnessNight;
+
+        Intent intent = new Intent("cn.navitool.ACTION_DAY_NIGHT_STATUS");
+        // We send just sensor values.
+        intent.putExtra("mode", mLastThemeMode); // Include Theme Mode
+        intent.putExtra("sensor_day_night", dayNightValue);
+        intent.putExtra("prop_avm", avmValue);
+        intent.putExtra("prop_brightness_day", brightnessDay);
+        intent.putExtra("prop_brightness_night", brightnessNight);
+        sendBroadcast(intent);
     }
 
     private void checkDayNightStatus(boolean enforceAuto) {
@@ -177,9 +369,61 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 try {
                     int currentMode = iCarFunction.getFunctionValue(FUNC_DAYMODE_SETTING, ZONE_ALL);
 
+                    // Explicitly poll values to ensure initial state is captured
+                    try {
+                        // Polling Speed (0x100100) - Assuming float or int? ISensor usually callbacks.
+                        // But we can try getFunctionValue? Or wait for listener.
+                        // SENSOR_TYPE_SPEED is likely ISensor.
+                        // But for properties (Reverse, AVM, Brightness), we SHOULD poll.
+
+                        int avm = iCarFunction.getFunctionValue(FUNC_AVM_STATUS, ZONE_ALL);
+                        if (avm != -1)
+                            mLastAvmValue = avm;
+
+                        // Poll Day Brightness
+                        float brightDay = iCarFunction.getCustomizeFunctionValue(FUNC_BRIGHTNESS_DAY, ZONE_ALL);
+                        if (brightDay != -1f) {
+                            mLastBrightnessDayValue = (int) brightDay;
+                        }
+
+                        // Poll Night Brightness
+                        float brightNight = iCarFunction.getCustomizeFunctionValue(FUNC_BRIGHTNESS_NIGHT, ZONE_ALL);
+                        if (brightNight != -1f) {
+                            mLastBrightnessNightValue = (int) brightNight;
+                        }
+
+                        // Poll Day/Night Sensor (User request: polling every 1s)
+                        if (iSensor != null) {
+                            int dayNight = iSensor.getSensorEvent(ISensor.SENSOR_TYPE_DAY_NIGHT);
+                            if (dayNight != -1) {
+                                mLastDayNightSensorValue = dayNight;
+                            }
+                        }
+
+                        // Poll 24-25 Light Sensor (SENSOR_TYPE_LIGHT)
+                        if (iSensor != null) {
+                            float lightVal = iSensor.getSensorEvent(SENSOR_TYPE_LIGHT);
+                            if (lightVal != -1) {
+                                mLastLightSensorValue = lightVal;
+                            }
+                        }
+
+                    } catch (Exception e) {
+                        Log.w(TAG, "Failed to poll initial function values: " + e.getMessage());
+                    }
+
+                    if (currentMode != -1 && currentMode != 0) {
+                        mLastThemeMode = currentMode;
+                    }
+
                     // Broadcast status to UI
                     Intent intent = new Intent("cn.navitool.ACTION_DAY_NIGHT_STATUS");
-                    intent.putExtra("mode", currentMode);
+                    intent.putExtra("mode", mLastThemeMode);
+                    // Include last known sensor values to keep UI in sync
+                    intent.putExtra("sensor_day_night", mLastDayNightSensorValue);
+                    intent.putExtra("prop_avm", mLastAvmValue);
+                    intent.putExtra("prop_brightness_day", mLastBrightnessDayValue);
+                    intent.putExtra("prop_brightness_night", mLastBrightnessNightValue);
                     sendBroadcast(intent);
 
                     if (enforceAuto) {
@@ -201,11 +445,15 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                             }
                         }
                     }
+
+                    // Check 24-25 Model Light Sensor Logic (in background)
+                    check2425LightSensorLogic();
                 } catch (Exception e) {
                     Log.e(TAG, "Error checking/setting Day/Night mode", e);
                 }
             }
         }).start();
+
     }
 
     private void handleShortClick(int keyCode) {
@@ -269,11 +517,15 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }
 
         int action = prefs.getInt("wechat_short_press_action", 0);
+        String packageName = prefs.getString("wechat_short_press_app", "");
+
+        if (packageName.isEmpty())
+            return;
+
         if (action == 1) { // 启动应用
-            String packageName = prefs.getString("wechat_short_press_app", "");
-            if (!packageName.isEmpty()) {
-                launchApp(packageName);
-            }
+            launchApp(packageName);
+        } else if (action == 2) { // 结束任务
+            killApp(packageName);
         }
     }
 
@@ -286,11 +538,38 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }
 
         int action = prefs.getInt("wechat_long_press_action", 0);
+        String packageName = prefs.getString("wechat_long_press_app", "");
+
+        if (packageName.isEmpty())
+            return;
+
         if (action == 1) { // 启动应用
-            String packageName = prefs.getString("wechat_long_press_app", "");
-            if (!packageName.isEmpty()) {
-                launchApp(packageName);
+            launchApp(packageName);
+        } else if (action == 2) { // 结束任务
+            killApp(packageName);
+        }
+    }
+
+    private void killApp(String packageName) {
+        if (packageName == null || packageName.isEmpty())
+            return;
+
+        // Method 1: ADB Force Stop (Best)
+        if (AdbShell.getInstance(this).isConnected()) {
+            AdbShell.getInstance(this).exec("am force-stop " + packageName);
+            DebugLogger.toast(this, String.format(getString(R.string.msg_kill_app_success), packageName));
+            return;
+        }
+
+        // Method 2: API Kill Background Processes (Weak)
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            if (am != null) {
+                am.killBackgroundProcesses(packageName);
+                DebugLogger.toast(this, String.format(getString(R.string.msg_kill_app_success), packageName) + " (后台)");
             }
+        } catch (Exception e) {
+            DebugLogger.toast(this, String.format(getString(R.string.msg_kill_app_failed), e.getMessage()));
         }
     }
 
@@ -309,6 +588,119 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         } catch (Exception e) {
             Log.e(TAG, "Error launching app " + packageName, e);
         }
+    }
+
+    private void check2425LightSensorLogic() {
+        SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
+        boolean enabled = prefs.getBoolean("enable_24_25_light_sensor", false);
+
+        // Require enabled switch, valid car function, and valid Day/Night sensor data
+        if (!enabled || iCarFunction == null || mLastDayNightSensorValue == -1) {
+            return;
+        }
+
+        try {
+            int currentMode = iCarFunction.getFunctionValue(FUNC_DAYMODE_SETTING, ZONE_ALL);
+
+            // Logic: Sync Theme Mode with SENSOR_TYPE_DAY_NIGHT state
+            if (mLastDayNightSensorValue == ISensorEvent.DAY_NIGHT_MODE_NIGHT) {
+                // Sensor says Night -> Set Night Mode
+                if (currentMode != VALUE_DAYMODE_NIGHT) {
+                    Log.i(TAG, "24-25 Logic: Sensor is NIGHT. Switching Theme to NIGHT.");
+                    iCarFunction.setFunctionValue(FUNC_DAYMODE_SETTING, ZONE_ALL, VALUE_DAYMODE_NIGHT);
+                }
+            } else if (mLastDayNightSensorValue == ISensorEvent.DAY_NIGHT_MODE_DAY) {
+                // Sensor says Day -> Set Day Mode
+                if (currentMode != VALUE_DAYMODE_DAY) {
+                    Log.i(TAG, "24-25 Logic: Sensor is DAY. Switching Theme to DAY.");
+                    iCarFunction.setFunctionValue(FUNC_DAYMODE_SETTING, ZONE_ALL, VALUE_DAYMODE_DAY);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error in 24-25 Light Sensor Logic", e);
+        }
+    }
+
+    private void checkAndEnforceBrightness() {
+        if (!mIsOverrideEnabled || iCarFunction == null)
+            return;
+
+        int targetValue;
+        int funcId;
+        int zone = ZONE_ALL; // Default zone
+
+        // 1. Check AVM Status (Priority)
+        // 0 = Inactive, 1 = Active (approx)
+        boolean isAvmActive = (mLastAvmValue == 1);
+
+        if (isAvmActive) {
+            targetValue = mTargetBrightnessAvm;
+            // AVM Mode: Check if we are in Day or Night to set the correct underlying
+            // register
+            if (mLastDayNightSensorValue == -1) {
+                // Safety fallback
+                funcId = FUNC_BRIGHTNESS_DAY;
+            } else {
+                boolean isDay = (mLastDayNightSensorValue == ISensorEvent.DAY_NIGHT_MODE_DAY);
+                funcId = isDay ? FUNC_BRIGHTNESS_DAY : FUNC_BRIGHTNESS_NIGHT;
+            }
+        } else {
+            // 2. Normal Mode
+            // Strictly require valid sensor data
+            if (mLastDayNightSensorValue == -1) {
+                // Sensor data not ready, do not enforce anything yet to avoid wrong brightness
+                return;
+            }
+
+            // Check against official boolean/int constant
+            // Assuming ISensorEvent.DAY_NIGHT_MODE_DAY is integer.
+            boolean isDay = (mLastDayNightSensorValue == ISensorEvent.DAY_NIGHT_MODE_DAY);
+            if (isDay) {
+                targetValue = mTargetBrightnessDay;
+                funcId = FUNC_BRIGHTNESS_DAY;
+            } else {
+                targetValue = mTargetBrightnessNight;
+                funcId = FUNC_BRIGHTNESS_NIGHT;
+            }
+        }
+
+        // 3. Compare with current known value
+        // We use our cached values which update via sensor polling
+        int currentKnownValue = (funcId == FUNC_BRIGHTNESS_DAY) ? mLastBrightnessDayValue : mLastBrightnessNightValue;
+
+        if (currentKnownValue != targetValue) {
+            // Only set if we haven't already set this value successfully
+            if (mLastSetBrightness != targetValue) {
+                Log.i(TAG, "Enforcing Unified Brightness. Target: " + targetValue + " Current: " + currentKnownValue);
+                try {
+                    // 1. Unified Backlight Control (Instrument Cluster)
+                    iCarFunction.setCustomizeFunctionValue(FUNC_BRIGHTNESS_BACKLIGHT, ZONE_ALL, (float) targetValue);
+
+                    // 2. CSD Control (Central Screen) - Restored
+                    iCarFunction.setCustomizeFunctionValue(funcId, zone, (float) targetValue);
+
+                    // 3. PSD Sync (Passenger Screen) - Restored
+                    try {
+                        iCarFunction.setCustomizeFunctionValue(funcId, ZONE_PSD, (float) targetValue);
+                    } catch (Exception e) {
+                        // ignore
+                    }
+
+                    // 4. Update Local Cache
+                    mLastSetBrightness = targetValue;
+                    if (funcId == FUNC_BRIGHTNESS_DAY)
+                        mLastBrightnessDayValue = targetValue;
+                    else
+                        mLastBrightnessNightValue = targetValue;
+
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to set unified brightness", e);
+                }
+            }
+        }
+
+        // Sync Dashboard (DIM) Brightness - Removed per user request
+
     }
 
     // --- Car AdaptAPI Implementation ---
@@ -336,23 +728,32 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     Log.i(TAG, "Car AdaptAPI initialized successfully");
 
                     if (iSensor != null) {
-                        registerIgnitionListener();
+                        registerSensorListeners();
+                    }
+                    if (iCarFunction != null) {
+                        registerFunctionListeners();
                     }
                 }
             }
         } catch (Throwable e) {
             Log.e(TAG, "Failed to initialize Car AdaptAPI: " + e.getMessage());
-            DebugLogger.log(this, TAG, "Car AdaptAPI Init Error: " + e.getMessage());
         }
     }
 
-    private void registerIgnitionListener() {
+    private void registerSensorListeners() {
         try {
             if (iSensor != null) {
-                iSensor.registerListener(new ISensor.ISensorListener() {
+                ISensor.ISensorListener listener = new ISensor.ISensorListener() {
                     @Override
                     public void onSensorValueChanged(int sensorType, float value) {
-                        if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
+                        if (sensorType == SENSOR_TYPE_LIGHT) {
+                            if (mLastLightSensorValue != value) {
+                                DebugLogger.log(KeepAliveAccessibilityService.this, "LightSensor",
+                                        "Value: " + value);
+                                mLastLightSensorValue = value;
+                                check2425LightSensorLogic();
+                            }
+                        } else if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
                             int val = (int) value;
                             Log.d(TAG, "Ignition State Changed (float): " + val);
                             if (val == ISensorEvent.IGNITION_STATE_DRIVING) {
@@ -360,6 +761,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                 DebugLogger.toast(KeepAliveAccessibilityService.this, "检测到行车状态");
                                 AppLaunchManager.executeLaunch(KeepAliveAccessibilityService.this);
                             }
+
                         }
                     }
 
@@ -372,18 +774,85 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                 DebugLogger.toast(KeepAliveAccessibilityService.this, "检测到行车状态");
                                 AppLaunchManager.executeLaunch(KeepAliveAccessibilityService.this);
                             }
+                        } else if (sensorType == ISensor.SENSOR_TYPE_DAY_NIGHT) {
+                            // Passive listener removed in favor of polling to ensure data consistency
+                            // Log.d(TAG, "Day/Night Sensor Changed (int): " + value);
+                            // mLastDayNightSensorValue = value;
+                            // check2425LightSensorLogic();
                         }
                     }
 
                     @Override
                     public void onSensorSupportChanged(int sensorType, com.ecarx.xui.adaptapi.FunctionStatus status) {
                     }
-                }, ISensor.SENSOR_TYPE_IGNITION_STATE);
+                };
 
-                Log.i(TAG, "Ignition listener registered");
+                // Register for Ignition
+                iSensor.registerListener(listener, ISensor.SENSOR_TYPE_IGNITION_STATE);
+
+                // Register for Day/Night Sensor (Restored per user request)
+                iSensor.registerListener(listener, ISensor.SENSOR_TYPE_DAY_NIGHT);
+
+                Log.i(TAG, "Sensor listeners registered (Ignition, DayNight 0x100900)");
             }
         } catch (Exception e) {
-            Log.e(TAG, "Failed to register ignition listener", e);
+            Log.e(TAG, "Failed to register sensor listeners", e);
+        }
+    }
+
+    private void registerFunctionListeners() {
+        try {
+            if (iCarFunction != null) {
+                ICarFunction.IFunctionValueWatcher watcher = new ICarFunction.IFunctionValueWatcher() {
+                    @Override
+                    public void onFunctionValueChanged(int functionId, int zone, int value) {
+                        if (functionId == FUNC_AVM_STATUS) {
+                            Log.d(TAG, "AVM Status Changed: " + value);
+                            broadcastSensorValues(mLastDayNightSensorValue,
+                                    value, mLastBrightnessDayValue, mLastBrightnessNightValue);
+                        } else if (functionId == FUNC_BRIGHTNESS_DAY || functionId == FUNC_BRIGHTNESS_NIGHT) {
+                            Log.d(TAG, "Brightness Changed (Int): " + value + " for ID: " + functionId);
+                            // Always poll both to ensure consistency and avoid flickering
+                            pollAndBroadcastBrightness();
+                        }
+                    }
+
+                    @Override
+                    public void onCustomizeFunctionValueChanged(int functionId, int zone, float value) {
+                        if (functionId == FUNC_BRIGHTNESS_DAY || functionId == FUNC_BRIGHTNESS_NIGHT) {
+                            Log.d(TAG, "Brightness Changed (Float): " + value + " for ID: " + functionId);
+                            pollAndBroadcastBrightness();
+                        }
+                    }
+
+                    @Override
+                    public void onFunctionChanged(int functionId) {
+                        // Not used
+                    }
+
+                    @Override
+                    public void onSupportedFunctionStatusChanged(int functionId, int zone,
+                            com.ecarx.xui.adaptapi.FunctionStatus status) {
+                        // Not used
+                    }
+
+                    @Override
+                    public void onSupportedFunctionValueChanged(int functionId, int[] values) {
+                        // Not used
+                    }
+
+                };
+
+                // Removed FUNC_REVERSE_GEAR watcher
+                iCarFunction.registerFunctionValueWatcher(FUNC_AVM_STATUS, watcher);
+                iCarFunction.registerFunctionValueWatcher(FUNC_BRIGHTNESS_DAY, watcher);
+                iCarFunction.registerFunctionValueWatcher(FUNC_BRIGHTNESS_NIGHT, watcher);
+                // FUNC_DAYMODE_SETTING listener removed as per user request (not supported)
+
+                Log.i(TAG, "Function watchers registered (AVM, Brightness)");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to register function watchers", e);
         }
     }
 

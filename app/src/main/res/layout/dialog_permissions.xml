@@ -16,11 +16,11 @@
         android:layout_marginBottom="16dp"
         android:gravity="center"/>
 
+    <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusSecureSettings"/>
     <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusAccessibility"/>
     <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusOverlay"/>
     <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusStorage"/>
     <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusBattery"/>
     <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusAutoStart"/>
-    <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusSecureSettings"/>
 
 </LinearLayout>
