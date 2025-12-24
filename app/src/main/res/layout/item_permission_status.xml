@@ -25,18 +25,8 @@
         android:textSize="16sp"
         android:textColor="?android:attr/textColorPrimary"/>
 
-    <Button
-        android:id="@+id/btnFix"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/fix_permission"
-        android:textColor="?android:attr/colorAccent"
-        android:minWidth="0dp"
-        android:minHeight="0dp"
-        android:paddingHorizontal="12dp"
-        android:insetTop="0dp"
-        android:insetBottom="0dp"
-        android:visibility="gone"
-        style="@style/Widget.MaterialComponents.Button.TextButton"/>
+        android:textColor="?android:attr/textColorPrimary"/>
+
+    <!-- Fix Button Removed -->
 
 </LinearLayout>

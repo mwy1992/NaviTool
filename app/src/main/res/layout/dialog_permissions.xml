@@ -22,5 +22,14 @@
     <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusStorage"/>
     <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusBattery"/>
     <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusAutoStart"/>
+    
+    <Button
+        android:id="@+id/btnAutoRepair"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/btn_auto_repair"
+        android:textSize="16sp"
+        android:layout_marginTop="16dp"
+        style="@style/Widget.MaterialComponents.Button"/>
 
 </LinearLayout>

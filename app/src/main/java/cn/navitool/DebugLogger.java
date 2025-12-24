@@ -20,36 +20,126 @@ public class DebugLogger {
     private static final String LOG_FILE_NAME = "navitool.debug.txt";
     private static final long LOG_COOLDOWN_MS = 60000; // 60 seconds cooldown
 
-    public static boolean isDebugEnabled(Context context) {
-        if (!BuildConfig.DEBUG) {
-            return false;
+    private static boolean sIsDebugEnabled = false;
+    private static SharedPreferences mPrefs;
+    private static final SharedPreferences.OnSharedPreferenceChangeListener mListener = (sharedPreferences, key) -> {
+        if (KEY_DEBUG_MODE.equals(key)) {
+            boolean enabled = sharedPreferences.getBoolean(KEY_DEBUG_MODE, false);
+            sIsDebugEnabled = enabled;
+            if (!enabled) {
+                deleteLogFile();
+            } else {
+                createDirectories();
+            }
         }
-        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
-        return prefs.getBoolean(KEY_DEBUG_MODE, false);
+    };
+
+    public static void init(Context context) {
+        if (context == null)
+            return;
+        mPrefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        sIsDebugEnabled = mPrefs.getBoolean(KEY_DEBUG_MODE, false);
+        mPrefs.registerOnSharedPreferenceChangeListener(mListener);
+        if (sIsDebugEnabled) {
+            createDirectories();
+        }
+    }
+
+    public static boolean isDebugEnabled(Context context) {
+        // Fallback or legacy use
+        return sIsDebugEnabled;
     }
 
     public static void setDebugEnabled(Context context, boolean enabled) {
         SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
         prefs.edit().putBoolean(KEY_DEBUG_MODE, enabled).apply();
+        // Listener will update sIsDebugEnabled
+    }
 
-        if (!enabled) {
-            // Delete log file if debug is disabled
-            File file = new File(Environment.getExternalStorageDirectory(), LOG_FILE_NAME);
+    private static void deleteLogFile() {
+        try {
+            File dir = new File(Environment.getExternalStorageDirectory(), "NaviTool");
+            File file = new File(dir, LOG_FILE_NAME);
             if (file.exists()) {
                 file.delete();
             }
+        } catch (Exception e) {
+            Log.e("DebugLogger", "Failed to delete log file", e);
         }
     }
 
-    public static void log(Context context, String tag, String message) {
-        if (isDebugEnabled(context)) {
-            Log.d(tag, message);
-            writeToFile(tag + ": " + message);
+    public static void createDirectories() {
+        try {
+            File rootDir = new File(Environment.getExternalStorageDirectory(), "NaviTool");
+            if (!rootDir.exists()) {
+                rootDir.mkdirs();
+            }
+            File soundDir = new File(rootDir, "Sound");
+            if (!soundDir.exists()) {
+                soundDir.mkdirs();
+            }
+        } catch (Exception e) {
+            Log.e("DebugLogger", "Failed to create directories", e);
         }
+    }
+
+    // --- Standard Log Wrappers ---
+
+    public static void d(String tag, String message) {
+        Log.d(tag, message);
+        if (sIsDebugEnabled) {
+            writeToFile("DEBUG: " + tag + ": " + message);
+        }
+    }
+
+    public static void i(String tag, String message) {
+        Log.i(tag, message);
+        if (sIsDebugEnabled) {
+            writeToFile("INFO: " + tag + ": " + message);
+        }
+    }
+
+    public static void w(String tag, String message) {
+        Log.w(tag, message);
+        if (sIsDebugEnabled) {
+            writeToFile("WARN: " + tag + ": " + message);
+        }
+    }
+
+    public static void w(String tag, String message, Throwable tr) {
+        Log.w(tag, message, tr);
+        if (sIsDebugEnabled) {
+            writeToFile(
+                    "WARN: " + tag + ": " + message + "\nSTACK TRACE:\n" + android.util.Log.getStackTraceString(tr));
+        }
+    }
+
+    public static void e(String tag, String message) {
+        Log.e(tag, message);
+        if (sIsDebugEnabled) {
+            writeToFile("ERROR: " + tag + ": " + message);
+        }
+    }
+
+    public static void e(String tag, String message, Throwable tr) {
+        Log.e(tag, message, tr);
+        if (sIsDebugEnabled) {
+            writeToFile(
+                    "ERROR: " + tag + ": " + message + "\nSTACK TRACE:\n" + android.util.Log.getStackTraceString(tr));
+        }
+    }
+
+    // --- Legacy / Specific Methods ---
+
+    public static void log(Context context, String tag, String message) {
+        // Redirect to new method, context ignored
+        d(tag, message);
     }
 
     public static void toast(Context context, String message) {
-        if (isDebugEnabled(context)) {
+        // Toast visible only in debug? Original logic seems to imply it.
+        // Or "Debug Logger" toast implies it's for debug info.
+        if (sIsDebugEnabled) {
             new android.os.Handler(android.os.Looper.getMainLooper())
                     .post(() -> Toast.makeText(context, message, Toast.LENGTH_SHORT).show());
             writeToFile("TOAST: " + message);
@@ -59,14 +149,21 @@ public class DebugLogger {
     public static void toastAlways(Context context, String message) {
         new android.os.Handler(android.os.Looper.getMainLooper())
                 .post(() -> Toast.makeText(context, message, Toast.LENGTH_SHORT).show());
-        if (isDebugEnabled(context)) {
+        if (sIsDebugEnabled) {
             writeToFile("TOAST: " + message);
         }
     }
 
     private static void writeToFile(String message) {
-        File file = new File(Environment.getExternalStorageDirectory(), LOG_FILE_NAME);
-        String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date());
+        File dir = new File(Environment.getExternalStorageDirectory(), "NaviTool");
+        if (!dir.exists()) {
+            dir.mkdirs();
+        }
+        File file = new File(dir, LOG_FILE_NAME);
+        // Add timestamp if not already present?
+        // Existing logic adds timestamp
+        String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(new Date()); // Added
+                                                                                                                    // ms
         String logMessage = timestamp + " " + message + "\n";
 
         try (FileOutputStream fos = new FileOutputStream(file, true)) {
@@ -82,14 +179,13 @@ public class DebugLogger {
         long currentTime = System.currentTimeMillis();
 
         if (currentTime - lastLogTime > LOG_COOLDOWN_MS) {
-            if (isDebugEnabled(context)) {
-                String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date());
-                String logMessage = "软件已启动 " + timestamp;
-                log(context, "BootLogger", logMessage);
+            // Check debug state properly
+            if (sIsDebugEnabled) {
+                i("BootLogger", "软件已启动");
             }
             prefs.edit().putLong("last_log_time", currentTime).apply();
         } else {
-            Log.d("BootLogger", "Skipping boot log, cooldown active.");
+            d("BootLogger", "Skipping boot log, cooldown active.");
         }
     }
 }

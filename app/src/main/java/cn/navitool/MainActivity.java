@@ -79,14 +79,21 @@ public class MainActivity extends AppCompatActivity {
 
         initUI();
         initNavigation();
+        DebugLogger.init(this); // Initialize Logging
+        DebugLogger.createDirectories();
         checkPermissions();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        checkPermissions(); // Refresh status on resume
+        checkPermissions(); // Refresh detailed status
+        refreshPermissionDialog(mPermissionDialogView);
 
+        if (isAutoRepairing) {
+            // Delay to allow system state update
+            new android.os.Handler().postDelayed(this::processNextRepair, 500);
+        }
         android.content.IntentFilter filter = new android.content.IntentFilter();
         filter.addAction("cn.navitool.ACTION_DAY_NIGHT_STATUS");
         registerReceiver(mDayNightStatusReceiver, filter);
@@ -100,6 +107,10 @@ public class MainActivity extends AppCompatActivity {
 
         // Refresh ADB Status
         AdbShell.getInstance(this).broadcastStatus();
+
+        android.content.IntentFilter headlightFilter = new android.content.IntentFilter(
+                "cn.navitool.ACTION_HEADLIGHT_STATUS");
+        registerReceiver(mHeadlightStatusReceiver, headlightFilter);
 
         android.content.IntentFilter oneOSFilter = new android.content.IntentFilter();
         oneOSFilter.addAction("cn.navitool.ACTION_ONEOS_STATUS");
@@ -116,6 +127,7 @@ public class MainActivity extends AppCompatActivity {
         unregisterReceiver(mDayNightStatusReceiver);
         unregisterReceiver(mOneOSStatusReceiver);
         unregisterReceiver(adbStatusReceiver);
+        unregisterReceiver(mHeadlightStatusReceiver);
     }
 
     private void initNavigation() {
@@ -140,7 +152,8 @@ public class MainActivity extends AppCompatActivity {
         // Hide experimental features in Release builds
         if (!BuildConfig.DEBUG) {
             findViewById(R.id.rbLights).setVisibility(View.GONE);
-            findViewById(R.id.rbSound).setVisibility(View.GONE);
+            // findViewById(R.id.rbSound).setVisibility(View.GONE); // [Release] Enabled for
+            // user
         }
 
         rgNavigation.setOnCheckedChangeListener((group, checkedId) -> {
@@ -190,6 +203,9 @@ public class MainActivity extends AppCompatActivity {
         // --- AutoStart Tab ---
         setupAutoStartApps();
 
+        // --- Sound Tab ---
+        setupSoundSwitches();
+
         // --- ADB Tab (Permissions) ---
         setupPermissionStatuses();
         setupAdbWireless();
@@ -222,6 +238,7 @@ public class MainActivity extends AppCompatActivity {
         switchDebug.setOnCheckedChangeListener((buttonView, isChecked) -> {
             DebugLogger.setDebugEnabled(this, isChecked);
             updateDebugViewsVisibility(isChecked, layoutDebugButtons, layoutMediaButtons);
+            updateTestButtons(isChecked); // Also update test buttons
             if (isChecked) {
                 DebugLogger.toast(this, getString(R.string.debug_mode_enabled));
             } else {
@@ -253,6 +270,217 @@ public class MainActivity extends AppCompatActivity {
 
         findViewById(R.id.btnForceLight).setOnClickListener(v -> sendAutoNaviBroadcast(1));
         findViewById(R.id.btnForceDark).setOnClickListener(v -> sendAutoNaviBroadcast(2));
+    }
+
+    private void setupSoundSwitches() {
+        android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
+
+        // Master Switch
+        SwitchMaterial switchMaster = findViewById(R.id.switchSoundMaster);
+        if (switchMaster != null) {
+            // Default to TRUE to maintain backward compatibility
+            switchMaster.setChecked(prefs.getBoolean("sound_master_enabled", true));
+            switchMaster.setOnCheckedChangeListener(
+                    (v, isChecked) -> prefs.edit().putBoolean("sound_master_enabled", isChecked).apply());
+        }
+
+        setupSoundItem(prefs, R.id.switchSoundStart, R.id.btnSelectSoundStart, R.id.btnTestSoundStart,
+                R.id.tvSoundStartFile, "sound_start");
+        setupSoundItem(prefs, R.id.switchSoundGearD, R.id.btnSelectSoundGearD, R.id.btnTestSoundGearD,
+                R.id.tvSoundGearDFile, "sound_gear_d");
+        setupSoundItem(prefs, R.id.switchSoundGearN, R.id.btnSelectSoundGearN, R.id.btnTestSoundGearN,
+                R.id.tvSoundGearNFile, "sound_gear_n");
+        setupSoundItem(prefs, R.id.switchSoundGearR, R.id.btnSelectSoundGearR, R.id.btnTestSoundGearR,
+                R.id.tvSoundGearRFile, "sound_gear_r");
+        setupSoundItem(prefs, R.id.switchSoundGearP, R.id.btnSelectSoundGearP, R.id.btnTestSoundGearP,
+                R.id.tvSoundGearPFile, "sound_gear_p");
+        setupSoundItem(prefs, R.id.switchSoundDoorPassenger, R.id.btnSelectSoundDoorPassenger,
+                R.id.btnTestSoundDoorPassenger, R.id.tvSoundDoorPassengerFile, "sound_door_passenger");
+
+        configureTestButtonsVisibility();
+    }
+
+    private void setupSoundItem(android.content.SharedPreferences prefs, int switchId, int btnId, int testBtnId,
+            int tvFileId, String keyPrefix) {
+        SwitchMaterial switchView = findViewById(switchId);
+        Button btnSelect = findViewById(btnId);
+        Button btnTest = findViewById(testBtnId);
+        TextView tvFile = findViewById(tvFileId);
+        String enabledKey = keyPrefix + "_enabled";
+        String fileKey = keyPrefix + "_file";
+
+        if (switchView != null) {
+            switchView.setChecked(prefs.getBoolean(enabledKey, false));
+            switchView.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                prefs.edit().putBoolean(enabledKey, isChecked).apply();
+            });
+        }
+
+        if (tvFile != null) {
+            String selectedFile = prefs.getString(fileKey, null);
+            tvFile.setText(selectedFile != null ? selectedFile : getString(R.string.text_default_sound));
+        }
+
+        if (btnSelect != null) {
+            btnSelect.setOnClickListener(v -> showSoundFileSelector(prefs, fileKey, tvFile));
+        }
+
+        if (btnTest != null) {
+            btnTest.setOnClickListener(v -> testPlaySound(prefs.getString(fileKey, null), keyPrefix));
+        }
+    }
+
+    private void showSoundFileSelector(android.content.SharedPreferences prefs, String fileKey, TextView tvFile) {
+        java.io.File soundDir = new java.io.File(Environment.getExternalStorageDirectory(), "NaviTool/Sound");
+        if (!soundDir.exists() || !soundDir.isDirectory()) {
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle(R.string.dialog_title_select_sound)
+                    .setMessage(R.string.dialog_no_files_message)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return;
+        }
+
+        java.io.File[] files = soundDir
+                .listFiles((dir, name) -> name.toLowerCase().endsWith(".mp3") || name.toLowerCase().endsWith(".wav"));
+        if (files == null || files.length == 0) {
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle(R.string.dialog_title_select_sound)
+                    .setMessage(R.string.dialog_no_files_message)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return;
+        }
+
+        String[] fileNames = new String[files.length];
+        for (int i = 0; i < files.length; i++) {
+            fileNames[i] = files[i].getName();
+        }
+
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.dialog_title_select_sound)
+                .setItems(fileNames, (dialog, which) -> {
+                    String selectedFile = fileNames[which];
+                    prefs.edit().putString(fileKey, selectedFile).apply();
+                    if (tvFile != null) {
+                        tvFile.setText(selectedFile);
+                    }
+                    android.widget.Toast.makeText(this, getString(R.string.toast_sound_selected, selectedFile),
+                            android.widget.Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void testPlaySound(String filename, String keyPrefix) {
+        String finalName = filename;
+        if (finalName == null) {
+            // Map default filenames based on keys
+            if (keyPrefix.equals("sound_start"))
+                finalName = "start.mp3";
+            else if (keyPrefix.equals("sound_gear_d"))
+                finalName = "gear_d.mp3";
+            else if (keyPrefix.equals("sound_gear_n"))
+                finalName = "gear_n.mp3";
+            else if (keyPrefix.equals("sound_gear_r"))
+                finalName = "gear_r.mp3";
+            else if (keyPrefix.equals("sound_gear_p"))
+                finalName = "gear_p.mp3";
+            else if (keyPrefix.equals("sound_door_passenger"))
+                finalName = "door_passenger.mp3";
+        }
+
+        final String resolvedName = finalName;
+        java.io.File soundFile = new java.io.File(Environment.getExternalStorageDirectory(),
+                "NaviTool/Sound/" + resolvedName);
+        if (soundFile.exists()) {
+            // Request Audio Focus
+            android.media.AudioManager am = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            android.media.AudioFocusRequest focusRequest = null;
+            android.media.AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
+            };
+
+            final android.media.AudioManager.OnAudioFocusChangeListener finalFocusListener = focusChangeListener;
+
+            if (am != null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    android.media.AudioAttributes playbackAttributes = new android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build();
+                    focusRequest = new android.media.AudioFocusRequest.Builder(
+                            android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                            .setAudioAttributes(playbackAttributes)
+                            .setAcceptsDelayedFocusGain(false)
+                            .setOnAudioFocusChangeListener(focusChangeListener)
+                            .build();
+                    am.requestAudioFocus(focusRequest);
+                } else {
+                    am.requestAudioFocus(focusChangeListener, android.media.AudioManager.STREAM_MUSIC,
+                            android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+                }
+            }
+
+            android.media.MediaPlayer mp = new android.media.MediaPlayer();
+            try {
+                mp.setDataSource(soundFile.getAbsolutePath());
+                mp.prepare();
+                mp.start();
+                DebugLogger.d("MainActivity", "Test playing sound: " + resolvedName);
+
+                final android.media.AudioFocusRequest finalRequest = focusRequest;
+                mp.setOnCompletionListener(mediaPlayer -> {
+                    mediaPlayer.release();
+                    DebugLogger.d("MainActivity", "Test playing sound completed: " + resolvedName);
+                    // Abandon Focus
+                    if (am != null) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && finalRequest != null) {
+                            am.abandonAudioFocusRequest(finalRequest);
+                        } else {
+                            am.abandonAudioFocus(finalFocusListener);
+                        }
+                    }
+                });
+            } catch (java.io.IOException e) {
+                DebugLogger.e("MainActivity", "Failed to test play sound: " + resolvedName, e);
+                e.printStackTrace();
+                mp.release();
+                // Abandon Focus on error
+                if (am != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && focusRequest != null) {
+                        am.abandonAudioFocusRequest(focusRequest);
+                    } else {
+                        am.abandonAudioFocus(finalFocusListener);
+                    }
+                }
+            }
+        } else {
+            DebugLogger.w("MainActivity", "Sound file not found for test: " + resolvedName);
+            android.widget.Toast.makeText(this, "文件不存在: " + resolvedName, android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void configureTestButtonsVisibility() {
+        // Redundant method, logic moved to setupDebugSwitch and updateTestButtons
+        // Calling updateTestButtons initial state here just in case
+        updateTestButtons(DebugLogger.isDebugEnabled(this));
+    }
+
+    private void updateTestButtons(boolean isVisible) {
+        // [Release] Always show test buttons, decoupled from debug mode
+        int visibility = View.VISIBLE;
+        setViewVisibility(R.id.btnTestSoundStart, visibility);
+        setViewVisibility(R.id.btnTestSoundGearD, visibility);
+        setViewVisibility(R.id.btnTestSoundGearN, visibility);
+        setViewVisibility(R.id.btnTestSoundGearR, visibility);
+        setViewVisibility(R.id.btnTestSoundGearP, visibility);
+        setViewVisibility(R.id.btnTestSoundDoorPassenger, visibility);
+    }
+
+    private void setViewVisibility(int id, int visibility) {
+        View v = findViewById(id);
+        if (v != null)
+            v.setVisibility(visibility);
     }
 
     private void setupForceAutoDayNight() {
@@ -299,22 +527,36 @@ public class MainActivity extends AppCompatActivity {
     private void setupBrightnessSettings() {
         android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
 
-        // Use View wrapper for sliders
-        LinearLayout layoutSliders = findViewById(R.id.layoutBrightnessSliders);
+        // Brightness Override Controls
+        // Find layouts to toggle visibility
+        final View layoutBrightnessSliders = findViewById(R.id.layoutBrightnessSliders);
 
-        // Master Switch
-        SwitchMaterial switchBrightnessOverride = findViewById(R.id.switchBrightnessOverride);
-        boolean isEnabled = prefs.getBoolean("override_brightness_enabled", false);
-        switchBrightnessOverride.setChecked(isEnabled);
+        com.google.android.material.switchmaterial.SwitchMaterial switchOverride = findViewById(
+                R.id.switchBrightnessOverride);
+        if (switchOverride != null) {
+            boolean isOverrideEnabled = prefs.getBoolean("override_brightness_enabled", false);
+            switchOverride.setChecked(isOverrideEnabled);
 
-        // Initial State
-        layoutSliders.setVisibility(isEnabled ? View.VISIBLE : View.GONE);
+            // Set initial visibility for both Sliders and Sync Switch
+            if (layoutBrightnessSliders != null) {
+                layoutBrightnessSliders.setVisibility(isOverrideEnabled ? View.VISIBLE : View.GONE);
+            }
 
-        switchBrightnessOverride.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            prefs.edit().putBoolean("override_brightness_enabled", isChecked).apply();
-            layoutSliders.setVisibility(isChecked ? View.VISIBLE : View.GONE);
-            // Start/Stop Service Monitoring handled by Service checking shared prefs
-        });
+            switchOverride.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                prefs.edit().putBoolean("override_brightness_enabled", isChecked).apply();
+                if (layoutBrightnessSliders != null) {
+                    layoutBrightnessSliders.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+                }
+
+                // Also trigger an immediate update if enabling
+                if (isChecked) {
+                    // Slight delay to let preference sync
+                    buttonView.postDelayed(() -> {
+                        // Trigger a dummy change to force update? Or just wait for service polling
+                    }, 500);
+                }
+            });
+        }
 
         // Day Brightness
         SeekBar seekDay = findViewById(R.id.seekBrightnessDay);
@@ -713,9 +955,8 @@ public class MainActivity extends AppCompatActivity {
         txtName.setText(R.string.title_app_permissions);
 
         view.setOnClickListener(v -> showPermissionDialog());
-        Button btnFix = view.findViewById(R.id.btnFix);
-        btnFix.setText(R.string.btn_details);
-        btnFix.setOnClickListener(v -> showPermissionDialog());
+        view.setOnClickListener(v -> showPermissionDialog());
+        // btnFix removed from layout
     }
 
     private void showPermissionDialog() {
@@ -749,19 +990,161 @@ public class MainActivity extends AppCompatActivity {
         setupDialogItem(mPermissionDialogView, R.id.dialogStatusAutoStart, R.string.perm_auto_start,
                 this::requestAutoStart);
         setupDialogItem(mPermissionDialogView, R.id.dialogStatusSecureSettings, R.string.perm_secure_settings,
-                this::showSecureSettingsGuide);
+                null);
+
+        Button btnAutoRepair = mPermissionDialogView.findViewById(R.id.btnAutoRepair);
+        btnAutoRepair.setOnClickListener(v -> startAutoRepair());
     }
 
     private void setupDialogItem(View dialogView, int viewId, int nameResId, Runnable onClickAction) {
         View view = dialogView.findViewById(viewId);
         TextView txtName = view.findViewById(R.id.txtPermissionName);
         txtName.setText(nameResId);
+        // Remove individual fix button logic
+    }
 
-        view.setOnClickListener(v -> onClickAction.run());
-        Button btnFix = view.findViewById(R.id.btnFix);
+    private boolean isAutoRepairing = false;
 
-        btnFix.setText(R.string.btn_fix);
-        btnFix.setOnClickListener(v -> onClickAction.run());
+    // Auto Repair Logic
+    private void startAutoRepair() {
+        isAutoRepairing = true;
+        processNextRepair();
+    }
+
+    private void processNextRepair() {
+        if (!isAutoRepairing)
+            return;
+
+        // 1. Accessibility Service
+        if (!isAccessibilityServiceEnabled()) {
+            if (AdbShell.getInstance(this).isConnected()) {
+                String serviceName = new ComponentName(this, KeepAliveAccessibilityService.class).flattenToString();
+                String enabledServices = Settings.Secure.getString(getContentResolver(),
+                        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+                if (enabledServices == null)
+                    enabledServices = "";
+
+                if (!enabledServices.contains(serviceName)) {
+                    if (enabledServices.isEmpty())
+                        enabledServices = serviceName;
+                    else
+                        enabledServices += ":" + serviceName;
+
+                    String cmd = "settings put secure enabled_accessibility_services '" + enabledServices + "'" +
+                            "; settings put secure accessibility_enabled 1";
+
+                    showRepairingToast(R.string.perm_accessibility);
+                    AdbShell.getInstance(this).exec(cmd);
+
+                    scheduleNextCheck(1500, this::requestAccessibilityPermission, this::isAccessibilityServiceEnabled);
+                    return;
+                }
+            }
+
+            showRepairingToast(R.string.perm_accessibility);
+            requestAccessibilityPermission(); // Manual jump
+            return;
+        }
+
+        // 2. Overlay Permission
+        if (!Settings.canDrawOverlays(this)) {
+            if (AdbShell.getInstance(this).isConnected()) {
+                showRepairingToast(R.string.perm_overlay);
+                AdbShell.getInstance(this).exec("appops set " + getPackageName() + " SYSTEM_ALERT_WINDOW allow");
+                scheduleNextCheck(1000, this::requestOverlayPermission, () -> Settings.canDrawOverlays(this));
+                return;
+            }
+            showRepairingToast(R.string.perm_overlay);
+            requestOverlayPermission();
+            return;
+        }
+
+        // 3. Storage Permission
+        if (!hasStoragePermission()) {
+            // Android 11+ cannot be granted via ADB pm grant usually
+            // (MANAGE_EXTERNAL_STORAGE)
+            // But legacy might work.
+            if (AdbShell.getInstance(this).isConnected() && Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                showRepairingToast(R.string.perm_storage);
+                AdbShell.getInstance(this)
+                        .exec("pm grant " + getPackageName() + " android.permission.READ_EXTERNAL_STORAGE");
+                AdbShell.getInstance(this)
+                        .exec("pm grant " + getPackageName() + " android.permission.WRITE_EXTERNAL_STORAGE");
+                scheduleNextCheck(1000, this::requestStoragePermission, this::hasStoragePermission);
+                return;
+            }
+
+            showRepairingToast(R.string.perm_storage);
+            requestStoragePermission();
+            return;
+        }
+
+        // 4. Battery Optimization
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+        boolean ignoringBattery = pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
+        if (!ignoringBattery) {
+            if (AdbShell.getInstance(this).isConnected()) {
+                showRepairingToast(R.string.perm_battery);
+                AdbShell.getInstance(this).exec("dumpsys deviceidle whitelist +" + getPackageName());
+                scheduleNextCheck(1000, this::requestBatteryOptimization, () -> {
+                    android.os.PowerManager currentPm = (android.os.PowerManager) getSystemService(
+                            Context.POWER_SERVICE);
+                    return currentPm != null && currentPm.isIgnoringBatteryOptimizations(getPackageName());
+                });
+                return;
+            }
+            showRepairingToast(R.string.perm_battery);
+            requestBatteryOptimization();
+            return;
+        }
+
+        // 5. Secure Settings
+        if (!hasSecureSettingsPermission()) {
+            if (AdbShell.getInstance(this).isConnected()) {
+                showRepairingToast(R.string.perm_secure_settings);
+                AdbShell.getInstance(this)
+                        .exec("pm grant " + getPackageName() + " android.permission.WRITE_SECURE_SETTINGS");
+                scheduleNextCheck(1000, this::showSecureSettingsGuide, this::hasSecureSettingsPermission);
+                return;
+            }
+            showRepairingToast(R.string.perm_secure_settings);
+            showSecureSettingsGuide();
+            return;
+        }
+
+        // All Done
+        isAutoRepairing = false;
+        refreshPermissionDialog(mPermissionDialogView); // Final refresh dialog
+        checkPermissions(); // Refresh Main Activity UI
+        android.widget.Toast.makeText(this, R.string.repair_complete, android.widget.Toast.LENGTH_SHORT).show();
+        if (permissionDialog != null && permissionDialog.isShowing()) {
+            permissionDialog.dismiss();
+        }
+    }
+
+    private void scheduleNextCheck(long delayMs, Runnable manualFallback,
+            java.util.function.BooleanSupplier permissionChecker) {
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            if (!isAutoRepairing)
+                return;
+
+            if (permissionChecker.getAsBoolean()) {
+                // Permission is now granted, proceed to the next repair step
+                processNextRepair();
+            } else {
+                // Permission still not granted after ADB attempt, fall back to manual
+                manualFallback.run();
+                // Stop auto-repairing here, user needs to manually grant and then resume
+                isAutoRepairing = false;
+            }
+        }, delayMs);
+    }
+
+    private void showRepairingToast(int resId) {
+        String name = getString(resId);
+        android.widget.Toast
+                .makeText(this, getString(R.string.repairing_permission, name), android.widget.Toast.LENGTH_SHORT)
+                .show();
     }
 
     private void refreshPermissionDialog(View dialogView) {
@@ -788,16 +1171,12 @@ public class MainActivity extends AppCompatActivity {
     private void updateDialogStatusItem(View dialogView, int viewId, boolean granted) {
         View view = dialogView.findViewById(viewId);
         ImageView imgStatus = view.findViewById(R.id.imgStatus);
-        Button btnFix = view.findViewById(R.id.btnFix);
-
         if (granted) {
             imgStatus.setImageResource(R.drawable.ic_check);
             imgStatus.setColorFilter(android.graphics.Color.parseColor("#4CAF50"));
-            btnFix.setVisibility(View.GONE);
         } else {
             imgStatus.setImageResource(R.drawable.ic_close);
             imgStatus.setColorFilter(android.graphics.Color.parseColor("#F44336"));
-            btnFix.setVisibility(View.VISIBLE);
         }
     }
 
@@ -819,12 +1198,9 @@ public class MainActivity extends AppCompatActivity {
             return;
 
         ImageView imgStatus = view.findViewById(R.id.imgStatus);
-        Button btnFix = view.findViewById(R.id.btnFix);
-
         if (allGranted) {
             imgStatus.setImageResource(R.drawable.ic_check);
             imgStatus.setColorFilter(android.graphics.Color.parseColor("#4CAF50"));
-            btnFix.setVisibility(View.GONE);
         } else {
             imgStatus.setImageResource(R.drawable.ic_close);
             imgStatus.setColorFilter(android.graphics.Color.parseColor("#F44336"));
@@ -1224,6 +1600,31 @@ public class MainActivity extends AppCompatActivity {
                         imgAdbStatus.setImageResource(R.drawable.ic_close);
                         imgAdbStatus.setColorFilter(androidx.core.content.ContextCompat.getColor(MainActivity.this,
                                 android.R.color.darker_gray));
+                    }
+                }
+            }
+        }
+    };
+
+    private final android.content.BroadcastReceiver mHeadlightStatusReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if ("cn.navitool.ACTION_HEADLIGHT_STATUS".equals(intent.getAction())) {
+                String type = intent.getStringExtra("type");
+                int status = intent.getIntExtra("status", -1);
+
+                TextView tvStatus = null;
+                String statusText = (status == 1) ? getString(R.string.status_on) : getString(R.string.status_off);
+
+                if ("dipped".equals(type)) {
+                    tvStatus = findViewById(R.id.tvDippedBeamStatus);
+                    if (tvStatus != null) {
+                        tvStatus.setText(getString(R.string.status_dipped_beam_fmt, statusText));
+                    }
+                } else if ("main".equals(type)) {
+                    tvStatus = findViewById(R.id.tvMainBeamStatus);
+                    if (tvStatus != null) {
+                        tvStatus.setText(getString(R.string.status_main_beam_fmt, statusText));
                     }
                 }
             }

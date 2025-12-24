@@ -12,9 +12,12 @@ import android.content.res.Configuration;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.os.PowerManager;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
+import android.view.accessibility.AccessibilityEvent;
 import androidx.core.content.ContextCompat;
+import android.media.MediaPlayer;
 
 import com.ecarx.xui.adaptapi.car.Car;
 import com.ecarx.xui.adaptapi.car.ICar;
@@ -34,8 +37,12 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
     private ISensor iSensor;
 
+    // WakeLock for PSD Always On
+    private PowerManager.WakeLock mWakeLock;
+
     // Brightness Polling
     private boolean mIsOverrideEnabled = false;
+    private boolean mIsSyncBrightnessEnabled = true; // Default true
     private int mTargetBrightnessDay = 5;
     private int mTargetBrightnessNight = 3;
     private int mTargetBrightnessAvm = 15;
@@ -65,15 +72,29 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         public void run() {
             if (mIsPsdAlwaysOnEnabled && iCarFunction != null) {
                 try {
-                    // Force PSD ON (1)
+                    // [调试] 监控 PSD 开关状态: 如果发现屏幕被关闭 (0)，记录警告日志
+                    int currentPsdStatus = iCarFunction.getFunctionValue(FUNC_PSD_SCREEN_SWITCH, ZONE_ALL);
+                    if (currentPsdStatus == 0) {
+                        DebugLogger.w(TAG, "PSD Monitor: Detected PSD Screen is OFF (0). Enforcing ON...");
+                    }
+
+                    // 1. Force PSD ON (1) - Original command
                     iCarFunction.setFunctionValue(FUNC_PSD_SCREEN_SWITCH, ZONE_ALL, 1);
-                    Log.d(TAG, "Enforced PSD Screen ON");
+
+                    // 2. Disable Power Timeout (Set to 0 = Never, or large value)
+                    // Trying large value (1h) instead of 0, as 0 might mean "immediate timeout"
+                    iCarFunction.setFunctionValue(FUNC_POWER_TIMEOUT, ZONE_ALL, 3600000);
+
+                    // 3. Force PSD Power Status (1 = On)
+                    iCarFunction.setFunctionValue(FUNC_POWER_PSD_STATUS, ZONE_ALL, 1);
+
+                    DebugLogger.d(TAG, "Enforced PSD Screen ON (Anti-Timeout)");
                 } catch (Exception e) {
-                    Log.e(TAG, "Failed to enforce PSD Screen ON", e);
+                    DebugLogger.e(TAG, "Failed to enforce PSD Screen ON", e);
                 }
             }
-            // 10s interval
-            mPsdHandler.postDelayed(this, 10000);
+            // 2s interval - Aggressive keep-alive to prevent system override
+            mPsdHandler.postDelayed(this, 2000);
         }
     };
 
@@ -99,6 +120,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             } else {
                 mOverrideHandler.removeCallbacks(mOverrideRunnable);
             }
+        } else if ("sync_brightness_enabled".equals(key)) {
+            mIsSyncBrightnessEnabled = sharedPreferences.getBoolean(key, true);
         } else if ("override_day_value".equals(key)) {
             mTargetBrightnessDay = sharedPreferences.getInt(key, 5);
         } else if ("override_night_value".equals(key)) {
@@ -109,9 +132,12 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             mIsPsdAlwaysOnEnabled = sharedPreferences.getBoolean(key, false);
             if (mIsPsdAlwaysOnEnabled) {
                 mPsdHandler.removeCallbacks(mPsdRunnable);
-                mPsdHandler.post(mPsdRunnable); // Start immediately
+                mPsdHandler.post(mPsdRunnable); // Start
+                                                // immediately
+                acquireWakeLock(); // Acquire WakeLock
             } else {
                 mPsdHandler.removeCallbacks(mPsdRunnable);
+                releaseWakeLock(); // Release WakeLock
                 // Optional: Turn off when disabled? User didn't specify, but safer to just stop
                 // enforcing.
                 // If user wants to turn it off, they might need manual control or it just
@@ -130,16 +156,93 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }
     };
 
+    private KeepAlivePresentation mPsdPresentation;
+
+    private void initPsdKeepAlive() {
+        try {
+            android.hardware.display.DisplayManager dm = (android.hardware.display.DisplayManager) getSystemService(
+                    android.content.Context.DISPLAY_SERVICE);
+            android.view.Display[] displays = dm.getDisplays();
+
+            DebugLogger.i(TAG, "Scanning displays for PSD (Passenger Screen)...");
+            for (android.view.Display display : displays) {
+                String name = display.getName();
+                int id = display.getDisplayId();
+                DebugLogger.i(TAG, "Found Display: ID=" + id + ", Name=" + name);
+
+                // 识别副驾屏的策略：
+                // 1. 根据名称关键字 (常见: "Passenger", "PSD", "副驾")
+                // 识别副驾屏的策略：
+                // 1. 优先匹配用户确认的 ID (1)
+                if (id == 1) {
+                    DebugLogger.i(TAG, ">>> Targeted PSD Display (Match by ID=1): " + name);
+                    showKeepAliveOnDisplay(display);
+                    return;
+                }
+
+                // 2. 后备策略：关键字匹配 (排除主屏 ID 0)
+                if (id != 0 && (name.contains("Passenger") || name.contains("PSD") || name.contains("副"))) {
+                    DebugLogger.i(TAG, ">>> Targeted PSD Display (Match by Keyword): " + name);
+                    showKeepAliveOnDisplay(display);
+                    return;
+                }
+            }
+            DebugLogger.w(TAG, "No PSD display found matching keywords.");
+
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error initializing PSD KeepAlive", e);
+        }
+    }
+
+    private void showKeepAliveOnDisplay(android.view.Display display) {
+        try {
+            if (mPsdPresentation != null) {
+                mPsdPresentation.dismiss();
+            }
+            mPsdPresentation = new KeepAlivePresentation(this, display);
+
+            // 作为一个 AccessibilityService，我们需要使用 TYPE_APPLICATION_OVERLAY (Android O+)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                mPsdPresentation.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
+            } else {
+                mPsdPresentation.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
+            }
+
+            mPsdPresentation.show();
+            DebugLogger.i(TAG, "KeepAlivePresentation SHOW SUCCESS on Display " + display.getDisplayId());
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to show KeepAlivePresentation", e);
+        }
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
-        Log.i(TAG, "Service Created");
+        DebugLogger.i(TAG, "Service Created");
+        DebugLogger.createDirectories();
+
+        // 启动光照传感器验证器
+        try {
+            cn.navitool.verifier.LightSensorVerifier verifier = new cn.navitool.verifier.LightSensorVerifier(this);
+            verifier.start();
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to start LightSensorVerifier", e);
+        }
+
+        // 启动副驾屏保活
+        initPsdKeepAlive();
+
+        // [新增] 初始化车辆控制接口 (监听发动机、档位、车门等)
+        initCar();
+        // [新增] 绑定 OneOS 服务 (用于方控/微信按键)
+        bindOneOSService();
     }
 
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
-        Log.i(TAG, "Service Connected");
+        DebugLogger.init(this); // Initialize DebugLogger
+        DebugLogger.i(TAG, "Service Connected");
 
         SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
         prefs.registerOnSharedPreferenceChangeListener(prefsListener);
@@ -163,6 +266,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
         // Initialize Brightness Override
         mIsOverrideEnabled = prefs.getBoolean("override_brightness_enabled", false);
+        mIsSyncBrightnessEnabled = prefs.getBoolean("sync_brightness_enabled", true);
         mTargetBrightnessDay = prefs.getInt("override_day_value", 5);
         mTargetBrightnessNight = prefs.getInt("override_night_value", 3);
         mTargetBrightnessAvm = prefs.getInt("override_avm_value", 15);
@@ -175,6 +279,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         mIsPsdAlwaysOnEnabled = prefs.getBoolean("psd_always_on_enabled", false);
         if (mIsPsdAlwaysOnEnabled) {
             mPsdHandler.post(mPsdRunnable);
+            acquireWakeLock();
         }
 
         // Bind OneOS Service
@@ -184,20 +289,19 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         DebugLogger.logBootEvent(this);
 
         // Register receiver for config changes
-        Log.i(TAG, "Build.VERSION.SDK_INT: " + Build.VERSION.SDK_INT);
+        DebugLogger.i(TAG, "Build.VERSION.SDK_INT: " + Build.VERSION.SDK_INT);
         // Register receiver for config changes
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_CONFIGURATION_CHANGED);
         filter.addAction("cn.navitool.ACTION_REQUEST_ONEOS_STATUS");
         try {
-            ContextCompat.registerReceiver(this, configChangeReceiver, filter, ContextCompat.RECEIVER_EXPORTED);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to register configChangeReceiver with EXPORTED flag. Retrying without flag...", e);
-            try {
+            if (Build.VERSION.SDK_INT >= 33) { // Android 13+ (Tiramisu)
+                registerReceiver(configChangeReceiver, filter, Context.RECEIVER_EXPORTED);
+            } else {
                 registerReceiver(configChangeReceiver, filter);
-            } catch (Exception ex) {
-                Log.e(TAG, "Failed to register configChangeReceiver fallback", ex);
             }
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to register configChangeReceiver", e);
         }
 
     }
@@ -205,17 +309,27 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        Log.i(TAG, "Service destroying, cleaning up resources...");
+        DebugLogger.i(TAG, "Service destroying, cleaning up resources...");
         stopMonitoring();
+        releaseWakeLock();
         mOverrideHandler.removeCallbacks(mOverrideRunnable);
         mPsdHandler.removeCallbacks(mPsdRunnable);
+
+        if (mPsdPresentation != null) {
+            try {
+                mPsdPresentation.dismiss();
+            } catch (Exception e) {
+                DebugLogger.w(TAG, "Error dismissing presentation", e);
+            }
+            mPsdPresentation = null;
+        }
 
         SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
         prefs.unregisterOnSharedPreferenceChangeListener(prefsListener);
 
         try {
             unregisterReceiver(configChangeReceiver);
-            Log.d(TAG, "Unregistered config change receiver");
+            DebugLogger.d(TAG, "Unregistered config change receiver");
         } catch (Exception e) {
             // Ignore
         }
@@ -227,7 +341,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             CharSequence packageName = event.getPackageName();
             if (packageName != null && AUTONAVI_PKG.equals(packageName.toString())) {
-                Log.d(TAG, "AutoNavi detected in foreground. Syncing theme...");
+                DebugLogger.d(TAG, "AutoNavi detected in foreground. Syncing theme...");
                 syncAutoNaviTheme();
             }
         }
@@ -242,7 +356,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
         // Sync theme when system configuration changes (e.g. Day/Night switch)
-        Log.d(TAG, "onConfigurationChanged called.");
+        DebugLogger.d(TAG, "onConfigurationChanged called.");
         syncAutoNaviTheme();
     }
 
@@ -259,7 +373,18 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private static final int FUNC_BRIGHTNESS_BACKLIGHT = 687997184; // Unified Vehicle Brightness
 
     private static final int ZONE_ALL = 0x80000000;
-    private static final int ZONE_PSD = 4; // Passenger Screen Zone ID
+    private static final int ZONE_CSD = 1; // Central Screen
+    private static final int ZONE_PSD = 4; // Passenger Screen
+    private static final int ZONE_PSD_FUNC = 4; // Passenger Screen Zone ID (Legacy name kept if used elsewhere, or just
+                                                // replace)
+
+    private static final int FUNC_BRIGHTNESS_DAYMODE = 688062976; // New Discovery
+    private static final int FUNC_BRIGHTNESS_SCREEN = 688063744; // New Discovery
+
+    // Power Manager IDs
+    private static final int FUNC_POWER_TIMEOUT = 32888;
+    private static final int FUNC_POWER_PSD_STATUS = 32901;
+
     private static final int VALUE_DAYMODE_DAY = 0x20150101;
     private static final int VALUE_DAYMODE_NIGHT = 0x20150102;
     private static final int VALUE_DAYMODE_AUTO = 0x20150103;
@@ -269,6 +394,43 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     // 24-25 Model Light Sensor (Found in ISensor.java)
     // SENSOR_TYPE_LIGHT = 2100992 (0x200F00)
     private static final int SENSOR_TYPE_LIGHT = 0x200F00;
+
+    // Sound Prompt Sensors
+    private static final int SENSOR_TYPE_GEAR = 2097664; // 0x200200
+    private static final int BCM_FUNC_DOOR = 553779456; // 0x21020000
+
+    // Door Zones (According to Logcat)
+    private static final int ZONE_DOOR_FL = 1; // Front Left (Main Driver)
+    private static final int ZONE_DOOR_FR = 4; // Front Right (Passenger)
+    private static final int ZONE_DOOR_RL = 16; // Rear Left
+    private static final int ZONE_DOOR_RR = 64; // Rear Right
+
+    // Sound Prompt States
+    private int mLastIgnition = -1;
+    private int mLastGear = -1;
+    private int mLastDoor = -1;
+    private MediaPlayer mMediaPlayer;
+
+    // Gear Values (from ISensorEvent)
+    private static final int GEAR_PARK = 2097712;
+    private static final int GEAR_REVERSE = 2097728;
+    private static final int GEAR_NEUTRAL = 2097680;
+    private static final int BCM_FUNC_LIGHT_DIPPED_BEAM = 553976064; // 0x21051000
+    private static final int BCM_FUNC_LIGHT_MAIN_BEAM = 553976320; // 0x21051100
+
+    private static final int GEAR_DRIVE = 2097696;
+
+    // TrsmGear Values (Backup)
+    private static final int TRSM_GEAR_PARK = 15;
+    private static final int TRSM_GEAR_RVS = 14;
+    private static final int TRSM_GEAR_NEUT = 0;
+
+    // Door Masks
+    private static final int DOOR_PASSENGER_MASK = 0x02; // 0010 (?) Or 0100? checking...
+    // VehicleDoor.java says DOOR_ROW_1_RIGHT = 4. 4 is 0x04.
+    // Let's rely on testing or standard mask. 4 usually means bit 2 (1<<2).
+    // Logic below will rely on 4.
+    private static final int DOOR_PASSENGER_BIT = 4;
 
     private final android.os.Handler mHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private boolean mIsMonitoring = false;
@@ -280,7 +442,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             if (!mIsMonitoring)
                 return;
             checkAndForceAutoDayNight();
-            mHandler.postDelayed(this, 1000); // 1s Interval
+            mHandler.postDelayed(this, 1000); // 1s
+                                              // Interval
         }
     };
 
@@ -289,13 +452,13 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             return;
         mIsMonitoring = true;
         mHandler.post(mMonitorRunnable);
-        Log.i(TAG, "Started Day/Night mode monitoring");
+        DebugLogger.i(TAG, "Started Day/Night mode monitoring");
     }
 
     private void stopMonitoring() {
         mIsMonitoring = false;
         mHandler.removeCallbacks(mMonitorRunnable);
-        Log.i(TAG, "Stopped Day/Night mode monitoring");
+        DebugLogger.i(TAG, "Stopped Day/Night mode monitoring");
     }
 
     private void checkAndForceAutoDayNight() {
@@ -335,13 +498,13 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             }
 
             if (changed) {
-                Log.d(TAG, "Polled Brightness Changed - Day: " + mLastBrightnessDayValue + ", Night: "
+                DebugLogger.d(TAG, "Polled Brightness Changed - Day: " + mLastBrightnessDayValue + ", Night: "
                         + mLastBrightnessNightValue);
                 broadcastSensorValues(mLastDayNightSensorValue,
                         mLastAvmValue, mLastBrightnessDayValue, mLastBrightnessNightValue);
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error polling brightness", e);
+            DebugLogger.e(TAG, "Error polling brightness", e);
         }
     }
 
@@ -409,7 +572,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                         }
 
                     } catch (Exception e) {
-                        Log.w(TAG, "Failed to poll initial function values: " + e.getMessage());
+                        DebugLogger.w(TAG, "Failed to poll initial function values: " + e.getMessage());
                     }
 
                     if (currentMode != -1 && currentMode != 0) {
@@ -431,7 +594,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                         boolean isForceEnabled = prefs.getBoolean("force_auto_day_night", false);
 
                         if (isForceEnabled && currentMode != VALUE_DAYMODE_AUTO) {
-                            Log.i(TAG, "Detected non-Auto mode: " + Integer.toHexString(currentMode)
+                            DebugLogger.i(TAG, "Detected non-Auto mode: " + Integer.toHexString(currentMode)
                                     + ". Forcing AUTO...");
                             boolean success = iCarFunction.setFunctionValue(FUNC_DAYMODE_SETTING, ZONE_ALL,
                                     VALUE_DAYMODE_AUTO);
@@ -441,7 +604,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                 intent.putExtra("mode", VALUE_DAYMODE_AUTO);
                                 sendBroadcast(intent);
                             } else {
-                                Log.e(TAG, "Failed to set Day/Night mode to AUTO");
+                                DebugLogger.e(TAG, "Failed to set Day/Night mode to AUTO");
                             }
                         }
                     }
@@ -449,7 +612,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     // Check 24-25 Model Light Sensor Logic (in background)
                     check2425LightSensorLogic();
                 } catch (Exception e) {
-                    Log.e(TAG, "Error checking/setting Day/Night mode", e);
+                    DebugLogger.e(TAG, "Error checking/setting Day/Night mode", e);
                 }
             }
         }).start();
@@ -457,13 +620,13 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     }
 
     private void handleShortClick(int keyCode) {
-        Log.i(TAG, "handleShortClick: " + keyCode);
+        DebugLogger.i(TAG, "handleShortClick: " + keyCode);
 
         if (keyCode == 200087 || keyCode == 200088 || keyCode == 200085) {
             SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
             boolean enabled = prefs.getBoolean("steering_wheel_control", false);
             if (!enabled) {
-                Log.d(TAG, "Steering wheel control disabled, skipping media key");
+                DebugLogger.d(TAG, "Steering wheel control disabled, skipping media key");
                 return;
             }
         }
@@ -482,28 +645,28 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 handleWechatShortPress();
                 break;
             default:
-                Log.d(TAG, "Unhandled short click key code: " + keyCode);
+                DebugLogger.d(TAG, "Unhandled short click key code: " + keyCode);
                 break;
         }
     }
 
     private void handleLongPress(int keyCode) {
-        Log.i(TAG, "handleLongPress: " + keyCode);
+        DebugLogger.i(TAG, "handleLongPress: " + keyCode);
         switch (keyCode) {
             // case 200087: // R_MEDIA_NEXT - 长按下一曲（快进）
-            // Log.i(TAG, "Long press NEXT - fast forward");
+            // DebugLogger.i(TAG, "Long press NEXT - fast forward");
             // break;
             // case 200088: // R_MEDIA_PREVIOUS - 长按上一曲（快退）
-            // Log.i(TAG, "Long press PREVIOUS - rewind");
+            // DebugLogger.i(TAG, "Long press PREVIOUS - rewind");
             // break;
             // case 200085: // R_MEDIA_PLAY_PAUSE - 长按播放/暂停
-            // Log.i(TAG, "Long press PLAY_PAUSE");
+            // DebugLogger.i(TAG, "Long press PLAY_PAUSE");
             // break;
             case 200400: // R_WECHAT - 长按微信按键
                 handleWechatLongPress();
                 break;
             default:
-                Log.d(TAG, "Unhandled long press key code: " + keyCode);
+                DebugLogger.d(TAG, "Unhandled long press key code: " + keyCode);
                 break;
         }
     }
@@ -512,7 +675,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
         boolean enabled = prefs.getBoolean("wechat_button_enabled", false);
         if (!enabled) {
-            Log.d(TAG, "WeChat button function disabled");
+            DebugLogger.d(TAG, "WeChat button function disabled");
             return;
         }
 
@@ -533,7 +696,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
         boolean enabled = prefs.getBoolean("wechat_button_enabled", false);
         if (!enabled) {
-            Log.d(TAG, "WeChat button function disabled");
+            DebugLogger.d(TAG, "WeChat button function disabled");
             return;
         }
 
@@ -580,13 +743,13 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             if (intent != null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 startActivity(intent);
-                Log.i(TAG, "Launched app: " + packageName);
+                DebugLogger.i(TAG, "Launched app: " + packageName);
                 DebugLogger.toast(this, "正在启动: " + packageName);
             } else {
-                Log.e(TAG, "Could not find launch intent for " + packageName);
+                DebugLogger.e(TAG, "Could not find launch intent for " + packageName);
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error launching app " + packageName, e);
+            DebugLogger.e(TAG, "Error launching app " + packageName, e);
         }
     }
 
@@ -606,24 +769,35 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             if (mLastDayNightSensorValue == ISensorEvent.DAY_NIGHT_MODE_NIGHT) {
                 // Sensor says Night -> Set Night Mode
                 if (currentMode != VALUE_DAYMODE_NIGHT) {
-                    Log.i(TAG, "24-25 Logic: Sensor is NIGHT. Switching Theme to NIGHT.");
+                    DebugLogger.i(TAG, "24-25 Logic: Sensor is NIGHT. Switching Theme to NIGHT.");
                     iCarFunction.setFunctionValue(FUNC_DAYMODE_SETTING, ZONE_ALL, VALUE_DAYMODE_NIGHT);
                 }
             } else if (mLastDayNightSensorValue == ISensorEvent.DAY_NIGHT_MODE_DAY) {
                 // Sensor says Day -> Set Day Mode
                 if (currentMode != VALUE_DAYMODE_DAY) {
-                    Log.i(TAG, "24-25 Logic: Sensor is DAY. Switching Theme to DAY.");
+                    DebugLogger.i(TAG, "24-25 Logic: Sensor is DAY. Switching Theme to DAY.");
                     iCarFunction.setFunctionValue(FUNC_DAYMODE_SETTING, ZONE_ALL, VALUE_DAYMODE_DAY);
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error in 24-25 Light Sensor Logic", e);
+            DebugLogger.e(TAG, "Error in 24-25 Light Sensor Logic", e);
         }
     }
+
+    private int mEnforceCounter = 0;
 
     private void checkAndEnforceBrightness() {
         if (!mIsOverrideEnabled || iCarFunction == null)
             return;
+
+        // Periodic forced check (every ~3 seconds, assuming 150ms interval => 20 ticks)
+        // This ensures that if the system changes brightness behind our back, we catch
+        // it eventually.
+        mEnforceCounter++;
+        if (mEnforceCounter > 20) {
+            mLastSetBrightness = -1;
+            mEnforceCounter = 0;
+        }
 
         int targetValue;
         int funcId;
@@ -671,20 +845,14 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         if (currentKnownValue != targetValue) {
             // Only set if we haven't already set this value successfully
             if (mLastSetBrightness != targetValue) {
-                Log.i(TAG, "Enforcing Unified Brightness. Target: " + targetValue + " Current: " + currentKnownValue);
+                DebugLogger.i(TAG, "Enforcing Unified Brightness (Refactored). Target: " + targetValue + " Current: "
+                        + currentKnownValue);
                 try {
-                    // 1. Unified Backlight Control (Instrument Cluster)
-                    iCarFunction.setCustomizeFunctionValue(FUNC_BRIGHTNESS_BACKLIGHT, ZONE_ALL, (float) targetValue);
+                    // 1. CSD Control (Central Screen) - Explicit Zone 1
+                    iCarFunction.setCustomizeFunctionValue(funcId, ZONE_CSD, (float) targetValue);
 
-                    // 2. CSD Control (Central Screen) - Restored
-                    iCarFunction.setCustomizeFunctionValue(funcId, zone, (float) targetValue);
-
-                    // 3. PSD Sync (Passenger Screen) - Restored
-                    try {
-                        iCarFunction.setCustomizeFunctionValue(funcId, ZONE_PSD, (float) targetValue);
-                    } catch (Exception e) {
-                        // ignore
-                    }
+                    // 2. Sync Logic - REMOVED per user request (Revert to CSD only)
+                    // if (mIsSyncBrightnessEnabled) { ... }
 
                     // 4. Update Local Cache
                     mLastSetBrightness = targetValue;
@@ -694,13 +862,48 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                         mLastBrightnessNightValue = targetValue;
 
                 } catch (Exception e) {
-                    Log.e(TAG, "Failed to set unified brightness", e);
+                    DebugLogger.e(TAG, "Failed to set brightness", e);
                 }
+            } else {
+                DebugLogger.d(TAG, "Brightness mismatch but skipped (Already set). Target=" + targetValue + " Cur="
+                        + currentKnownValue);
             }
         }
 
         // Sync Dashboard (DIM) Brightness - Removed per user request
 
+    }
+
+    private void acquireWakeLock() {
+        if (mWakeLock == null) {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null) {
+                // PARTIAL_WAKE_LOCK ensures CPU runs, but screen can go off.
+                // However, since we are controlling screen via Car API, we just need CPU to
+                // keep sending commands.
+                mWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "NaviTool:PSDKeeper");
+                mWakeLock.setReferenceCounted(false);
+            }
+        }
+        if (mWakeLock != null && !mWakeLock.isHeld()) {
+            try {
+                mWakeLock.acquire();
+                DebugLogger.i(TAG, "WakeLock acquired (PSD Always On)");
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Error acquiring WakeLock", e);
+            }
+        }
+    }
+
+    private void releaseWakeLock() {
+        if (mWakeLock != null && mWakeLock.isHeld()) {
+            try {
+                mWakeLock.release();
+                DebugLogger.i(TAG, "WakeLock released");
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Error releasing WakeLock", e);
+            }
+        }
     }
 
     // --- Car AdaptAPI Implementation ---
@@ -722,10 +925,10 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                             iSensor = (ISensor) method.invoke(car);
                         }
                     } catch (Exception ex) {
-                        Log.w(TAG, "getSensorManager not found via reflection");
+                        DebugLogger.w(TAG, "getSensorManager not found via reflection");
                     }
 
-                    Log.i(TAG, "Car AdaptAPI initialized successfully");
+                    DebugLogger.i(TAG, "Car AdaptAPI initialized successfully");
 
                     if (iSensor != null) {
                         registerSensorListeners();
@@ -736,7 +939,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 }
             }
         } catch (Throwable e) {
-            Log.e(TAG, "Failed to initialize Car AdaptAPI: " + e.getMessage());
+            DebugLogger.e(TAG, "Failed to initialize Car AdaptAPI: " + e.getMessage());
         }
     }
 
@@ -755,9 +958,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                             }
                         } else if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
                             int val = (int) value;
-                            Log.d(TAG, "Ignition State Changed (float): " + val);
+                            DebugLogger.d(TAG, "Ignition State Changed (float): " + val);
                             if (val == ISensorEvent.IGNITION_STATE_DRIVING) {
-                                Log.i(TAG, "Ignition State: DRIVING");
+                                DebugLogger.i(TAG, "Ignition State: DRIVING");
                                 DebugLogger.toast(KeepAliveAccessibilityService.this, "检测到行车状态");
                                 AppLaunchManager.executeLaunch(KeepAliveAccessibilityService.this);
                             }
@@ -767,18 +970,79 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
                     @Override
                     public void onSensorEventChanged(int sensorType, int value) {
+                        SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
+
                         if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
-                            Log.d(TAG, "Ignition State Changed (int): " + value);
+                            DebugLogger.d(TAG, "Ignition State Changed (int): " + value);
                             if (value == ISensorEvent.IGNITION_STATE_DRIVING) {
-                                Log.i(TAG, "Ignition State: DRIVING");
+                                DebugLogger.i(TAG, "Ignition State: DRIVING");
                                 DebugLogger.toast(KeepAliveAccessibilityService.this, "检测到行车状态");
                                 AppLaunchManager.executeLaunch(KeepAliveAccessibilityService.this);
                             }
+
+                            // Sound Prompt: Start (Modified: Only play on DRIVING state)
+                            if (mLastIgnition != value) {
+                                if (value == ISensorEvent.IGNITION_STATE_DRIVING) {
+                                    if (prefs.getBoolean("sound_start_enabled", false)) {
+                                        playCustomSound(prefs.getString("sound_start_file", "start.mp3"));
+                                    }
+                                }
+                                mLastIgnition = value;
+                            }
+
+                        } else if (sensorType == SENSOR_TYPE_GEAR) {
+                            if (mLastGear != value) {
+                                DebugLogger.d(TAG, "Gear Changed: " + value);
+                                String soundFile = null;
+                                // Support both ISensorEvent (large int) and TrsmGear (small int)
+                                if (value == GEAR_DRIVE
+                                        || ((value & 0x0F) != TRSM_GEAR_NEUT && (value & 0x0F) != TRSM_GEAR_RVS
+                                                && (value & 0x0F) != TRSM_GEAR_PARK && value != TRSM_GEAR_NEUT
+                                                && value != TRSM_GEAR_RVS && value != TRSM_GEAR_PARK)) { // Simplified
+                                                                                                         // Drive Logic
+                                                                                                         // check for
+                                                                                                         // readability
+                                    if (prefs.getBoolean("sound_gear_d_enabled", false)) {
+                                        soundFile = prefs.getString("sound_gear_d_file", "gear_d.mp3");
+                                        DebugLogger.d(TAG, "Gear D detected, Sound Enabled: " + soundFile);
+                                    } else {
+                                        DebugLogger.d(TAG, "Gear D detected, Sound Disabled");
+                                    }
+                                } else if (value == GEAR_NEUTRAL || value == TRSM_GEAR_NEUT) {
+                                    if (prefs.getBoolean("sound_gear_n_enabled", false)) {
+                                        soundFile = prefs.getString("sound_gear_n_file", "gear_n.mp3");
+                                        DebugLogger.d(TAG, "Gear N detected, Sound Enabled: " + soundFile);
+                                    } else {
+                                        DebugLogger.d(TAG, "Gear N detected, Sound Disabled");
+                                    }
+                                } else if (value == GEAR_REVERSE || value == TRSM_GEAR_RVS) {
+                                    if (prefs.getBoolean("sound_gear_r_enabled", false)) {
+                                        soundFile = prefs.getString("sound_gear_r_file", "gear_r.mp3");
+                                        DebugLogger.d(TAG, "Gear R detected, Sound Enabled: " + soundFile);
+                                    } else {
+                                        DebugLogger.d(TAG, "Gear R detected, Sound Disabled");
+                                    }
+                                } else if (value == GEAR_PARK || value == TRSM_GEAR_PARK) {
+                                    if (prefs.getBoolean("sound_gear_p_enabled", false)) {
+                                        soundFile = prefs.getString("sound_gear_p_file", "gear_p.mp3");
+                                        DebugLogger.d(TAG, "Gear P detected, Sound Enabled: " + soundFile);
+                                    } else {
+                                        DebugLogger.d(TAG, "Gear P detected, Sound Disabled");
+                                    }
+                                }
+
+                                if (soundFile != null) {
+                                    // [限制] 仅在行车状态 (DRIVING) 下播放档位音效
+                                    if (mLastIgnition == ISensorEvent.IGNITION_STATE_DRIVING) {
+                                        playCustomSound(soundFile);
+                                    } else {
+                                        DebugLogger.d(TAG, "Skipping gear sound (Ignition not DRIVING): " + soundFile);
+                                    }
+                                }
+                                mLastGear = value;
+                            }
                         } else if (sensorType == ISensor.SENSOR_TYPE_DAY_NIGHT) {
-                            // Passive listener removed in favor of polling to ensure data consistency
-                            // Log.d(TAG, "Day/Night Sensor Changed (int): " + value);
-                            // mLastDayNightSensorValue = value;
-                            // check2425LightSensorLogic();
+                            // Handled by polling
                         }
                     }
 
@@ -787,16 +1051,17 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     }
                 };
 
-                // Register for Ignition
+                // Register for Sensors
                 iSensor.registerListener(listener, ISensor.SENSOR_TYPE_IGNITION_STATE);
-
-                // Register for Day/Night Sensor (Restored per user request)
                 iSensor.registerListener(listener, ISensor.SENSOR_TYPE_DAY_NIGHT);
+                iSensor.registerListener(listener, SENSOR_TYPE_GEAR);
+                // Door checking moved to FunctionWatcher
+                // iSensor.registerListener(listener, SENSOR_TYPE_DOOR);
 
-                Log.i(TAG, "Sensor listeners registered (Ignition, DayNight 0x100900)");
+                DebugLogger.i(TAG, "Sensor listeners registered (Ignition, DayNight, Gear)");
             }
         } catch (Exception e) {
-            Log.e(TAG, "Failed to register sensor listeners", e);
+            DebugLogger.e(TAG, "Failed to register sensor listeners", e);
         }
     }
 
@@ -807,20 +1072,80 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     @Override
                     public void onFunctionValueChanged(int functionId, int zone, int value) {
                         if (functionId == FUNC_AVM_STATUS) {
-                            Log.d(TAG, "AVM Status Changed: " + value);
+                            DebugLogger.d(TAG, "AVM Status Changed: " + value);
+                            // Detect AVM Exit (1 -> 0) and force brightness update
+                            if (mLastAvmValue == 1 && value == 0) {
+                                DebugLogger.i(TAG, "AVM Exit detected. Initiating brightness enforcement burst.");
+                                mLastSetBrightness = -1;
+
+                                // Burst retry to ensure we overwrite system restoration
+                                mHandler.post(() -> checkAndEnforceBrightness());
+                                mHandler.postDelayed(() -> {
+                                    mLastSetBrightness = -1;
+                                    checkAndEnforceBrightness();
+                                }, 500);
+                                mHandler.postDelayed(() -> {
+                                    mLastSetBrightness = -1;
+                                    checkAndEnforceBrightness();
+                                }, 1500);
+                                mHandler.postDelayed(() -> {
+                                    mLastSetBrightness = -1;
+                                    checkAndEnforceBrightness();
+                                }, 3000);
+                            }
                             broadcastSensorValues(mLastDayNightSensorValue,
                                     value, mLastBrightnessDayValue, mLastBrightnessNightValue);
                         } else if (functionId == FUNC_BRIGHTNESS_DAY || functionId == FUNC_BRIGHTNESS_NIGHT) {
-                            Log.d(TAG, "Brightness Changed (Int): " + value + " for ID: " + functionId);
+                            DebugLogger.d(TAG, "Brightness Changed (Int): " + value + " for ID: " + functionId);
+                            // Always poll both to ensure consistency and avoid flickering
                             // Always poll both to ensure consistency and avoid flickering
                             pollAndBroadcastBrightness();
+                        } else if (functionId == BCM_FUNC_DOOR) {
+                            DebugLogger.d(TAG, "Door Function Changed: Zone=" + zone + ", Value=" + value);
+
+                            // Strategy: Use Zone ID to identify door. Value 1 = Open, 0 = Closed.
+                            // Current Requirement: Only implement logic for Front Right (Passenger). Others
+                            // are just monitored.
+
+                            if (zone == ZONE_DOOR_FR) { // Right Front (Passenger)
+                                if (value == 1) { // Open
+                                    SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
+                                    if (prefs.getBoolean("sound_door_passenger_enabled", false)) {
+                                        String soundFile = prefs.getString("sound_door_passenger_file",
+                                                "door_passenger.mp3");
+                                        DebugLogger.d(TAG, "Passenger Door (Zone 4) Open, Playing sound: " + soundFile);
+                                        playCustomSound(soundFile);
+                                    } else {
+                                        DebugLogger.d(TAG, "Passenger Door (Zone 4) Open, Sound Disabled");
+                                    }
+                                }
+                            } else if (zone == ZONE_DOOR_FL) { // Left Front
+                                DebugLogger.d(TAG, "Door FL Event (Reserved): " + value);
+                            } else if (zone == ZONE_DOOR_RL) { // Left Rear
+                                DebugLogger.d(TAG, "Door RL Event (Reserved): " + value);
+                            } else if (zone == ZONE_DOOR_RR) { // Right Rear
+                                DebugLogger.d(TAG, "Door RR Event (Reserved): " + value);
+                            }
+                        } else if (functionId == BCM_FUNC_LIGHT_DIPPED_BEAM) {
+                            DebugLogger.d(TAG, "Dipped Beam Changed: " + value);
+                            Intent intent = new Intent("cn.navitool.ACTION_HEADLIGHT_STATUS");
+                            intent.putExtra("type", "dipped");
+                            intent.putExtra("status", value);
+                            sendBroadcast(intent);
+                        } else if (functionId == BCM_FUNC_LIGHT_MAIN_BEAM) {
+                            DebugLogger.d(TAG, "Main Beam Changed: " + value);
+                            Intent intent = new Intent("cn.navitool.ACTION_HEADLIGHT_STATUS");
+                            intent.putExtra("type", "main");
+                            intent.putExtra("status", value);
+                            sendBroadcast(intent);
                         }
+
                     }
 
                     @Override
                     public void onCustomizeFunctionValueChanged(int functionId, int zone, float value) {
                         if (functionId == FUNC_BRIGHTNESS_DAY || functionId == FUNC_BRIGHTNESS_NIGHT) {
-                            Log.d(TAG, "Brightness Changed (Float): " + value + " for ID: " + functionId);
+                            DebugLogger.d(TAG, "Brightness Changed (Float): " + value + " for ID: " + functionId);
                             pollAndBroadcastBrightness();
                         }
                     }
@@ -847,12 +1172,15 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 iCarFunction.registerFunctionValueWatcher(FUNC_AVM_STATUS, watcher);
                 iCarFunction.registerFunctionValueWatcher(FUNC_BRIGHTNESS_DAY, watcher);
                 iCarFunction.registerFunctionValueWatcher(FUNC_BRIGHTNESS_NIGHT, watcher);
+                iCarFunction.registerFunctionValueWatcher(BCM_FUNC_DOOR, watcher);
+                iCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_DIPPED_BEAM, watcher);
+                iCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_MAIN_BEAM, watcher);
                 // FUNC_DAYMODE_SETTING listener removed as per user request (not supported)
 
-                Log.i(TAG, "Function watchers registered (AVM, Brightness)");
+                DebugLogger.i(TAG, "Function watchers registered (AVM, Brightness, Door, Lights)");
             }
         } catch (Exception e) {
-            Log.e(TAG, "Failed to register function watchers", e);
+            DebugLogger.e(TAG, "Failed to register function watchers", e);
         }
     }
 
@@ -861,7 +1189,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
             if (Intent.ACTION_CONFIGURATION_CHANGED.equals(action)) {
-                Log.d(TAG, "Configuration changed, checking day/night status...");
+                DebugLogger.d(TAG, "Configuration changed, checking day/night status...");
                 checkDayNightStatus(false);
             } else if ("cn.navitool.ACTION_REQUEST_ONEOS_STATUS".equals(action)) {
                 boolean isConnected = (mOneOSServiceManager != null);
@@ -873,7 +1201,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private void syncAutoNaviTheme() {
         SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
         if (!prefs.getBoolean("auto_theme_sync", true)) {
-            Log.d(TAG, "Auto theme sync is disabled by user.");
+            DebugLogger.d(TAG, "Auto theme sync is disabled by user.");
             return;
         }
 
@@ -887,7 +1215,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         intent.putExtra("EXTRA_DAY_NIGHT_MODE", autoNaviMode);
 
         sendBroadcast(intent);
-        Log.d(TAG, "Sent AutoNavi Theme Broadcast: Mode=" + autoNaviMode);
+        DebugLogger.d(TAG, "Sent AutoNavi Theme Broadcast: Mode=" + autoNaviMode);
         DebugLogger.toast(this, getString(R.string.sent_autonavi_broadcast, autoNaviMode));
     }
 
@@ -942,25 +1270,25 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private final ServiceConnection mOneOSConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
-            Log.i(TAG, "========================");
-            Log.i(TAG, "OneOSApiService Connected!");
-            Log.i(TAG, "ComponentName: " + name);
-            Log.i(TAG, "IBinder: " + service);
-            Log.i(TAG, "========================");
+            DebugLogger.i(TAG, "========================");
+            DebugLogger.i(TAG, "OneOSApiService Connected!");
+            DebugLogger.i(TAG, "ComponentName: " + name);
+            DebugLogger.i(TAG, "IBinder: " + service);
+            DebugLogger.i(TAG, "========================");
             DebugLogger.toast(KeepAliveAccessibilityService.this, "OneOS 服务已连接");
 
             try {
                 if (service == null) {
-                    Log.e(TAG, "Service IBinder is NULL!");
+                    DebugLogger.e(TAG, "Service IBinder is NULL!");
                     DebugLogger.toast(KeepAliveAccessibilityService.this, "OneOS IBinder 为空");
                     return;
                 }
 
                 mOneOSServiceManager = com.geely.lib.oneosapi.IServiceManager.Stub.asInterface(service);
-                Log.i(TAG, "IServiceManager.Stub.asInterface called, result: " + mOneOSServiceManager);
+                DebugLogger.i(TAG, "IServiceManager.Stub.asInterface called, result: " + mOneOSServiceManager);
 
                 if (mOneOSServiceManager != null) {
-                    Log.i(TAG, "IServiceManager obtained successfully");
+                    DebugLogger.i(TAG, "IServiceManager obtained successfully");
                     DebugLogger.toast(KeepAliveAccessibilityService.this, "IServiceManager 获取成功");
                     mRetryCount = 0;
                     mOneOSInputManager = null; // Reset
@@ -969,18 +1297,18 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     tryGetInputManager();
                     broadcastOneOSStatus(true);
                 } else {
-                    Log.e(TAG, "IServiceManager.Stub.asInterface returned NULL!");
+                    DebugLogger.e(TAG, "IServiceManager.Stub.asInterface returned NULL!");
                     DebugLogger.toast(KeepAliveAccessibilityService.this, "IServiceManager 为空");
                 }
             } catch (Exception e) {
-                Log.e(TAG, "Error in OneOS Service Connected", e);
+                DebugLogger.e(TAG, "Error in OneOS Service Connected", e);
                 DebugLogger.toast(KeepAliveAccessibilityService.this, "OneOS 连接异常: " + e.getMessage());
             }
         }
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
-            Log.i(TAG, "OneOSApiService Disconnected");
+            DebugLogger.i(TAG, "OneOSApiService Disconnected");
             DebugLogger.toast(KeepAliveAccessibilityService.this, "OneOS 服务断开");
             mOneOSServiceManager = null;
             mOneOSInputManager = null;
@@ -1002,75 +1330,75 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
         try {
             // Type 8 for InputManager (based on mediacenter analysis)
-            Log.i(TAG, "Calling getService(8) for InputManager...");
+            DebugLogger.i(TAG, "Calling getService(8) for InputManager...");
             IBinder inputBinder = mOneOSServiceManager.getService(8);
-            Log.i(TAG, "getService(8) returned: " + inputBinder);
+            DebugLogger.i(TAG, "getService(8) returned: " + inputBinder);
 
             if (inputBinder != null) {
                 mOneOSInputManager = com.geely.lib.oneosapi.input.IInputManager.Stub.asInterface(inputBinder);
-                Log.i(TAG, "IInputManager obtained: " + mOneOSInputManager);
+                DebugLogger.i(TAG, "IInputManager obtained: " + mOneOSInputManager);
                 DebugLogger.toast(KeepAliveAccessibilityService.this, "IInputManager 获取成功");
 
                 try {
                     int controllerId = mOneOSInputManager.getControlIndex();
-                    Log.i(TAG, "getControlIndex() returned: " + controllerId);
+                    DebugLogger.i(TAG, "getControlIndex() returned: " + controllerId);
                     DebugLogger.toast(KeepAliveAccessibilityService.this, "Controller ID: " + controllerId);
                 } catch (Exception e) {
-                    Log.w(TAG, "Failed to call getControlIndex(): " + e.getMessage());
+                    DebugLogger.w(TAG, "Failed to call getControlIndex(): " + e.getMessage());
                 }
 
                 registerOneOSListener();
             } else {
-                Log.e(TAG, "Failed to get InputManager binder (type 8) - returned NULL");
+                DebugLogger.e(TAG, "Failed to get InputManager binder (type 8) - returned NULL");
                 if (mRetryCount < MAX_RETRIES) {
                     mRetryCount++;
-                    Log.w(TAG, "InputManager not ready, retrying... (" + mRetryCount + ")");
+                    DebugLogger.w(TAG, "InputManager not ready, retrying... (" + mRetryCount + ")");
                     DebugLogger.toast(KeepAliveAccessibilityService.this, "OneOS 初始化中... (" + mRetryCount + ")");
                     mHandler.postDelayed(this::tryGetInputManager, 500); // Reduced from 2000ms to 500ms
                 } else {
-                    Log.e(TAG, "Failed to get InputManager after max retries");
+                    DebugLogger.e(TAG, "Failed to get InputManager after max retries");
                     DebugLogger.toast(KeepAliveAccessibilityService.this, "OneOS 初始化失败: 重试超时");
                 }
             }
         } catch (Exception e) {
-            Log.e(TAG, "Error getting InputManager", e);
+            DebugLogger.e(TAG, "Error getting InputManager", e);
         }
     }
 
     private void bindOneOSService() {
         try {
-            Log.i(TAG, "========================");
-            Log.i(TAG, "Attempting to bind OneOSApiService...");
-            Log.i(TAG, "========================");
+            DebugLogger.i(TAG, "========================");
+            DebugLogger.i(TAG, "Attempting to bind OneOSApiService...");
+            DebugLogger.i(TAG, "========================");
 
             Intent intent = new Intent();
             intent.setClassName("com.geely.service.oneosapi", "com.geely.service.oneosapi.OneOSApiService");
 
-            Log.i(TAG, "Intent created: " + intent);
-            Log.i(TAG, "Package: com.geely.service.oneosapi");
-            Log.i(TAG, "Class: com.geely.service.oneosapi.OneOSApiService");
+            DebugLogger.i(TAG, "Intent created: " + intent);
+            DebugLogger.i(TAG, "Package: com.geely.service.oneosapi");
+            DebugLogger.i(TAG, "Class: com.geely.service.oneosapi.OneOSApiService");
 
             boolean bound = bindService(intent, mOneOSConnection, Context.BIND_AUTO_CREATE);
 
-            Log.i(TAG, "bindService() returned: " + bound);
+            DebugLogger.i(TAG, "bindService() returned: " + bound);
 
             if (bound) {
                 DebugLogger.toast(this, "OneOS 服务绑定成功，等待连接...");
             } else {
-                Log.e(TAG, "bindService() returned FALSE - service not found or permission denied");
+                DebugLogger.e(TAG, "bindService() returned FALSE - service not found or permission denied");
                 DebugLogger.toast(this, "OneOS 服务绑定失败！");
             }
         } catch (Exception e) {
-            Log.e(TAG, "Exception while binding OneOSApiService", e);
+            DebugLogger.e(TAG, "Exception while binding OneOSApiService", e);
             DebugLogger.toast(this, "OneOS 绑定异常: " + e.getMessage());
         }
     }
 
     private void registerOneOSListener() {
-        Log.i(TAG, "registerOneOSListener() called, mOneOSInputManager: " + mOneOSInputManager);
+        DebugLogger.i(TAG, "registerOneOSListener() called, mOneOSInputManager: " + mOneOSInputManager);
 
         if (mOneOSInputManager == null) {
-            Log.e(TAG, "mOneOSInputManager is NULL, cannot register");
+            DebugLogger.e(TAG, "mOneOSInputManager is NULL, cannot register");
             DebugLogger.toast(this, "IInputManager 为空，无法注册");
             return;
         }
@@ -1080,7 +1408,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     200087, 200088, 200085, 200400 // 媒体按键 + 微信按键
             };
 
-            Log.i(TAG, "Creating IInputListener stub...");
+            DebugLogger.i(TAG, "Creating IInputListener stub...");
 
             if (mOneOSInputListener == null) {
                 mOneOSInputListener = new com.geely.lib.oneosapi.input.IInputListener.Stub() {
@@ -1091,11 +1419,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                             try {
                                 currentIndex = mOneOSInputManager.getControlIndex();
                             } catch (Exception e) {
-                                Log.e(TAG, "Failed to get control index in onKeyEvent", e);
+                                DebugLogger.e(TAG, "Failed to get control index in onKeyEvent", e);
                             }
                         }
 
-                        Log.i(TAG, "OneOS onKeyEvent: keyCode=" + keyCode + ", event=" + event
+                        DebugLogger.i(TAG, "OneOS onKeyEvent: keyCode=" + keyCode + ", event=" + event
                                 + ", paramKeyController=" + keyController + ", globalControlIndex=" + currentIndex);
 
                         if (event == 1) { // ACTION_UP
@@ -1106,7 +1434,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                     handleShortClick(keyCode);
                                 }
                             } else {
-                                Log.w(TAG, "Ignored media key because globalControlIndex is " + currentIndex
+                                DebugLogger.w(TAG, "Ignored media key because globalControlIndex is " + currentIndex
                                         + " (expected 2)");
                             }
                         }
@@ -1114,7 +1442,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
                     @Override
                     public void onShortClick(int keyCode, int keyController) throws RemoteException {
-                        Log.i(TAG, "OneOS onShortClick: keyCode=" + keyCode + ", keyController=" + keyController);
+                        DebugLogger.i(TAG,
+                                "OneOS onShortClick: keyCode=" + keyCode + ", keyController=" + keyController);
                         // 只处理微信按键，媒体按键已由 onKeyEvent 处理
                         if (keyCode == 200400) {
                             DebugLogger.toast(KeepAliveAccessibilityService.this, "微信按键短按");
@@ -1124,17 +1453,17 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
                     @Override
                     public void onHoldingPressStarted(int keyCode, int keyController) throws RemoteException {
-                        Log.i(TAG, "OneOS onHoldingPressStarted: keyCode=" + keyCode);
+                        DebugLogger.i(TAG, "OneOS onHoldingPressStarted: keyCode=" + keyCode);
                     }
 
                     @Override
                     public void onHoldingPressStopped(int keyCode, int keyController) throws RemoteException {
-                        Log.i(TAG, "OneOS onHoldingPressStopped: keyCode=" + keyCode);
+                        DebugLogger.i(TAG, "OneOS onHoldingPressStopped: keyCode=" + keyCode);
                     }
 
                     @Override
                     public void onLongPressTriggered(int keyCode, int keyController) throws RemoteException {
-                        Log.i(TAG,
+                        DebugLogger.i(TAG,
                                 "OneOS onLongPressTriggered: keyCode=" + keyCode + ", keyController=" + keyController);
                         // 只处理微信按键
                         if (keyCode == 200400) {
@@ -1145,26 +1474,112 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
                     @Override
                     public void onDoubleClick(int keyCode, int keyController) throws RemoteException {
-                        Log.i(TAG, "OneOS onDoubleClick: keyCode=" + keyCode);
+                        DebugLogger.i(TAG, "OneOS onDoubleClick: keyCode=" + keyCode);
                     }
                 };
             }
 
-            Log.i(TAG, "Registering listener: " + mOneOSInputListener);
+            DebugLogger.i(TAG, "Registering listener: " + mOneOSInputListener);
 
             String packageName = getPackageName();
-            Log.i(TAG, "Package name: " + packageName);
-            Log.i(TAG, "Key codes to register: " + java.util.Arrays.toString(keyCodes));
+            DebugLogger.i(TAG, "Package name: " + packageName);
+            DebugLogger.i(TAG, "Key codes to register: " + java.util.Arrays.toString(keyCodes));
 
             mOneOSInputManager.registerListener(mOneOSInputListener, packageName, keyCodes);
 
-            Log.i(TAG, "registerListener() COMPLETED SUCCESSFULLY!");
+            DebugLogger.i(TAG, "registerListener() COMPLETED SUCCESSFULLY!");
 
             DebugLogger.toast(this, "OneOS 监听已注册");
 
         } catch (Exception e) {
-            Log.e(TAG, "OneOS 注册失败: " + e.getMessage());
+            DebugLogger.e(TAG, "OneOS 注册失败: " + e.getMessage());
             DebugLogger.toast(this, "OneOS 注册失败: " + e.getMessage());
         }
     }
+
+    private void playCustomSound(String filename) {
+        SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
+        // Master Switch Check
+        if (!prefs.getBoolean("sound_master_enabled", true)) {
+            DebugLogger.d(TAG, "Master sound switch disabled, skipping playback: " + filename);
+            return;
+        }
+
+        try {
+            if (mMediaPlayer != null) {
+                mMediaPlayer.release();
+                mMediaPlayer = null;
+            }
+            java.io.File file = new java.io.File(android.os.Environment.getExternalStorageDirectory(),
+                    "NaviTool/Sound/" + filename);
+            if (file.exists()) {
+                // Request Audio Focus
+                android.media.AudioManager am = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                android.media.AudioFocusRequest focusRequest = null;
+                android.media.AudioManager.OnAudioFocusChangeListener focusListener = f -> {
+                };
+
+                if (am != null) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        android.media.AudioAttributes playbackAttributes = new android.media.AudioAttributes.Builder()
+                                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                                .build();
+                        focusRequest = new android.media.AudioFocusRequest.Builder(
+                                android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                                .setAudioAttributes(playbackAttributes)
+                                .setAcceptsDelayedFocusGain(false)
+                                .setOnAudioFocusChangeListener(focusListener)
+                                .build();
+                        am.requestAudioFocus(focusRequest);
+                    } else {
+                        am.requestAudioFocus(focusListener, android.media.AudioManager.STREAM_MUSIC,
+                                android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
+                    }
+                }
+
+                mMediaPlayer = new MediaPlayer();
+                mMediaPlayer.setDataSource(file.getAbsolutePath());
+                mMediaPlayer.prepare();
+                mMediaPlayer.start();
+                DebugLogger.d(TAG, "Playing sound: " + filename);
+
+                final android.media.AudioFocusRequest finalRequest = focusRequest;
+                final android.media.AudioManager.OnAudioFocusChangeListener finalListener = focusListener;
+
+                mMediaPlayer.setOnCompletionListener(mp -> {
+                    mp.release();
+                    mMediaPlayer = null;
+                    // Abandon Focus
+                    if (am != null) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && finalRequest != null) {
+                            am.abandonAudioFocusRequest(finalRequest);
+                        } else {
+                            am.abandonAudioFocus(finalListener);
+                        }
+                    }
+                });
+
+                // Handle Error to release focus
+                mMediaPlayer.setOnErrorListener((mp, what, extra) -> {
+                    mp.release();
+                    mMediaPlayer = null;
+                    if (am != null) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && finalRequest != null) {
+                            am.abandonAudioFocusRequest(finalRequest);
+                        } else {
+                            am.abandonAudioFocus(finalListener);
+                        }
+                    }
+                    return true;
+                });
+
+            } else {
+                DebugLogger.w(TAG, "Sound file not found: " + filename);
+            }
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to play sound: " + filename, e);
+        }
+    }
+
 }

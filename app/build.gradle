@@ -11,7 +11,7 @@ android {
         minSdk 28
         targetSdk 34
         versionCode 1
-        versionName "0.1.7"
+        versionName "0.2.0"
         resConfigs "zh"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -36,7 +36,9 @@ android {
 }
 
 dependencies {
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    // 排除 launcher 相关 jar，防止与 AndroidX 冲突
+    implementation fileTree(dir: 'libs', include: ['*.jar'], exclude: ['launcher*.jar'])
+    
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
@@ -45,5 +47,9 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
     compileOnly(files("libs/ecarx.jar"))
     compileOnly(files("libs/ecarx.adaptapi.jar"))
+    
+    // 将 launcher.jar 设为 compileOnly (只编译不打包)
+    compileOnly(files("libs/launcher.jar"))
+    
     implementation 'com.github.tananaev:adblib:1.3'
 }
