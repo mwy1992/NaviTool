@@ -115,4 +115,6 @@
     <string name="key_prev_track">上一曲</string>
     <string name="key_play_pause">播放/暂停</string>
     <string name="simulated_media_key">模拟按键: %1$s</string>
+    <string name="status_adb_unknown">未知状态</string>
+    <string name="btn_enable_wireless_adb">开启无线调试</string>
 </resources>

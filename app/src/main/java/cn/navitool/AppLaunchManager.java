@@ -50,23 +50,19 @@ public class AppLaunchManager {
     }
 
     public static void setAutoStartEnabled(Context context, boolean enabled) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit().putBoolean(KEY_AUTO_START_APPS_ENABLED, enabled).apply();
+        ConfigManager.getInstance().setBoolean(KEY_AUTO_START_APPS_ENABLED, enabled);
     }
 
     public static boolean isAutoStartEnabled(Context context) {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean(KEY_AUTO_START_APPS_ENABLED, false);
+        return ConfigManager.getInstance().getBoolean(KEY_AUTO_START_APPS_ENABLED, false);
     }
 
     public static void setReturnToHomeEnabled(Context context, boolean enabled) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit().putBoolean(KEY_RETURN_TO_HOME, enabled).apply();
+        ConfigManager.getInstance().setBoolean(KEY_RETURN_TO_HOME, enabled);
     }
 
     public static boolean isReturnToHomeEnabled(Context context) {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getBoolean(KEY_RETURN_TO_HOME, false);
+        return ConfigManager.getInstance().getBoolean(KEY_RETURN_TO_HOME, false);
     }
 
     public static void saveConfig(Context context, List<AppConfig> configs) {
@@ -81,14 +77,12 @@ public class AppLaunchManager {
                 e.printStackTrace();
             }
         }
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit().putString(KEY_APP_CONFIG, jsonArray.toString()).apply();
+        ConfigManager.getInstance().setString(KEY_APP_CONFIG, jsonArray.toString());
     }
 
     public static List<AppConfig> loadConfig(Context context) {
         List<AppConfig> configs = new ArrayList<>();
-        String jsonString = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getString(KEY_APP_CONFIG, "[]");
+        String jsonString = ConfigManager.getInstance().getString(KEY_APP_CONFIG, "[]");
         try {
             JSONArray jsonArray = new JSONArray(jsonString);
             for (int i = 0; i < jsonArray.length(); i++) {

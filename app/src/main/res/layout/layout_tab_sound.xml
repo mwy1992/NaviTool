@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/layoutContentSound"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingTop="8dp">
+
+        <!-- Header with Master Switch -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sound_prompt_title"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"/>
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sound_prompt_desc"
+                    android:textSize="12sp"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:layout_marginTop="2dp"/>
+            </LinearLayout>
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchSoundMaster"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"/>
+        </LinearLayout>
+
+        <TableLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:stretchColumns="1"
+            android:divider="?android:attr/listDivider"
+            android:showDividers="middle">
+
+            <!-- Start Prompt -->
+            <TableRow
+                android:gravity="center_vertical"
+                android:paddingVertical="8dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/switch_sound_start"
+                    android:textSize="16sp"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginEnd="8dp"/>
+
+                <TextView
+                    android:id="@+id/tvSoundStartFile"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/text_default_sound"
+                    android:textSize="14sp"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:singleLine="true"
+                    android:ellipsize="middle"/>
+
+                <Button
+                    android:id="@+id/btnSelectSoundStart"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_select_file"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="4dp"/>
+
+                <Button
+                    android:id="@+id/btnTestSoundStart"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_test_sound"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="4dp"
+                    android:visibility="gone"/>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchSoundStart"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </TableRow>
+
+            <!-- Gear D -->
+            <TableRow
+                android:gravity="center_vertical"
+                android:paddingVertical="8dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/switch_sound_gear_d"
+                    android:textSize="16sp"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginEnd="8dp"/>
+
+                <TextView
+                    android:id="@+id/tvSoundGearDFile"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/text_default_sound"
+                    android:textSize="14sp"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:singleLine="true"
+                    android:ellipsize="middle"/>
+
+                <Button
+                    android:id="@+id/btnSelectSoundGearD"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_select_file"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="4dp"/>
+
+                <Button
+                    android:id="@+id/btnTestSoundGearD"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_test_sound"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="4dp"
+                    android:visibility="gone"/>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchSoundGearD"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </TableRow>
+
+            <!-- Gear N -->
+            <TableRow
+                android:gravity="center_vertical"
+                android:paddingVertical="8dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/switch_sound_gear_n"
+                    android:textSize="16sp"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginEnd="8dp"/>
+
+                <TextView
+                    android:id="@+id/tvSoundGearNFile"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/text_default_sound"
+                    android:textSize="14sp"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:singleLine="true"
+                    android:ellipsize="middle"/>
+
+                <Button
+                    android:id="@+id/btnSelectSoundGearN"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_select_file"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="4dp"/>
+
+                <Button
+                    android:id="@+id/btnTestSoundGearN"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_test_sound"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="4dp"
+                    android:visibility="gone"/>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchSoundGearN"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </TableRow>
+
+            <!-- Gear R -->
+            <TableRow
+                android:gravity="center_vertical"
+                android:paddingVertical="8dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/switch_sound_gear_r"
+                    android:textSize="16sp"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginEnd="8dp"/>
+
+                <TextView
+                    android:id="@+id/tvSoundGearRFile"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/text_default_sound"
+                    android:textSize="14sp"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:singleLine="true"
+                    android:ellipsize="middle"/>
+
+                <Button
+                    android:id="@+id/btnSelectSoundGearR"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_select_file"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="4dp"/>
+
+                <Button
+                    android:id="@+id/btnTestSoundGearR"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_test_sound"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="4dp"
+                    android:visibility="gone"/>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchSoundGearR"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </TableRow>
+
+            <!-- Gear P -->
+            <TableRow
+                android:gravity="center_vertical"
+                android:paddingVertical="8dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/switch_sound_gear_p"
+                    android:textSize="16sp"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginEnd="8dp"/>
+
+                <TextView
+                    android:id="@+id/tvSoundGearPFile"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/text_default_sound"
+                    android:textSize="14sp"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:singleLine="true"
+                    android:ellipsize="middle"/>
+
+                <Button
+                    android:id="@+id/btnSelectSoundGearP"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_select_file"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="4dp"/>
+
+                <Button
+                    android:id="@+id/btnTestSoundGearP"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_test_sound"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="4dp"
+                    android:visibility="gone"/>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchSoundGearP"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </TableRow>
+
+            <!-- Door Passenger -->
+            <TableRow
+                android:gravity="center_vertical"
+                android:paddingVertical="8dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/switch_sound_door_passenger"
+                    android:textSize="16sp"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginEnd="8dp"/>
+
+                <TextView
+                    android:id="@+id/tvSoundDoorPassengerFile"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/text_default_sound"
+                    android:textSize="14sp"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:singleLine="true"
+                    android:ellipsize="middle"/>
+
+                <Button
+                    android:id="@+id/btnSelectSoundDoorPassenger"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_select_file"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="4dp"/>
+
+                <Button
+                    android:id="@+id/btnTestSoundDoorPassenger"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_test_sound"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="4dp"
+                    android:visibility="gone"/>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchSoundDoorPassenger"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </TableRow>
+        </TableLayout>
+    </LinearLayout>
+</ScrollView>

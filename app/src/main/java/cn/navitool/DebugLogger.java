@@ -21,39 +21,28 @@ public class DebugLogger {
     private static final long LOG_COOLDOWN_MS = 60000; // 60 seconds cooldown
 
     private static boolean sIsDebugEnabled = false;
-    private static SharedPreferences mPrefs;
-    private static final SharedPreferences.OnSharedPreferenceChangeListener mListener = (sharedPreferences, key) -> {
-        if (KEY_DEBUG_MODE.equals(key)) {
-            boolean enabled = sharedPreferences.getBoolean(KEY_DEBUG_MODE, false);
-            sIsDebugEnabled = enabled;
-            if (!enabled) {
-                deleteLogFile();
-            } else {
-                createDirectories();
-            }
-        }
-    };
 
     public static void init(Context context) {
         if (context == null)
             return;
-        mPrefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
-        sIsDebugEnabled = mPrefs.getBoolean(KEY_DEBUG_MODE, false);
-        mPrefs.registerOnSharedPreferenceChangeListener(mListener);
+        sIsDebugEnabled = ConfigManager.getInstance().getBoolean(KEY_DEBUG_MODE, false);
         if (sIsDebugEnabled) {
             createDirectories();
         }
     }
 
     public static boolean isDebugEnabled(Context context) {
-        // Fallback or legacy use
         return sIsDebugEnabled;
     }
 
     public static void setDebugEnabled(Context context, boolean enabled) {
-        SharedPreferences prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
-        prefs.edit().putBoolean(KEY_DEBUG_MODE, enabled).apply();
-        // Listener will update sIsDebugEnabled
+        ConfigManager.getInstance().setBoolean(KEY_DEBUG_MODE, enabled);
+        sIsDebugEnabled = enabled;
+        if (enabled) {
+            createDirectories();
+        } else {
+            deleteLogFile();
+        }
     }
 
     private static void deleteLogFile() {

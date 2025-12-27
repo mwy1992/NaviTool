@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/layoutContentHud"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingTop="8dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="16dp">
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Enable HUD Projection"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"/>
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Display 2 (728x190) @ (0,720)"
+                    android:textSize="12sp"
+                    android:textColor="?android:attr/textColorSecondary"/>
+            </LinearLayout>
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchHud"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"/>
+        </LinearLayout>
+
+        <!-- HUD Editor Control Panel -->
+        <!-- Visible when HUD is enabled -->
+         <LinearLayout
+            android:id="@+id/layoutHudEditorControls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone">
+            
+            <Button
+                android:id="@+id/btnHudSwitchMode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="切换AR模式"
+                android:layout_marginEnd="8dp"/>
+                
+            <Button
+                android:id="@+id/btnHudAdd"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="添加"
+                android:layout_marginEnd="8dp"/>
+            <Button
+                android:id="@+id/btnHudModify"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="修改"
+                android:layout_marginEnd="8dp"/>
+            <Button
+                android:id="@+id/btnHudSave"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="保存"
+                android:layout_marginEnd="8dp"/>
+            <Button
+                android:id="@+id/btnHudReset"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="重置"
+                android:layout_marginEnd="8dp"/>
+            <Button
+                android:id="@+id/btnHudSnowMode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="开启雪地模式"/>
+        </LinearLayout>
+
+        <!-- Preview Container with Border -->
+        <FrameLayout
+            android:id="@+id/layoutHudPreviewContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:visibility="gone"
+            android:padding="4dp"
+            android:background="@drawable/border_hud_preview">
+
+            <!-- HUD Preview Content Area: 1456x380 (2x Magnification) -->
+             <!-- Background: Black #000000 -->
+             <FrameLayout
+                android:id="@+id/layoutHudPreview"
+                android:layout_width="1456px"
+                android:layout_height="380px"
+                android:background="#000000"
+                android:visibility="gone">
+            </FrameLayout>
+        </FrameLayout>
+
+    </LinearLayout>
+</ScrollView>

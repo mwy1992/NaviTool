@@ -98,6 +98,80 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }
     };
 
+    // PSD Countermeasure
+    private final android.os.Handler mPsd10MinHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private static final long PSD_COUNTERMEASURE_DELAY_MS = 9 * 60 * 1000 + 59 * 1000 + 950; // 9m 59s 950ms
+    private BroadcastReceiver mPsdTestReceiver;
+
+    private void setPsdOn() {
+        if (iCarFunction != null) {
+            try {
+                iCarFunction.setFunctionValue(FUNC_PSD_SCREEN_SWITCH, ZONE_ALL, 1);
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Failed to set PSD ON", e);
+            }
+        }
+    }
+
+    private void schedulePsd10MinCountermeasure() {
+        mPsd10MinHandler.removeCallbacksAndMessages(null); // Reset
+        mPsd10MinHandler.postDelayed(() -> {
+            DebugLogger.w(TAG, ">>> 10-MIN COUNTERMEASURE TRIGGERED! (9m59.95s after OFF)");
+            new Thread(() -> {
+                for (int i = 0; i < 100; i++) {
+                    setPsdOn();
+                    try {
+                        Thread.sleep(1);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                }
+                DebugLogger.d(TAG, ">>> 10-Min Countermeasure Barrage Completed.");
+            }).start();
+        }, PSD_COUNTERMEASURE_DELAY_MS);
+    }
+
+    private void broadcastPsdStatus(int status) {
+        Intent intent = new Intent("cn.navitool.ACTION_PSD_STATUS");
+        intent.putExtra("status", status);
+        intent.putExtra("timestamp", System.currentTimeMillis());
+        sendBroadcast(intent);
+    }
+
+    private void registerPsdTestReceiver() {
+        mPsdTestReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if ("cn.navitool.ACTION_TEST_PSD_SWITCH".equals(intent.getAction())) {
+                    int delayMs = intent.getIntExtra("delay", 0);
+                    DebugLogger.w(TAG, "TEST: Executing PSD Switch Test (Delay: " + delayMs + "ms)");
+
+                    // Send 0
+                    try {
+                        if (iCarFunction != null)
+                            iCarFunction.setFunctionValue(FUNC_PSD_SCREEN_SWITCH, ZONE_ALL, 0);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+
+                    // Delay
+                    if (delayMs > 0) {
+                        try {
+                            Thread.sleep(delayMs);
+                        } catch (InterruptedException e) {
+                        }
+                    }
+
+                    // Send 1
+                    setPsdOn();
+                    DebugLogger.d(TAG, "TEST: PSD Switch Test Completed.");
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter("cn.navitool.ACTION_TEST_PSD_SWITCH");
+        registerReceiver(mPsdTestReceiver, filter);
+    }
+
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (sharedPreferences, key) -> {
         if ("force_auto_day_night".equals(key) || "enable_24_25_light_sensor".equals(key)) {
             boolean forceAuto = sharedPreferences.getBoolean("force_auto_day_night", false);
@@ -132,88 +206,25 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             mIsPsdAlwaysOnEnabled = sharedPreferences.getBoolean(key, false);
             if (mIsPsdAlwaysOnEnabled) {
                 mPsdHandler.removeCallbacks(mPsdRunnable);
-                mPsdHandler.post(mPsdRunnable); // Start
-                                                // immediately
-                acquireWakeLock(); // Acquire WakeLock
+                mPsdHandler.post(mPsdRunnable);
+                acquireWakeLock();
             } else {
                 mPsdHandler.removeCallbacks(mPsdRunnable);
-                releaseWakeLock(); // Release WakeLock
-                // Optional: Turn off when disabled? User didn't specify, but safer to just stop
-                // enforcing.
-                // If user wants to turn it off, they might need manual control or it just
-                // reverts to system behavior.
-                // For now, let's just stop enforcing.
-                // Actually, if I toggle it OFF, I should probably send a 0?
-                // "开关开启后...常开". Implies switch OFF = Not always on (or OFF).
-                // Let's send 0 once to be responsive.
+                releaseWakeLock();
                 if (iCarFunction != null) {
                     try {
                         iCarFunction.setFunctionValue(FUNC_PSD_SCREEN_SWITCH, ZONE_ALL, 0);
                     } catch (Exception e) {
+                        DebugLogger.e(TAG, "Failed to turn off PSD", e);
                     }
                 }
             }
         }
     };
 
-    private KeepAlivePresentation mPsdPresentation;
+    // private KeepAlivePresentation mPsdPresentation; // Removed
 
-    private void initPsdKeepAlive() {
-        try {
-            android.hardware.display.DisplayManager dm = (android.hardware.display.DisplayManager) getSystemService(
-                    android.content.Context.DISPLAY_SERVICE);
-            android.view.Display[] displays = dm.getDisplays();
-
-            DebugLogger.i(TAG, "Scanning displays for PSD (Passenger Screen)...");
-            for (android.view.Display display : displays) {
-                String name = display.getName();
-                int id = display.getDisplayId();
-                DebugLogger.i(TAG, "Found Display: ID=" + id + ", Name=" + name);
-
-                // 识别副驾屏的策略：
-                // 1. 根据名称关键字 (常见: "Passenger", "PSD", "副驾")
-                // 识别副驾屏的策略：
-                // 1. 优先匹配用户确认的 ID (1)
-                if (id == 1) {
-                    DebugLogger.i(TAG, ">>> Targeted PSD Display (Match by ID=1): " + name);
-                    showKeepAliveOnDisplay(display);
-                    return;
-                }
-
-                // 2. 后备策略：关键字匹配 (排除主屏 ID 0)
-                if (id != 0 && (name.contains("Passenger") || name.contains("PSD") || name.contains("副"))) {
-                    DebugLogger.i(TAG, ">>> Targeted PSD Display (Match by Keyword): " + name);
-                    showKeepAliveOnDisplay(display);
-                    return;
-                }
-            }
-            DebugLogger.w(TAG, "No PSD display found matching keywords.");
-
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Error initializing PSD KeepAlive", e);
-        }
-    }
-
-    private void showKeepAliveOnDisplay(android.view.Display display) {
-        try {
-            if (mPsdPresentation != null) {
-                mPsdPresentation.dismiss();
-            }
-            mPsdPresentation = new KeepAlivePresentation(this, display);
-
-            // 作为一个 AccessibilityService，我们需要使用 TYPE_APPLICATION_OVERLAY (Android O+)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                mPsdPresentation.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
-            } else {
-                mPsdPresentation.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
-            }
-
-            mPsdPresentation.show();
-            DebugLogger.i(TAG, "KeepAlivePresentation SHOW SUCCESS on Display " + display.getDisplayId());
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to show KeepAlivePresentation", e);
-        }
-    }
+    // initPsdKeepAlive and showKeepAliveOnDisplay Removed
 
     @Override
     public void onCreate() {
@@ -230,7 +241,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }
 
         // 启动副驾屏保活
-        initPsdKeepAlive();
+        // initPsdKeepAlive(); // [Removed]
+
+        registerPsdTestReceiver();
 
         // [新增] 初始化车辆控制接口 (监听发动机、档位、车门等)
         initCar();
@@ -315,14 +328,26 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         mOverrideHandler.removeCallbacks(mOverrideRunnable);
         mPsdHandler.removeCallbacks(mPsdRunnable);
 
-        if (mPsdPresentation != null) {
-            try {
-                mPsdPresentation.dismiss();
-            } catch (Exception e) {
-                DebugLogger.w(TAG, "Error dismissing presentation", e);
-            }
-            mPsdPresentation = null;
+        // if (mPsdPresentation != null) {
+        // mPsdPresentation.dismiss();
+        // }
+
+        if (mPsdTestReceiver != null) {
+            unregisterReceiver(mPsdTestReceiver);
         }
+        // The following catch block and assignment were part of the mPsdPresentation
+        // logic.
+        // Since mPsdPresentation dismissal is commented out, these lines are also
+        // commented/removed
+        // to maintain syntactical correctness and reflect the intended change.
+        // try {
+        // if (mPsdPresentation != null) {
+        // mPsdPresentation.dismiss();
+        // }
+        // } catch (Exception e) {
+        // DebugLogger.w(TAG, "Error dismissing presentation", e);
+        // }
+        // mPsdPresentation = null;
 
         SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
         prefs.unregisterOnSharedPreferenceChangeListener(prefsListener);
@@ -1138,8 +1163,22 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                             intent.putExtra("type", "main");
                             intent.putExtra("status", value);
                             sendBroadcast(intent);
-                        }
+                        } else if (functionId == FUNC_PSD_SCREEN_SWITCH) {
+                            DebugLogger.d(TAG, "PSD Screen Status Changed: " + value);
+                            broadcastPsdStatus((int) value);
 
+                            if (value == 0) {
+                                long now = System.currentTimeMillis();
+                                DebugLogger.w(TAG, "WARNING: PSD Turned OFF at " + now);
+
+                                // 1. Immediate Counter-Attack
+                                DebugLogger.i(TAG, ">>> IMMEDIATE: Force PSD ON (Reaction to OFF)");
+                                setPsdOn();
+
+                                // 2. Schedule 10-Minute Counter-Attack (9m 59s 950ms)
+                                schedulePsd10MinCountermeasure();
+                            }
+                        }
                     }
 
                     @Override
@@ -1179,7 +1218,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
                 DebugLogger.i(TAG, "Function watchers registered (AVM, Brightness, Door, Lights)");
             }
-        } catch (Exception e) {
+        } catch (
+
+        Exception e) {
             DebugLogger.e(TAG, "Failed to register function watchers", e);
         }
     }
@@ -1526,7 +1567,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                 .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
                                 .build();
                         focusRequest = new android.media.AudioFocusRequest.Builder(
-                                android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+                                android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
                                 .setAudioAttributes(playbackAttributes)
                                 .setAcceptsDelayedFocusGain(false)
                                 .setOnAudioFocusChangeListener(focusListener)
@@ -1534,7 +1575,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                         am.requestAudioFocus(focusRequest);
                     } else {
                         am.requestAudioFocus(focusListener, android.media.AudioManager.STREAM_MUSIC,
-                                android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
+                                android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
                     }
                 }
 
@@ -1550,25 +1591,37 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 mMediaPlayer.setOnCompletionListener(mp -> {
                     mp.release();
                     mMediaPlayer = null;
+                    DebugLogger.d(TAG, "Sound playback completed: " + filename);
                     // Abandon Focus
                     if (am != null) {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && finalRequest != null) {
-                            am.abandonAudioFocusRequest(finalRequest);
-                        } else {
-                            am.abandonAudioFocus(finalListener);
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && finalRequest != null) {
+                                int result = am.abandonAudioFocusRequest(finalRequest);
+                                DebugLogger.d(TAG, "abandonAudioFocusRequest result=" + result);
+                            } else {
+                                int result = am.abandonAudioFocus(finalListener);
+                                DebugLogger.d(TAG, "abandonAudioFocus result=" + result);
+                            }
+                        } catch (Exception e) {
+                            DebugLogger.e(TAG, "Failed to abandon audio focus", e);
                         }
                     }
                 });
 
-                // Handle Error to release focus
                 mMediaPlayer.setOnErrorListener((mp, what, extra) -> {
+                    DebugLogger.e(TAG, "MediaPlayer Error: what=" + what + ", extra=" + extra);
                     mp.release();
                     mMediaPlayer = null;
+                    // Abandon Focus on Error
                     if (am != null) {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && finalRequest != null) {
-                            am.abandonAudioFocusRequest(finalRequest);
-                        } else {
-                            am.abandonAudioFocus(finalListener);
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && finalRequest != null) {
+                                am.abandonAudioFocusRequest(finalRequest);
+                            } else {
+                                am.abandonAudioFocus(finalListener);
+                            }
+                        } catch (Exception e) {
+                            DebugLogger.e(TAG, "Failed to abandon audio focus on error", e);
                         }
                     }
                     return true;

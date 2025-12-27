@@ -38,6 +38,11 @@ import com.google.android.material.switchmaterial.SwitchMaterial;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.text.SimpleDateFormat;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -63,13 +68,24 @@ public class MainActivity extends AppCompatActivity {
             });
 
     // Navigation Views
-    private ScrollView mLayoutTheme;
-    private ScrollView mLayoutButtons;
-    private ScrollView mLayoutAutoStart;
-    private ScrollView mLayoutADB;
-    private ScrollView mLayoutLights;
-    private ScrollView mLayoutBrightness;
-    private ScrollView mLayoutSound;
+    private View mLayoutTheme;
+    private View mLayoutButtons;
+    private View mLayoutAutoStart;
+    private ScrollView mLayoutADB; // ADB is not lazy
+    private View mLayoutLights;
+    private View mLayoutBrightness;
+    private View mLayoutSound;
+    private View mLayoutCluster;
+    private View mLayoutHud;
+
+    private boolean mIsThemeInit = false;
+    private boolean mIsButtonsInit = false;
+    private boolean mIsAutoStartInit = false;
+    private boolean mIsLightsInit = false;
+    private boolean mIsBrightnessInit = false;
+    private boolean mIsSoundInit = false;
+    private boolean mIsClusterInit = false;
+    private boolean mIsHudInit = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -77,110 +93,241 @@ public class MainActivity extends AppCompatActivity {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
         setContentView(R.layout.activity_main);
 
+        DebugLogger.init(this); // Initialize Logging (Must be before initUI for debug switch state)
+        DebugLogger.createDirectories();
+
         initUI();
         initNavigation();
-        DebugLogger.init(this); // Initialize Logging
-        DebugLogger.createDirectories();
         checkPermissions();
+
+        // Optimize: Pre-initialize ClusterHudManager in background to reduce lag on
+        // first tab switch
+        new Thread(() -> {
+            ClusterHudManager.getInstance(getApplicationContext());
+        }).start();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        checkPermissions(); // Refresh detailed status
-        refreshPermissionDialog(mPermissionDialogView);
-
-        if (isAutoRepairing) {
-            // Delay to allow system state update
-            new android.os.Handler().postDelayed(this::processNextRepair, 500);
-        }
-        android.content.IntentFilter filter = new android.content.IntentFilter();
-        filter.addAction("cn.navitool.ACTION_DAY_NIGHT_STATUS");
-        registerReceiver(mDayNightStatusReceiver, filter);
-
-        android.content.IntentFilter adbFilter = new android.content.IntentFilter("cn.navitool.ADB_STATUS_CHANGED");
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(adbStatusReceiver, adbFilter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            registerReceiver(adbStatusReceiver, adbFilter);
-        }
-
-        // Refresh ADB Status
+        registerReceivers();
+        // Request immediate status update from ADB Shell
         AdbShell.getInstance(this).broadcastStatus();
-
-        android.content.IntentFilter headlightFilter = new android.content.IntentFilter(
-                "cn.navitool.ACTION_HEADLIGHT_STATUS");
-        registerReceiver(mHeadlightStatusReceiver, headlightFilter);
-
-        android.content.IntentFilter oneOSFilter = new android.content.IntentFilter();
-        oneOSFilter.addAction("cn.navitool.ACTION_ONEOS_STATUS");
-        registerReceiver(mOneOSStatusReceiver, oneOSFilter);
-
-        // Request status update
-        sendBroadcast(new Intent("cn.navitool.ACTION_REQUEST_DAY_NIGHT_STATUS"));
-        sendBroadcast(new Intent("cn.navitool.ACTION_REQUEST_ONEOS_STATUS"));
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        unregisterReceiver(mDayNightStatusReceiver);
-        unregisterReceiver(mOneOSStatusReceiver);
-        unregisterReceiver(adbStatusReceiver);
-        unregisterReceiver(mHeadlightStatusReceiver);
+        unregisterReceivers();
+    }
+
+    private void registerReceivers() {
+        android.content.IntentFilter adbFilter = new android.content.IntentFilter("cn.navitool.ADB_STATUS_CHANGED");
+        registerReceiver(adbStatusReceiver, adbFilter);
+
+        android.content.IntentFilter headlightFilter = new android.content.IntentFilter(
+                "cn.navitool.ACTION_HEADLIGHT_STATUS");
+        registerReceiver(mHeadlightStatusReceiver, headlightFilter);
+
+        android.content.IntentFilter psdFilter = new android.content.IntentFilter("cn.navitool.ACTION_PSD_STATUS");
+        registerReceiver(mPsdStatusReceiver, psdFilter);
+
+        android.content.IntentFilter oneOsFilter = new android.content.IntentFilter("cn.navitool.ACTION_ONEOS_STATUS");
+        registerReceiver(mOneOSStatusReceiver, oneOsFilter);
+    }
+
+    private void unregisterReceivers() {
+        try {
+            unregisterReceiver(adbStatusReceiver);
+            unregisterReceiver(mHeadlightStatusReceiver);
+            unregisterReceiver(mPsdStatusReceiver);
+            unregisterReceiver(mOneOSStatusReceiver);
+        } catch (IllegalArgumentException e) {
+            // Receiver not registered
+        }
     }
 
     private void initNavigation() {
         RadioGroup rgNavigation = findViewById(R.id.rgNavigation);
-        mLayoutTheme = findViewById(R.id.layoutContentTheme);
-        mLayoutButtons = findViewById(R.id.layoutContentButtons);
-        mLayoutAutoStart = findViewById(R.id.layoutContentAutoStart);
-        mLayoutADB = findViewById(R.id.layoutContentADB);
-        mLayoutLights = findViewById(R.id.layoutContentLights);
-        mLayoutBrightness = findViewById(R.id.layoutContentBrightness);
-        mLayoutSound = findViewById(R.id.layoutContentSound);
+        mLayoutADB = findViewById(R.id.layoutContentADB); // Always present
+
+        // Note: Other layouts are ViewStubs and will be inflated on demand
 
         // Initial Visibility
-        mLayoutTheme.setVisibility(View.GONE);
-        mLayoutButtons.setVisibility(View.GONE);
-        mLayoutAutoStart.setVisibility(View.GONE);
-        mLayoutADB.setVisibility(View.VISIBLE); // Default Tab
-        mLayoutLights.setVisibility(View.GONE);
-        mLayoutBrightness.setVisibility(View.GONE);
-        mLayoutSound.setVisibility(View.GONE);
+        if (mLayoutADB != null)
+            mLayoutADB.setVisibility(View.VISIBLE); // Default Tab
+
+        // Debug-only tabs logic:
+        int debugVisibility = BuildConfig.DEBUG ? View.VISIBLE : View.GONE;
+        View rbCluster = findViewById(R.id.rbCluster);
+        View rbHud = findViewById(R.id.rbHud);
+        if (rbCluster != null)
+            rbCluster.setVisibility(debugVisibility);
+        if (rbHud != null)
+            rbHud.setVisibility(debugVisibility);
 
         // Hide experimental features in Release builds
         if (!BuildConfig.DEBUG) {
             findViewById(R.id.rbLights).setVisibility(View.GONE);
-            // findViewById(R.id.rbSound).setVisibility(View.GONE); // [Release] Enabled for
-            // user
         }
 
         rgNavigation.setOnCheckedChangeListener((group, checkedId) -> {
-            mLayoutTheme.setVisibility(View.GONE);
-            mLayoutButtons.setVisibility(View.GONE);
-            mLayoutAutoStart.setVisibility(View.GONE);
-            mLayoutADB.setVisibility(View.GONE);
-            mLayoutLights.setVisibility(View.GONE);
-            mLayoutBrightness.setVisibility(View.GONE);
-            mLayoutSound.setVisibility(View.GONE);
+            // Hide all potential views
+            if (mLayoutADB != null)
+                mLayoutADB.setVisibility(View.GONE);
+            if (mLayoutTheme != null)
+                mLayoutTheme.setVisibility(View.GONE);
+            if (mLayoutButtons != null)
+                mLayoutButtons.setVisibility(View.GONE);
+            if (mLayoutAutoStart != null)
+                mLayoutAutoStart.setVisibility(View.GONE);
+            if (mLayoutLights != null)
+                mLayoutLights.setVisibility(View.GONE);
+            if (mLayoutBrightness != null)
+                mLayoutBrightness.setVisibility(View.GONE);
+            if (mLayoutSound != null)
+                mLayoutSound.setVisibility(View.GONE);
+            if (mLayoutCluster != null)
+                mLayoutCluster.setVisibility(View.GONE);
+            if (mLayoutHud != null)
+                mLayoutHud.setVisibility(View.GONE);
 
-            if (checkedId == R.id.rbTheme) {
-                mLayoutTheme.setVisibility(View.VISIBLE);
+            // Show selected
+            if (checkedId == R.id.rbADB) {
+                if (mLayoutADB != null)
+                    mLayoutADB.setVisibility(View.VISIBLE);
+            } else if (checkedId == R.id.rbTheme) {
+                ensureThemeInflated();
+                if (mLayoutTheme != null)
+                    mLayoutTheme.setVisibility(View.VISIBLE);
             } else if (checkedId == R.id.rbButtons) {
-                mLayoutButtons.setVisibility(View.VISIBLE);
+                ensureButtonsInflated();
+                if (mLayoutButtons != null)
+                    mLayoutButtons.setVisibility(View.VISIBLE);
             } else if (checkedId == R.id.rbAutoStart) {
-                mLayoutAutoStart.setVisibility(View.VISIBLE);
-            } else if (checkedId == R.id.rbADB) {
-                mLayoutADB.setVisibility(View.VISIBLE);
+                ensureAutoStartInflated();
+                if (mLayoutAutoStart != null)
+                    mLayoutAutoStart.setVisibility(View.VISIBLE);
             } else if (checkedId == R.id.rbLights) {
-                mLayoutLights.setVisibility(View.VISIBLE);
+                ensureLightsInflated();
+                if (mLayoutLights != null)
+                    mLayoutLights.setVisibility(View.VISIBLE);
             } else if (checkedId == R.id.rbBrightness) {
-                mLayoutBrightness.setVisibility(View.VISIBLE);
+                ensureBrightnessInflated();
+                if (mLayoutBrightness != null)
+                    mLayoutBrightness.setVisibility(View.VISIBLE);
             } else if (checkedId == R.id.rbSound) {
-                mLayoutSound.setVisibility(View.VISIBLE);
+                ensureSoundInflated();
+                if (mLayoutSound != null)
+                    mLayoutSound.setVisibility(View.VISIBLE);
+            } else if (checkedId == R.id.rbCluster) {
+                ensureClusterInflated();
+                if (mLayoutCluster != null)
+                    mLayoutCluster.setVisibility(View.VISIBLE);
+            } else if (checkedId == R.id.rbHud) {
+                ensureHudInflated();
+                if (mLayoutHud != null)
+                    mLayoutHud.setVisibility(View.VISIBLE);
             }
         });
+    }
+
+    private View tryInflate(View currentView, int stubId, int targetId) {
+        if (currentView == null) {
+            android.view.ViewStub stub = findViewById(stubId);
+            if (stub != null) {
+                return stub.inflate();
+            } else {
+                return findViewById(targetId);
+            }
+        }
+        return currentView;
+    }
+
+    private void ensureThemeInflated() {
+        if (mLayoutTheme == null) {
+            View v = tryInflate(mLayoutTheme, R.id.stubTheme, R.id.layoutContentTheme);
+            mLayoutTheme = v;
+            setupThemeSettings();
+            setupForceAutoDayNight();
+            mIsThemeInit = true;
+            // Re-apply debug visibility for the newly inflated layout
+            updateDebugViewsVisibility(DebugLogger.isDebugEnabled(this));
+        }
+    }
+
+    private void ensureButtonsInflated() {
+        if (mLayoutButtons == null) {
+            View v = tryInflate(mLayoutButtons, R.id.stubButtons, R.id.layoutContentButtons);
+            mLayoutButtons = v;
+            setupSteeringWheelControl();
+            setupWeChatButton();
+            setupMediaButtons();
+            mIsButtonsInit = true;
+            // Re-apply debug visibility for the newly inflated buttons
+            updateDebugViewsVisibility(DebugLogger.isDebugEnabled(this));
+        }
+    }
+
+    private void ensureAutoStartInflated() {
+        if (mLayoutAutoStart == null) {
+            View v = tryInflate(mLayoutAutoStart, R.id.stubAutoStart, R.id.layoutContentAutoStart);
+            mLayoutAutoStart = v;
+            setupAutoStartApps();
+            mIsAutoStartInit = true;
+        }
+    }
+
+    private void ensureLightsInflated() {
+        if (mLayoutLights == null) {
+            View v = tryInflate(mLayoutLights, R.id.stubLights, R.id.layoutContentLights);
+            mLayoutLights = v;
+            // setupForceAutoDayNight(); // Removed: Switches are in Theme layout, not
+            // Lights layout.
+            mIsLightsInit = true;
+        }
+    }
+
+    private void ensureBrightnessInflated() {
+        if (mLayoutBrightness == null) {
+            View v = tryInflate(mLayoutBrightness, R.id.stubBrightness, R.id.layoutContentBrightness);
+            mLayoutBrightness = v;
+            setupBrightnessSettings();
+            setupPsdTestButtons();
+            mIsBrightnessInit = true;
+            // Update debug visibility for PSD test buttons (inside Brightness tab)
+            updateDebugViewsVisibility(DebugLogger.isDebugEnabled(this));
+        }
+    }
+
+    private void ensureSoundInflated() {
+        if (!mIsSoundInit) {
+            mLayoutSound = tryInflate(mLayoutSound, R.id.stubSound, R.id.layoutContentSound);
+            if (mLayoutSound != null) {
+                setupSoundSwitches();
+                mIsSoundInit = true;
+            }
+        }
+    }
+
+    private void ensureClusterInflated() {
+        if (mLayoutCluster == null) {
+            View v = tryInflate(mLayoutCluster, R.id.stubCluster, R.id.layoutContentCluster);
+            mLayoutCluster = v;
+            setupCluster();
+            mIsClusterInit = true;
+        }
+    }
+
+    private void ensureHudInflated() {
+        if (mLayoutHud == null) {
+            View v = tryInflate(mLayoutHud, R.id.stubHud, R.id.layoutContentHud);
+            mLayoutHud = v;
+            setupHud();
+            // Load saved HUD layout immediately to prevent reset
+            loadHudLayout(mHudMode);
+            mIsHudInit = true;
+        }
     }
 
     private void initUI() {
@@ -188,30 +335,14 @@ public class MainActivity extends AppCompatActivity {
         setupDebugSwitch();
         setVersionInfo();
 
-        // --- Brightness Tab ---
-        setupBrightnessSettings();
-
-        // --- Theme Tab ---
-        setupThemeSettings();
-        setupForceAutoDayNight();
-
-        // --- Buttons Tab ---
-        setupSteeringWheelControl();
-        setupWeChatButton();
-        setupMediaButtons(); // Debug only
-
-        // --- AutoStart Tab ---
-        setupAutoStartApps();
-
-        // --- Sound Tab ---
-        setupSoundSwitches();
-
-        // --- ADB Tab (Permissions) ---
+        // --- ADB Tab (System Info & Permissions & Default Tab) ---
+        setupSystemInfo();
         setupPermissionStatuses();
         setupAdbWireless();
-
-        // Initialize Sensor Status (Default: No Data)
+        setupScreenshotAll();
         updateAutoModeStatus(0, -1);
+
+        // Note: Other tabs setup is deferred to ensureXInflated methods
     }
 
     private void setVersionInfo() {
@@ -221,23 +352,442 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private int mHudMode = 0; // 0=WHUD, 1=AR
+    private static final int MODE_WHUD = 0;
+    private static final int MODE_AR = 1;
+
+    private void setupCluster() {
+        com.google.android.material.switchmaterial.SwitchMaterial switchCluster = findViewById(R.id.switchCluster);
+        if (switchCluster != null) {
+            // Load Saved State
+            boolean isClusterEnabled = ConfigManager.getInstance().getBoolean("switch_cluster", false);
+            switchCluster.setChecked(isClusterEnabled);
+            ClusterHudManager.getInstance(this).setClusterEnabled(isClusterEnabled);
+
+            switchCluster.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                ClusterHudManager.getInstance(this).setClusterEnabled(isChecked);
+                ConfigManager.getInstance().setBoolean("switch_cluster", isChecked);
+            });
+        }
+    }
+
+    private void setupHud() {
+        com.google.android.material.switchmaterial.SwitchMaterial switchHud = findViewById(R.id.switchHud);
+        if (switchHud != null) {
+            // Load Saved State
+            boolean isHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", false);
+            switchHud.setChecked(isHudEnabled);
+            // Initial Visibility Set
+            ClusterHudManager.getInstance(this).setHudEnabled(isHudEnabled);
+            View previewContainer = findViewById(R.id.layoutHudPreviewContainer);
+            View previewContent = findViewById(R.id.layoutHudPreview);
+            View controls = findViewById(R.id.layoutHudEditorControls);
+
+            if (previewContainer != null)
+                previewContainer.setVisibility(isHudEnabled ? View.VISIBLE : View.GONE);
+            if (previewContent != null)
+                previewContent.setVisibility(View.VISIBLE);
+            if (controls != null)
+                controls.setVisibility(isHudEnabled ? View.VISIBLE : View.GONE);
+
+            switchHud.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                ClusterHudManager.getInstance(this).setHudEnabled(isChecked);
+                ConfigManager.getInstance().setBoolean("switch_hud", isChecked);
+
+                View pvContainer = findViewById(R.id.layoutHudPreviewContainer);
+                View pvContent = findViewById(R.id.layoutHudPreview);
+                View ctrl = findViewById(R.id.layoutHudEditorControls);
+
+                // Toggle Container
+                if (pvContainer != null)
+                    pvContainer.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+
+                // Ensure Content is Visible if Container is Visible
+                if (pvContent != null)
+                    pvContent.setVisibility(View.VISIBLE);
+
+                if (ctrl != null)
+                    ctrl.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+            });
+        }
+
+        setupHudEditor();
+
+        // Restore HUD Mode
+        mHudMode = ConfigManager.getInstance().getInt("hud_current_mode", MODE_WHUD);
+        updateHudModeButton();
+    }
+
+    // --- HUD Editor Logic ---
+    private View mHudTestComponent;
+    private boolean mIsHudComponentLocked = false;
+    private boolean mIsSnowModeEnabled = false;
+    private float dX, dY;
+
+    private void setupHudEditor() {
+        findViewById(R.id.btnHudAdd).setOnClickListener(v -> showAddHudComponentDialog());
+        findViewById(R.id.btnHudModify).setOnClickListener(v -> unlockHudComponent());
+        findViewById(R.id.btnHudSave).setOnClickListener(v -> lockHudComponent());
+        findViewById(R.id.btnHudReset).setOnClickListener(v -> resetHudComponent());
+        findViewById(R.id.btnHudSwitchMode).setOnClickListener(v -> switchHudMode());
+        findViewById(R.id.btnHudSnowMode).setOnClickListener(v -> toggleSnowMode());
+
+        // Restore Snow Mode
+        mIsSnowModeEnabled = ConfigManager.getInstance().getBoolean("hud_snow_mode", false);
+        updateHudSnowModeButton();
+    }
+
+    private void switchHudMode() {
+        // 1. Save current layout
+        saveCurrentHudLayout(mHudMode);
+
+        // 2. Toggle Mode
+        mHudMode = (mHudMode == MODE_WHUD) ? MODE_AR : MODE_WHUD;
+        ConfigManager.getInstance().setInt("hud_current_mode", mHudMode);
+
+        // 3. Update UI
+        updateHudModeButton();
+        DebugLogger.toast(this, "已切换至 " + ((mHudMode == MODE_WHUD) ? "WHUD" : "AR") + " 模式");
+
+        // 4. Load Layout
+        loadHudLayout(mHudMode);
+    }
+
+    private void saveCurrentHudLayout(int mode) {
+        android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
+        if (preview == null)
+            return;
+
+        // Save Lock State
+        String lockKey = (mode == MODE_WHUD) ? "hud_locked_whud" : "hud_locked_ar";
+        ConfigManager.getInstance().setBoolean(lockKey, mIsHudComponentLocked);
+
+        JSONArray jsonArray = new JSONArray();
+        for (int i = 0; i < preview.getChildCount(); i++) {
+            View child = preview.getChildAt(i);
+            // Filter: Only save views that are explicitly HUD components (have a tag)
+            Object tag = child.getTag();
+            if (child instanceof TextView && tag != null && tag.toString().startsWith("type_")) {
+                try {
+                    JSONObject obj = new JSONObject();
+                    // Determine Type
+                    if ("type_time".equals(tag.toString())) {
+                        obj.put("type", "time");
+                        obj.put("text", ((android.widget.TextClock) child).getFormat12Hour());
+                    } else {
+                        obj.put("type", "text");
+                        obj.put("text", ((TextView) child).getText().toString());
+                    }
+                    obj.put("x", child.getX());
+                    obj.put("y", child.getY());
+                    jsonArray.put(obj);
+                } catch (JSONException e) {
+                    DebugLogger.e("HUD", "Failed to serialize component", e);
+                }
+            }
+        }
+        String key = (mode == MODE_WHUD) ? "hud_layout_whud" : "hud_layout_ar";
+        ConfigManager.getInstance().setString(key, jsonArray.toString());
+        DebugLogger.d("HUD", "Saved layout for " + key + ": " + jsonArray.toString());
+    }
+
+    private void loadHudLayout(int mode) {
+        android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
+        if (preview == null)
+            return;
+
+        // Clear Preview
+        preview.removeAllViews();
+        mHudTestComponent = null;
+
+        String key = (mode == MODE_WHUD) ? "hud_layout_whud" : "hud_layout_ar";
+        String jsonStr = ConfigManager.getInstance().getString(key, "[]");
+        List<ClusterHudManager.HudComponentData> syncList = new ArrayList<>();
+
+        if (jsonStr != null && !jsonStr.isEmpty()) {
+            try {
+                JSONArray jsonArray = new JSONArray(jsonStr);
+                for (int i = 0; i < jsonArray.length(); i++) {
+                    JSONObject obj = jsonArray.getJSONObject(i);
+                    String type = obj.optString("type", "text");
+                    String text = obj.optString("text", "Text");
+                    float x = (float) obj.optDouble("x", 0);
+                    float y = (float) obj.optDouble("y", 0);
+
+                    createAndAddHudComponent(type, text, x, y);
+                    int color = mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF;
+                    syncList.add(new ClusterHudManager.HudComponentData(type, text, x * 0.5f, y * 0.5f, color));
+                }
+            } catch (JSONException e) {
+                DebugLogger.e("HUD", "Failed to parse layout config", e);
+            }
+        }
+
+        // Restore Lock State
+        String lockKey = (mode == MODE_WHUD) ? "hud_locked_whud" : "hud_locked_ar";
+        mIsHudComponentLocked = ConfigManager.getInstance().getBoolean(lockKey, false);
+        if (mIsHudComponentLocked) {
+            DebugLogger.toast(this, "布局已恢复并锁定");
+        }
+
+        // Sync to Real HUD
+        ClusterHudManager.getInstance(this).syncHudLayout(syncList);
+    }
+
+    private void toggleSnowMode() {
+        mIsSnowModeEnabled = !mIsSnowModeEnabled;
+        ConfigManager.getInstance().setBoolean("hud_snow_mode", mIsSnowModeEnabled);
+        updateHudSnowModeButton();
+        refreshHudComponentColors();
+        syncAllHudComponents();
+        DebugLogger.toast(this, mIsSnowModeEnabled ? "雪地模式已开启" : "雪地模式已关闭");
+    }
+
+    private void updateHudSnowModeButton() {
+        Button btn = findViewById(R.id.btnHudSnowMode);
+        if (btn != null) {
+            btn.setText(mIsSnowModeEnabled ? "关闭雪地模式" : "开启雪地模式");
+        }
+    }
+
+    private void refreshHudComponentColors() {
+        android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
+        if (preview == null)
+            return;
+        int color = mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF; // Cyan : White
+
+        // Update Preview
+        for (int i = 0; i < preview.getChildCount(); i++) {
+            View child = preview.getChildAt(i);
+            if (child instanceof TextView) {
+                ((TextView) child).setTextColor(color);
+            }
+        }
+    }
+
+    // Updated helper method signature to accept type
+    private void createAndAddHudComponent(String type, String text, float x, float y) {
+        android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
+        if (preview == null)
+            return;
+
+        TextView tv;
+        if ("time".equals(type)) {
+            android.widget.TextClock tc = new android.widget.TextClock(this);
+            tc.setFormat12Hour(text);
+            tc.setFormat24Hour(text);
+            tc.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            tc.setPadding(0, 0, 0, 0); // No padding
+            tc.setTag("type_time");
+            tv = tc;
+        } else {
+            tv = new TextView(this);
+            tv.setText(text);
+            tv.setBackgroundColor(android.graphics.Color.WHITE);
+            tv.setPadding(16, 8, 16, 8);
+            tv.setTag("type_text");
+        }
+
+        tv.setTextSize(24);
+        tv.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
+
+        android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
+        params.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
+
+        tv.setX(x);
+        tv.setY(y);
+
+        preview.addView(tv, params);
+        mHudTestComponent = tv; // Only track last added for now
+        mIsHudComponentLocked = false;
+
+        // Setup Drag Listener
+        setupHudComponentTouchListener(tv);
+    }
+
+    private void setupHudComponentTouchListener(View tv) {
+        tv.setOnTouchListener(new View.OnTouchListener() {
+            float dX, dY;
+
+            @Override
+            public boolean onTouch(View view, android.view.MotionEvent event) {
+                if (mIsHudComponentLocked)
+                    return false;
+
+                switch (event.getAction()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        dX = view.getX() - event.getRawX();
+                        dY = view.getY() - event.getRawY();
+                        // Update current Selection tracking if we support multi-select later
+                        mHudTestComponent = view;
+                        break;
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        float newX = event.getRawX() + dX;
+                        float newY = event.getRawY() + dY;
+
+                        // Bounds Check
+                        View parent = (View) view.getParent();
+                        int parentWidth = parent.getWidth();
+                        int parentHeight = parent.getHeight();
+                        int viewWidth = view.getWidth();
+                        int viewHeight = view.getHeight();
+
+                        if (newX < 0)
+                            newX = 0;
+                        if (newX + viewWidth > parentWidth)
+                            newX = parentWidth - viewWidth;
+                        if (newY < 0)
+                            newY = 0;
+                        if (newY + viewHeight > parentHeight)
+                            newY = parentHeight - viewHeight;
+
+                        view.setX(newX);
+                        view.setY(newY);
+
+                        // Real-time Sync
+                        syncAllHudComponents();
+                        break;
+                    default:
+                        return false;
+                }
+                return true;
+            }
+        });
+    }
+
+    private void syncAllHudComponents() {
+        android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
+        if (preview == null)
+            return;
+        List<ClusterHudManager.HudComponentData> list = new ArrayList<>();
+        for (int i = 0; i < preview.getChildCount(); i++) {
+            View child = preview.getChildAt(i);
+            if (child instanceof TextView) {
+                String type = (child instanceof android.widget.TextClock) ? "time" : "text";
+                String text = (child instanceof android.widget.TextClock)
+                        ? ((android.widget.TextClock) child).getFormat12Hour().toString()
+                        : ((TextView) child).getText().toString();
+
+                int color = mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF;
+                list.add(new ClusterHudManager.HudComponentData(
+                        type,
+                        text,
+                        child.getX() * 0.5f,
+                        child.getY() * 0.5f,
+                        color));
+            }
+        }
+        ClusterHudManager.getInstance(this).syncHudLayout(list);
+    }
+
+    private void updateHudModeButton() {
+        Button btn = findViewById(R.id.btnHudSwitchMode);
+        if (btn != null) {
+            // Button shows text for the OTHER mode (action to switch TO)
+            // Or just current status? User request:
+            // "Default: 'Switch AR Mode' (meaning currently WHUD)"
+            // "When clicked: 'Switch WHUD Mode' (meaning currently AR)"
+            if (mHudMode == MODE_WHUD) {
+                btn.setText("切换AR模式");
+            } else {
+                btn.setText("切换WHUD模式");
+            }
+        }
+    }
+
+    private void showAddHudComponentDialog() {
+        // Allow multiple components - removed single component check
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this);
+        builder.setTitle("添加组件");
+
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.HORIZONTAL);
+        container.setPadding(32, 16, 32, 16);
+        container.setGravity(android.view.Gravity.CENTER);
+
+        // Test Button (Text)
+        Button btnTest = new Button(this);
+        btnTest.setText("测试文本");
+        btnTest.setPadding(16, 16, 16, 16);
+
+        // Time Button (Clock)
+        Button btnTime = new Button(this);
+        btnTime.setText("系统时间");
+        btnTime.setPadding(16, 16, 16, 16);
+
+        container.addView(btnTest);
+        container.addView(btnTime);
+
+        builder.setView(container);
+        android.app.AlertDialog dialog = builder.create();
+
+        btnTest.setOnClickListener(v -> {
+            addHudTestComponent();
+            dialog.dismiss();
+        });
+        btnTime.setOnClickListener(v -> {
+            addHudTimeComponent();
+            dialog.dismiss();
+        });
+
+        dialog.show();
+    }
+
+    private void addHudTestComponent() {
+        createAndAddHudComponent("text", "测试", 0, 0);
+        syncAllHudComponents();
+    }
+
+    private void addHudTimeComponent() {
+        createAndAddHudComponent("time", "HH:mm", 0, 0);
+        syncAllHudComponents();
+    }
+
+    private void lockHudComponent() {
+        // Save current layout to Config
+        saveCurrentHudLayout(mHudMode);
+        mIsHudComponentLocked = true;
+        DebugLogger.toast(this, "布局已保存");
+    }
+
+    private void unlockHudComponent() {
+        mIsHudComponentLocked = false;
+        DebugLogger.toast(this, "组件已解锁 (可拖拽)");
+    }
+
+    private void resetHudComponent() {
+        android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
+        if (preview != null) {
+            preview.removeAllViews();
+        }
+        mHudTestComponent = null;
+        mIsHudComponentLocked = false;
+
+        // Clear in Config
+        String key = (mHudMode == MODE_WHUD) ? "hud_layout_whud" : "hud_layout_ar";
+        ConfigManager.getInstance().setString(key, "[]");
+
+        // Clear Real HUD
+        ClusterHudManager.getInstance(this).clearHudComponents();
+
+        DebugLogger.toast(this, "布局已重置");
+    }
+
     private void setupDebugSwitch() {
         SwitchMaterial switchDebug = findViewById(R.id.switchDebug);
         if (!BuildConfig.DEBUG) {
             switchDebug.setVisibility(View.GONE);
         }
 
-        // Layouts controlled by debug switch
-        View layoutDebugButtons = findViewById(R.id.layoutDebugButtons); // In Basic
-        View layoutMediaButtons = findViewById(R.id.layoutMediaButtons); // In Buttons
-
         boolean isDebug = DebugLogger.isDebugEnabled(this);
         switchDebug.setChecked(isDebug);
-        updateDebugViewsVisibility(isDebug, layoutDebugButtons, layoutMediaButtons);
+        updateDebugViewsVisibility(isDebug);
 
         switchDebug.setOnCheckedChangeListener((buttonView, isChecked) -> {
             DebugLogger.setDebugEnabled(this, isChecked);
-            updateDebugViewsVisibility(isChecked, layoutDebugButtons, layoutMediaButtons);
+            updateDebugViewsVisibility(isChecked);
             updateTestButtons(isChecked); // Also update test buttons
             if (isChecked) {
                 DebugLogger.toast(this, getString(R.string.debug_mode_enabled));
@@ -247,12 +797,69 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void updateDebugViewsVisibility(boolean isDebug, View debugButtons, View mediaButtons) {
+    private void updateDebugViewsVisibility(boolean isDebug) {
+        // Strictly enforce that these views are ONLY visible in Debug builds
+        // regardless of the stored preference (which handles the switch state)
+        boolean allowDebugViews = isDebug && BuildConfig.DEBUG;
+        int visibility = allowDebugViews ? View.VISIBLE : View.GONE;
+
+        // Theme Buttons (in layout_tab_theme.xml)
+        View debugButtons = findViewById(R.id.layoutDebugButtons);
         if (debugButtons != null) {
-            debugButtons.setVisibility(isDebug ? View.VISIBLE : View.GONE);
+            debugButtons.setVisibility(visibility);
         }
+
+        // Media Buttons (in layout_tab_buttons.xml)
+        View mediaButtons = findViewById(R.id.layoutMediaButtons);
         if (mediaButtons != null) {
-            mediaButtons.setVisibility(isDebug ? View.VISIBLE : View.GONE);
+            mediaButtons.setVisibility(visibility);
+        }
+
+        // Third Party Test Button (in layout_tab_buttons.xml)
+        // View btnTestThirdParty = findViewById(R.id.btnTestThirdPartyControl);
+        // if (btnTestThirdParty != null) {
+        // btnTestThirdParty.setVisibility(visibility);
+        // }
+
+        View layoutPsdTest = findViewById(R.id.layoutPsdTestButtons);
+        if (layoutPsdTest != null) {
+            layoutPsdTest.setVisibility(visibility);
+        }
+
+        // Headlight Status
+        View layoutHeadlight = findViewById(R.id.layoutHeadlightStatus);
+        if (layoutHeadlight != null) {
+            layoutHeadlight.setVisibility(visibility);
+        } else {
+            // Fallback for individual items if wrapper not found
+            View tvDipped = findViewById(R.id.tvDippedBeamStatus);
+            if (tvDipped != null)
+                tvDipped.setVisibility(visibility);
+            View tvMain = findViewById(R.id.tvMainBeamStatus);
+            if (tvMain != null)
+                tvMain.setVisibility(visibility);
+        }
+
+        // System Info & Screenshots
+        View btnScreenshot = findViewById(R.id.btnScreenshotAll);
+        if (btnScreenshot != null)
+            btnScreenshot.setVisibility(visibility);
+
+        View tvScreenshotPath = findViewById(R.id.tvScreenshotPath);
+        if (tvScreenshotPath != null)
+            tvScreenshotPath.setVisibility(visibility);
+
+        // System Info (Boot Time, PSD Status)
+        View layoutSystemInfo = findViewById(R.id.layoutSystemInfo);
+        if (layoutSystemInfo != null) {
+            layoutSystemInfo.setVisibility(visibility);
+        } else {
+            View tvBootTime = findViewById(R.id.tvBootTime);
+            if (tvBootTime != null)
+                tvBootTime.setVisibility(visibility);
+            View tvPsdStatus = findViewById(R.id.tvPsdStatus);
+            if (tvPsdStatus != null)
+                tvPsdStatus.setVisibility(visibility);
         }
     }
 
@@ -273,34 +880,33 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupSoundSwitches() {
-        android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
-
         // Master Switch
         SwitchMaterial switchMaster = findViewById(R.id.switchSoundMaster);
         if (switchMaster != null) {
             // Default to TRUE to maintain backward compatibility
-            switchMaster.setChecked(prefs.getBoolean("sound_master_enabled", true));
+            boolean isMaster = ConfigManager.getInstance().getBoolean("sound_master_enabled", true);
+            switchMaster.setChecked(isMaster);
             switchMaster.setOnCheckedChangeListener(
-                    (v, isChecked) -> prefs.edit().putBoolean("sound_master_enabled", isChecked).apply());
+                    (v, isChecked) -> ConfigManager.getInstance().setBoolean("sound_master_enabled", isChecked));
         }
 
-        setupSoundItem(prefs, R.id.switchSoundStart, R.id.btnSelectSoundStart, R.id.btnTestSoundStart,
+        setupSoundItem(R.id.switchSoundStart, R.id.btnSelectSoundStart, R.id.btnTestSoundStart,
                 R.id.tvSoundStartFile, "sound_start");
-        setupSoundItem(prefs, R.id.switchSoundGearD, R.id.btnSelectSoundGearD, R.id.btnTestSoundGearD,
+        setupSoundItem(R.id.switchSoundGearD, R.id.btnSelectSoundGearD, R.id.btnTestSoundGearD,
                 R.id.tvSoundGearDFile, "sound_gear_d");
-        setupSoundItem(prefs, R.id.switchSoundGearN, R.id.btnSelectSoundGearN, R.id.btnTestSoundGearN,
+        setupSoundItem(R.id.switchSoundGearN, R.id.btnSelectSoundGearN, R.id.btnTestSoundGearN,
                 R.id.tvSoundGearNFile, "sound_gear_n");
-        setupSoundItem(prefs, R.id.switchSoundGearR, R.id.btnSelectSoundGearR, R.id.btnTestSoundGearR,
+        setupSoundItem(R.id.switchSoundGearR, R.id.btnSelectSoundGearR, R.id.btnTestSoundGearR,
                 R.id.tvSoundGearRFile, "sound_gear_r");
-        setupSoundItem(prefs, R.id.switchSoundGearP, R.id.btnSelectSoundGearP, R.id.btnTestSoundGearP,
+        setupSoundItem(R.id.switchSoundGearP, R.id.btnSelectSoundGearP, R.id.btnTestSoundGearP,
                 R.id.tvSoundGearPFile, "sound_gear_p");
-        setupSoundItem(prefs, R.id.switchSoundDoorPassenger, R.id.btnSelectSoundDoorPassenger,
+        setupSoundItem(R.id.switchSoundDoorPassenger, R.id.btnSelectSoundDoorPassenger,
                 R.id.btnTestSoundDoorPassenger, R.id.tvSoundDoorPassengerFile, "sound_door_passenger");
 
         configureTestButtonsVisibility();
     }
 
-    private void setupSoundItem(android.content.SharedPreferences prefs, int switchId, int btnId, int testBtnId,
+    private void setupSoundItem(int switchId, int btnId, int testBtnId,
             int tvFileId, String keyPrefix) {
         SwitchMaterial switchView = findViewById(switchId);
         Button btnSelect = findViewById(btnId);
@@ -310,27 +916,28 @@ public class MainActivity extends AppCompatActivity {
         String fileKey = keyPrefix + "_file";
 
         if (switchView != null) {
-            switchView.setChecked(prefs.getBoolean(enabledKey, false));
+            switchView.setChecked(ConfigManager.getInstance().getBoolean(enabledKey, false));
             switchView.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                prefs.edit().putBoolean(enabledKey, isChecked).apply();
+                ConfigManager.getInstance().setBoolean(enabledKey, isChecked);
             });
         }
 
         if (tvFile != null) {
-            String selectedFile = prefs.getString(fileKey, null);
+            String selectedFile = ConfigManager.getInstance().getString(fileKey, null);
             tvFile.setText(selectedFile != null ? selectedFile : getString(R.string.text_default_sound));
         }
 
         if (btnSelect != null) {
-            btnSelect.setOnClickListener(v -> showSoundFileSelector(prefs, fileKey, tvFile));
+            btnSelect.setOnClickListener(v -> showSoundFileSelector(fileKey, tvFile));
         }
 
         if (btnTest != null) {
-            btnTest.setOnClickListener(v -> testPlaySound(prefs.getString(fileKey, null), keyPrefix));
+            btnTest.setOnClickListener(
+                    v -> testPlaySound(ConfigManager.getInstance().getString(fileKey, null), keyPrefix));
         }
     }
 
-    private void showSoundFileSelector(android.content.SharedPreferences prefs, String fileKey, TextView tvFile) {
+    private void showSoundFileSelector(String fileKey, TextView tvFile) {
         java.io.File soundDir = new java.io.File(Environment.getExternalStorageDirectory(), "NaviTool/Sound");
         if (!soundDir.exists() || !soundDir.isDirectory()) {
             new android.app.AlertDialog.Builder(this)
@@ -361,7 +968,7 @@ public class MainActivity extends AppCompatActivity {
                 .setTitle(R.string.dialog_title_select_sound)
                 .setItems(fileNames, (dialog, which) -> {
                     String selectedFile = fileNames[which];
-                    prefs.edit().putString(fileKey, selectedFile).apply();
+                    ConfigManager.getInstance().setString(fileKey, selectedFile);
                     if (tvFile != null) {
                         tvFile.setText(selectedFile);
                     }
@@ -484,37 +1091,38 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupForceAutoDayNight() {
-        android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
         SwitchMaterial switchForceAutoDayNight = findViewById(R.id.switchForceAutoDayNight);
         TextView tvAutoModeStatus = findViewById(R.id.tvAutoModeStatus);
 
-        boolean isForceAuto = prefs.getBoolean("force_auto_day_night", false);
-        switchForceAutoDayNight.setChecked(isForceAuto);
+        if (switchForceAutoDayNight != null) {
+            boolean isForceAuto = ConfigManager.getInstance().getBoolean("force_auto_day_night", false);
+            switchForceAutoDayNight.setChecked(isForceAuto);
+
+            switchForceAutoDayNight.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                ConfigManager.getInstance().setBoolean("force_auto_day_night", isChecked);
+
+                Intent intent = new Intent("cn.navitool.ACTION_FORCE_AUTO_MODE_CHANGED");
+                intent.putExtra("enabled", isChecked);
+                sendBroadcast(intent);
+
+                if (isChecked) {
+                    Intent requestIntent = new Intent("cn.navitool.ACTION_REQUEST_DAY_NIGHT_STATUS");
+                    sendBroadcast(requestIntent);
+                }
+            });
+        }
 
         if (tvAutoModeStatus != null) {
             tvAutoModeStatus.setText(getString(R.string.status_auto_mode, getString(R.string.mode_unknown)));
         }
 
-        switchForceAutoDayNight.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            prefs.edit().putBoolean("force_auto_day_night", isChecked).apply();
-
-            Intent intent = new Intent("cn.navitool.ACTION_FORCE_AUTO_MODE_CHANGED");
-            intent.putExtra("enabled", isChecked);
-            sendBroadcast(intent);
-
-            if (isChecked) {
-                Intent requestIntent = new Intent("cn.navitool.ACTION_REQUEST_DAY_NIGHT_STATUS");
-                sendBroadcast(requestIntent);
-            }
-        });
-
         // 24-25 Model Light Sensor Switch
         SwitchMaterial switch2425LightSensor = findViewById(R.id.switch2425LightSensor);
         if (switch2425LightSensor != null) {
-            boolean is2425Enabled = prefs.getBoolean("enable_24_25_light_sensor", false);
+            boolean is2425Enabled = ConfigManager.getInstance().getBoolean("enable_24_25_light_sensor", false);
             switch2425LightSensor.setChecked(is2425Enabled);
             switch2425LightSensor.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                prefs.edit().putBoolean("enable_24_25_light_sensor", isChecked).apply();
+                ConfigManager.getInstance().setBoolean("enable_24_25_light_sensor", isChecked);
                 if (isChecked) {
                     DebugLogger.toast(this, "已开启24-25款光感切换");
                 }
@@ -525,16 +1133,13 @@ public class MainActivity extends AppCompatActivity {
     // --- Brightness Tab Logic ---
 
     private void setupBrightnessSettings() {
-        android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
-
         // Brightness Override Controls
-        // Find layouts to toggle visibility
         final View layoutBrightnessSliders = findViewById(R.id.layoutBrightnessSliders);
 
         com.google.android.material.switchmaterial.SwitchMaterial switchOverride = findViewById(
                 R.id.switchBrightnessOverride);
         if (switchOverride != null) {
-            boolean isOverrideEnabled = prefs.getBoolean("override_brightness_enabled", false);
+            boolean isOverrideEnabled = ConfigManager.getInstance().getBoolean("override_brightness_enabled", false);
             switchOverride.setChecked(isOverrideEnabled);
 
             // Set initial visibility for both Sliders and Sync Switch
@@ -543,37 +1148,41 @@ public class MainActivity extends AppCompatActivity {
             }
 
             switchOverride.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                prefs.edit().putBoolean("override_brightness_enabled", isChecked).apply();
+                ConfigManager.getInstance().setBoolean("override_brightness_enabled", isChecked);
                 if (layoutBrightnessSliders != null) {
                     layoutBrightnessSliders.setVisibility(isChecked ? View.VISIBLE : View.GONE);
                 }
+            });
+        }
 
-                // Also trigger an immediate update if enabling
-                if (isChecked) {
-                    // Slight delay to let preference sync
-                    buttonView.postDelayed(() -> {
-                        // Trigger a dummy change to force update? Or just wait for service polling
-                    }, 500);
-                }
+        // PSD Always On Switch
+        com.google.android.material.switchmaterial.SwitchMaterial switchPsd = findViewById(R.id.switchPsdAlwaysOn);
+        if (switchPsd != null) {
+            boolean isPsdEnabled = ConfigManager.getInstance().getBoolean("psd_always_on_enabled", false);
+            switchPsd.setChecked(isPsdEnabled);
+            switchPsd.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                ConfigManager.getInstance().setBoolean("psd_always_on_enabled", isChecked);
+                // Trigger Immediate Service Update via Broadcast
+                Intent intent = new Intent("cn.navitool.ACTION_PSD_STATUS_CHANGED");
+                intent.putExtra("enabled", isChecked);
+                sendBroadcast(intent);
             });
         }
 
         // Day Brightness
         SeekBar seekDay = findViewById(R.id.seekBrightnessDay);
         TextView tvDay = findViewById(R.id.tvBrightnessDay);
-        int dayVal = prefs.getInt("override_day_value", 5);
+        int dayVal = ConfigManager.getInstance().getInt("override_day_value", 5);
         seekDay.setProgress(dayVal);
         tvDay.setText(getString(R.string.format_brightness_value, dayVal));
         seekDay.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-
                 if (progress < 1) {
                     seekBar.setProgress(1);
                     return;
                 }
                 tvDay.setText(getString(R.string.format_brightness_value, progress));
-                // Saved in onStopTrackingTouch
             }
 
             @Override
@@ -582,7 +1191,7 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
-                prefs.edit().putInt("override_day_value", seekBar.getProgress()).apply();
+                ConfigManager.getInstance().setInt("override_day_value", seekBar.getProgress());
                 DebugLogger.log(MainActivity.this, "Brightness", "Saved Day: " + seekBar.getProgress());
             }
         });
@@ -590,7 +1199,7 @@ public class MainActivity extends AppCompatActivity {
         // Night Brightness
         SeekBar seekNight = findViewById(R.id.seekBrightnessNight);
         TextView tvNight = findViewById(R.id.tvBrightnessNight);
-        int nightVal = prefs.getInt("override_night_value", 3);
+        int nightVal = ConfigManager.getInstance().getInt("override_night_value", 3);
         seekNight.setProgress(nightVal);
         tvNight.setText(getString(R.string.format_brightness_value, nightVal));
         seekNight.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -601,7 +1210,6 @@ public class MainActivity extends AppCompatActivity {
                     return;
                 }
                 tvNight.setText(getString(R.string.format_brightness_value, progress));
-                // Saved in onStopTrackingTouch
             }
 
             @Override
@@ -610,7 +1218,7 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
-                prefs.edit().putInt("override_night_value", seekBar.getProgress()).apply();
+                ConfigManager.getInstance().setInt("override_night_value", seekBar.getProgress());
                 DebugLogger.log(MainActivity.this, "Brightness", "Saved Night: " + seekBar.getProgress());
             }
         });
@@ -618,14 +1226,7 @@ public class MainActivity extends AppCompatActivity {
         // AVM Brightness
         SeekBar seekAvm = findViewById(R.id.seekBrightnessAvm);
         TextView tvAvm = findViewById(R.id.tvBrightnessAvm);
-        int avmVal = prefs.getInt("override_avm_value", 15);
-        // AVM max is 10? The logic says AVM default 15 but Seekbar max is 10 in XML.
-        // Let's assume AVM range is different or scaled?
-        // User provided code had "15" as default but also seekbar logic?
-        // Actually, let's increase max to 20 for AVM or similar?
-        // For now, keep as is, but handle logic.
-        // Wait, the XML I just added has max="10". I should update AVM max if needed.
-        // Let's assume 10 for now as per XML.
+        int avmVal = ConfigManager.getInstance().getInt("override_avm_value", 15);
         seekAvm.setProgress(avmVal);
         tvAvm.setText(getString(R.string.format_brightness_value, avmVal));
         seekAvm.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -636,7 +1237,6 @@ public class MainActivity extends AppCompatActivity {
                     return;
                 }
                 tvAvm.setText(getString(R.string.format_brightness_value, progress));
-                // Saved in onStopTrackingTouch
             }
 
             @Override
@@ -645,41 +1245,26 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
-                prefs.edit().putInt("override_avm_value", seekBar.getProgress()).apply();
+                ConfigManager.getInstance().setInt("override_avm_value", seekBar.getProgress());
                 DebugLogger.log(MainActivity.this, "Brightness", "Saved AVM: " + seekBar.getProgress());
             }
         });
-
-        // PSD Always On
-        com.google.android.material.switchmaterial.SwitchMaterial switchPsd = findViewById(R.id.switchPsdAlwaysOn);
-        if (switchPsd != null) {
-            switchPsd.setChecked(prefs.getBoolean("psd_always_on_enabled", false));
-            switchPsd.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                prefs.edit().putBoolean("psd_always_on_enabled", isChecked).apply();
-                if (isChecked) {
-                    DebugLogger.toast(this, "副驾屏常亮已开启 (注意烧屏风险)");
-                } else {
-                    DebugLogger.toast(this, "副驾屏常亮已关闭");
-                }
-            });
-        }
     }
 
     // --- Buttons Tab Logic ---
 
     private void setupSteeringWheelControl() {
-        android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
         SwitchMaterial switchSteeringWheel = findViewById(R.id.switchSteeringWheel);
-        switchSteeringWheel.setChecked(prefs.getBoolean("steering_wheel_control", false));
+        boolean isEnabled = ConfigManager.getInstance().getBoolean("steering_wheel_control", false);
+        switchSteeringWheel.setChecked(isEnabled);
         switchSteeringWheel.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            prefs.edit().putBoolean("steering_wheel_control", isChecked).apply();
+            ConfigManager.getInstance().setBoolean("steering_wheel_control", isChecked);
             DebugLogger.toast(this,
                     getString(isChecked ? R.string.steering_wheel_enabled : R.string.steering_wheel_disabled));
         });
     }
 
     private void setupWeChatButton() {
-        android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
         SwitchMaterial switchWechatButton = findViewById(R.id.switchWechatButton);
         View layoutWechatShortPress = findViewById(R.id.layoutWechatShortPress);
         View layoutWechatLongPress = findViewById(R.id.layoutWechatLongPress);
@@ -690,7 +1275,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Populate Spinners
         List<String> actionOptions = new ArrayList<>();
-        actionOptions.add(getString(R.string.spinner_default));
+        actionOptions.add("- - - -");
         actionOptions.add(getString(R.string.action_launch_app));
         actionOptions.add(getString(R.string.action_kill_app));
         ArrayAdapter<String> actionAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item,
@@ -702,7 +1287,7 @@ public class MainActivity extends AppCompatActivity {
         // Apps
         List<AppLaunchManager.AppInfo> apps = AppLaunchManager.getInstalledApps(this);
         List<String> appNames = new ArrayList<>();
-        appNames.add(getString(R.string.spinner_default));
+        appNames.add("- - - -");
         for (AppLaunchManager.AppInfo app : apps) {
             appNames.add(app.name);
         }
@@ -711,17 +1296,17 @@ public class MainActivity extends AppCompatActivity {
         spinnerShortPressApp.setAdapter(appAdapter);
         spinnerLongPressApp.setAdapter(appAdapter);
 
-        // Load Values
-        boolean isWechatEnabled = prefs.getBoolean("wechat_button_enabled", false);
+        // Load Values from ConfigManager
+        boolean isWechatEnabled = ConfigManager.getInstance().getBoolean("wechat_button_enabled", false);
         switchWechatButton.setChecked(isWechatEnabled);
 
-        int shortPressActionIdx = prefs.getInt("wechat_short_press_action", 0);
-        int longPressActionIdx = prefs.getInt("wechat_long_press_action", 0);
+        int shortPressActionIdx = ConfigManager.getInstance().getInt("wechat_short_press_action", 0);
+        int longPressActionIdx = ConfigManager.getInstance().getInt("wechat_long_press_action", 0);
         spinnerShortPressAction.setSelection(shortPressActionIdx);
         spinnerLongPressAction.setSelection(longPressActionIdx);
 
-        String shortPressAppPkg = prefs.getString("wechat_short_press_app", "");
-        String longPressAppPkg = prefs.getString("wechat_long_press_app", "");
+        String shortPressAppPkg = ConfigManager.getInstance().getString("wechat_short_press_app", "");
+        String longPressAppPkg = ConfigManager.getInstance().getString("wechat_long_press_app", "");
         for (int i = 0; i < apps.size(); i++) {
             if (apps.get(i).packageName.equals(shortPressAppPkg))
                 spinnerShortPressApp.setSelection(i + 1);
@@ -739,24 +1324,25 @@ public class MainActivity extends AppCompatActivity {
 
         // Listeners
         switchWechatButton.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            prefs.edit().putBoolean("wechat_button_enabled", isChecked).apply();
+            ConfigManager.getInstance().setBoolean("wechat_button_enabled", isChecked);
             layoutWechatShortPress.setVisibility(isChecked ? View.VISIBLE : View.GONE);
             layoutWechatLongPress.setVisibility(isChecked ? View.VISIBLE : View.GONE);
         });
 
-        setupSpinnerListener(spinnerShortPressAction, spinnerShortPressApp, "wechat_short_press_action", prefs);
-        setupSpinnerListener(spinnerLongPressAction, spinnerLongPressApp, "wechat_long_press_action", prefs);
-        setupAppSpinnerListener(spinnerShortPressApp, apps, "wechat_short_press_app", prefs);
-        setupAppSpinnerListener(spinnerLongPressApp, apps, "wechat_long_press_app", prefs);
+        setupSpinnerListener(spinnerShortPressAction, spinnerShortPressApp, "wechat_short_press_action");
+        setupSpinnerListener(spinnerLongPressAction, spinnerLongPressApp, "wechat_long_press_action");
+        setupAppSpinnerListener(spinnerShortPressApp, apps, "wechat_short_press_app");
+        setupAppSpinnerListener(spinnerLongPressApp, apps, "wechat_long_press_app");
     }
 
-    private void setupSpinnerListener(Spinner actionSpinner, Spinner appSpinner, String prefKey,
-            android.content.SharedPreferences prefs) {
+    private void setupSpinnerListener(Spinner actionSpinner, Spinner appSpinner, String key) {
         actionSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                prefs.edit().putInt(prefKey, position).apply();
-                appSpinner.setVisibility((position == 1 || position == 2) ? View.VISIBLE : View.GONE);
+                ConfigManager.getInstance().setInt(key, position);
+                if (appSpinner != null) {
+                    appSpinner.setVisibility((position == 1 || position == 2) ? View.VISIBLE : View.GONE);
+                }
             }
 
             @Override
@@ -765,15 +1351,15 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void setupAppSpinnerListener(Spinner appSpinner, List<AppLaunchManager.AppInfo> apps, String prefKey,
-            android.content.SharedPreferences prefs) {
+    private void setupAppSpinnerListener(Spinner appSpinner, List<AppLaunchManager.AppInfo> apps, String key) {
         appSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 if (position > 0 && position <= apps.size()) {
-                    prefs.edit().putString(prefKey, apps.get(position - 1).packageName).apply();
+                    AppLaunchManager.AppInfo app = apps.get(position - 1);
+                    ConfigManager.getInstance().setString(key, app.packageName);
                 } else {
-                    prefs.edit().putString(prefKey, "").apply();
+                    ConfigManager.getInstance().setString(key, "");
                 }
             }
 
@@ -862,7 +1448,7 @@ public class MainActivity extends AppCompatActivity {
 
         List<AppLaunchManager.AppInfo> apps = AppLaunchManager.getInstalledApps(this);
         List<String> displayNames = new ArrayList<>();
-        displayNames.add(getString(R.string.spinner_default));
+        displayNames.add("- - - -"); // Changed from default to dashes
         for (AppLaunchManager.AppInfo app : apps) {
             displayNames.add(app.name);
         }
@@ -1585,7 +2171,13 @@ public class MainActivity extends AppCompatActivity {
             if ("cn.navitool.ADB_STATUS_CHANGED".equals(intent.getAction())) {
                 String status = intent.getStringExtra("status");
                 android.widget.ImageView imgAdbStatus = findViewById(R.id.imgAdbStatus);
+                android.widget.TextView tvAdbStatus = findViewById(R.id.tvAdbStatusText);
+
                 if (imgAdbStatus != null && status != null) {
+                    if (tvAdbStatus != null) {
+                        tvAdbStatus.setText(status);
+                    }
+
                     if (status.contains("已连接")) {
                         imgAdbStatus.setImageResource(R.drawable.ic_check);
                         imgAdbStatus.setColorFilter(android.graphics.Color.parseColor("#4CAF50"));
@@ -1630,4 +2222,151 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     };
+
+    private final android.content.BroadcastReceiver mPsdStatusReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if ("cn.navitool.ACTION_PSD_STATUS".equals(intent.getAction())) {
+                int status = intent.getIntExtra("status", -1);
+                long timestamp = intent.getLongExtra("timestamp", 0);
+
+                TextView tvPsdStatus = findViewById(R.id.tvPsdStatus);
+                if (tvPsdStatus != null) {
+                    SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.getDefault());
+                    String timeStr = (timestamp > 0) ? sdf.format(new java.util.Date(timestamp)) : "--";
+                    String statusStr = (status == 1) ? "ON" : (status == 0 ? "OFF" : "Unknown");
+
+                    String text = String.format("PSD Status: %s (Last Event: %s)", statusStr, timeStr);
+                    tvPsdStatus.setText(text);
+                }
+            }
+        }
+    };
+
+    private void setupSystemInfo() {
+        TextView tvBootTime = findViewById(R.id.tvBootTime);
+        if (tvBootTime != null) {
+            long bootTime = System.currentTimeMillis() - android.os.SystemClock.elapsedRealtime();
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault());
+            tvBootTime.setText("Boot Time: " + sdf.format(new java.util.Date(bootTime)));
+        }
+    }
+
+    private void setupPsdTestButtons() {
+        // Find wrapper layout to control visibility based on Debug mode
+        View layoutTestButtons = findViewById(R.id.layoutPsdTestButtons);
+
+        // Note: The visibility of this layout depends on Debug Mode switch logic.
+        // We need to ensure it's added to the toggle list in
+        // 'updateDebugViewsVisibility'
+        // OR we can just check debug pref here.
+        // However, layoutPsdTestButtons is inside Brightness tab.
+        // For simplicity, let's just leave it GONE by default (XML) and show if debug
+        // enabled?
+        // User didn't ask for toggle linkage, but implied it's a debug feature.
+        // Let's rely on 'config_debug_mode_enabled' pref if we want, or just hook it
+        // up.
+        // Wait, 'updateDebugViewsVisibility' handles RB Sound/etc.
+        // I should update 'updateDebugViewsVisibility' eventually, but for now I will
+        // manual check.
+
+        SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
+        boolean isDebug = prefs.getBoolean("config_debug_mode_enabled", false);
+        if (layoutTestButtons != null) {
+            layoutTestButtons.setVisibility(isDebug ? View.VISIBLE : View.GONE);
+        }
+
+        findViewById(R.id.btnTestPsd0ms).setOnClickListener(v -> {
+            Intent intent = new Intent("cn.navitool.ACTION_TEST_PSD_SWITCH");
+            intent.putExtra("delay", 0);
+            sendBroadcast(intent);
+            DebugLogger.toast(this, "Sent 0ms PSD Switch Test");
+        });
+
+        findViewById(R.id.btnTestPsd1ms).setOnClickListener(v -> {
+            Intent intent = new Intent("cn.navitool.ACTION_TEST_PSD_SWITCH");
+            intent.putExtra("delay", 1);
+            sendBroadcast(intent);
+            DebugLogger.toast(this, "Sent 1ms PSD Switch Test");
+        });
+    }
+
+    private void setupScreenshotAll() {
+        View btnScreenshot = findViewById(R.id.btnScreenshotAll);
+        if (btnScreenshot != null) {
+            btnScreenshot.setOnClickListener(v -> captureAllScreens());
+        }
+    }
+
+    private void captureAllScreens() {
+        DebugLogger.toast(this, "Starting screenshot capture...");
+        new Thread(() -> {
+            try {
+                // Ensure directory exists
+                String dirPath = "/sdcard/NaviTool/";
+                java.io.File dir = new java.io.File(dirPath);
+                if (!dir.exists()) {
+                    dir.mkdirs();
+                }
+
+                android.hardware.display.DisplayManager dm = (android.hardware.display.DisplayManager) getSystemService(
+                        Context.DISPLAY_SERVICE);
+                if (dm != null) {
+                    android.view.Display[] displays = dm.getDisplays();
+                    DebugLogger.i("Screenshot", "Found displays: " + displays.length);
+
+                    if (AdbShell.getInstance(this).isConnected()) {
+                        // Priority: Use ADB Shell (Privileged)
+                        // Serialize commands to avoid concurrency issues with ADB streams
+                        StringBuilder cmdBuilder = new StringBuilder();
+                        for (android.view.Display display : displays) {
+                            int id = display.getDisplayId();
+                            String filePath = dirPath + "Display_" + id + ".png";
+                            // Chain commands with ;
+                            cmdBuilder.append("screencap -d ").append(id).append(" -p ").append(filePath).append("; ");
+
+                            // If this is Display 2 (Cluster/HUD), also capture software rendering as backup
+                            if (id == 2) {
+                                String swFilePath = dirPath + "Display_" + id + "_Software.png";
+                                ClusterHudManager.getInstance(this).capturePresentation(swFilePath);
+                            }
+                        }
+
+                        String finalCmd = cmdBuilder.toString();
+                        DebugLogger.i("Screenshot", "Executing ADB CMD: " + finalCmd);
+                        AdbShell.getInstance(this).exec(finalCmd);
+
+                        runOnUiThread(() -> DebugLogger.toast(this, "截图指令已发送(" + displays.length + "屏): " + dirPath));
+                    } else {
+                        // Fallback: Local Runtime Exec (Likely to fail or produce 0b files due to
+                        // perms)
+                        int successCount = 0;
+                        for (android.view.Display display : displays) {
+                            int id = display.getDisplayId();
+                            String filePath = dirPath + "Display_" + id + ".png";
+                            try {
+                                String command = "screencap -d " + id + " -p " + filePath;
+                                Process process = Runtime.getRuntime().exec(command);
+                                if (process.waitFor() == 0)
+                                    successCount++;
+                            } catch (Exception e) {
+                                DebugLogger.e("Screenshot", "Failed " + id, e);
+                            }
+                        }
+
+                        if (successCount > 0) {
+                            int finalSuccess = successCount;
+                            runOnUiThread(() -> DebugLogger.toast(this, "本地截图成功: " + finalSuccess + " 张"));
+                        } else {
+                            runOnUiThread(() -> DebugLogger.toast(this, "本地截图失败(0b)，请先连接ADB"));
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                DebugLogger.e("Screenshot", "Error capturing screens", e);
+                runOnUiThread(() -> DebugLogger.toast(this, "Screenshot failed: " + e.getMessage()));
+            }
+        }).start();
+    }
+
 }
