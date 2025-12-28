@@ -3,112 +3,135 @@
     android:id="@+id/layoutContentHud"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
+    <!-- Root Vertical Layout -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:orientation="vertical"
-        android:paddingTop="8dp">
+        android:padding="12dp">
 
+        <!-- 1. Header: Switch (Unchanged location logic, but isolated) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="16dp">
-            <LinearLayout
+            android:layout_marginBottom="12dp">
+            
+            <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:orientation="vertical">
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Enable HUD Projection"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="?android:attr/textColorPrimary"/>
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Display 2 (728x190) @ (0,720)"
-                    android:textSize="12sp"
-                    android:textColor="?android:attr/textColorSecondary"/>
-            </LinearLayout>
+                android:text="HUD Control"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorPrimary"/>
+
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/switchHud"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"/>
         </LinearLayout>
 
-        <!-- HUD Editor Control Panel -->
-        <!-- Visible when HUD is enabled -->
-         <LinearLayout
-            android:id="@+id/layoutHudEditorControls"
+        <!-- 2. Body: Horizontal Split (Buttons | Preview) -->
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginBottom="8dp"
-            android:visibility="gone">
-            
-            <Button
-                android:id="@+id/btnHudSwitchMode"
+            android:layout_height="match_parent"
+            android:orientation="horizontal">
+
+            <!-- Left: Editor Controls (Vertical Buttons) -->
+            <!-- Moved from previous ScrollView. Buttons stack vertically here. -->
+            <ScrollView
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="切换AR模式"
-                android:layout_marginEnd="8dp"/>
+                android:layout_height="match_parent"
+                android:paddingEnd="16dp">
                 
-            <Button
-                android:id="@+id/btnHudAdd"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="添加"
-                android:layout_marginEnd="8dp"/>
-            <Button
-                android:id="@+id/btnHudModify"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="修改"
-                android:layout_marginEnd="8dp"/>
-            <Button
-                android:id="@+id/btnHudSave"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="保存"
-                android:layout_marginEnd="8dp"/>
-            <Button
-                android:id="@+id/btnHudReset"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="重置"
-                android:layout_marginEnd="8dp"/>
-            <Button
-                android:id="@+id/btnHudSnowMode"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="开启雪地模式"/>
-        </LinearLayout>
+                <LinearLayout
+                    android:id="@+id/layoutHudEditorControls"
+                    android:layout_width="160dp"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+                    <!-- Fixed width 160dp for consistency, or wrap_content if preferred -->
+                    
+                    <Button
+                        android:id="@+id/btnHudSwitchMode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="切换AR模式"
+                        android:layout_marginBottom="8dp"/>
+                        
+                    <Button
+                        android:id="@+id/btnHudAdd"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="添加组件"
+                        android:layout_marginBottom="8dp"/>
+                    <Button
+                        android:id="@+id/btnHudModify"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="修改布局"
+                        android:layout_marginBottom="8dp"/>
+                    <Button
+                        android:id="@+id/btnHudDelete"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="删除选中"
+                        android:layout_marginBottom="8dp"/>
+                    <Button
+                        android:id="@+id/btnHudSave"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="保存布局"
+                        android:layout_marginBottom="8dp"/>
+                    <Button
+                        android:id="@+id/btnHudReset"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="重置布局"
+                        android:layout_marginBottom="8dp"/>
+                    <Button
+                        android:id="@+id/btnHudSnowMode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="雪地模式开关"
+                        android:layout_marginBottom="8dp"/>
+                    
 
-        <!-- Preview Container with Border -->
-        <FrameLayout
-            android:id="@+id/layoutHudPreviewContainer"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:visibility="gone"
-            android:padding="4dp"
-            android:background="@drawable/border_hud_preview">
+                </LinearLayout>
+            </ScrollView>
 
-            <!-- HUD Preview Content Area: 1456x380 (2x Magnification) -->
-             <!-- Background: Black #000000 -->
-             <FrameLayout
-                android:id="@+id/layoutHudPreview"
-                android:layout_width="1456px"
-                android:layout_height="380px"
-                android:background="#000000"
-                android:visibility="gone">
+            <!-- Right: Preview Area -->
+            <!-- Fills remaining width -->
+            <FrameLayout
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:paddingStart="8dp">
+
+                <!-- Preview Container (Legacy Logic: No Scaling, No Clip) -->
+                <FrameLayout
+                    android:id="@+id/layoutHudPreviewContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="top|center_horizontal"
+                    android:visibility="gone"
+                    android:padding="4dp"
+                    android:background="@drawable/border_hud_preview">
+                    <!-- Note: gravity changed to top|center per "Preview moves up" request -->
+
+                    <!-- HUD Preview Content Area: 1456x380 -->
+                    <FrameLayout
+                        android:id="@+id/layoutHudPreview"
+                        android:layout_width="1456px"
+                        android:layout_height="380px"
+                        android:background="#000000"
+                        android:visibility="gone">
+                    </FrameLayout>
+                </FrameLayout>
             </FrameLayout>
-        </FrameLayout>
 
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

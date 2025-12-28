@@ -27,6 +27,10 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
@@ -93,8 +97,11 @@ public class MainActivity extends AppCompatActivity {
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
         setContentView(R.layout.activity_main);
 
-        DebugLogger.init(this); // Initialize Logging (Must be before initUI for debug switch state)
-        DebugLogger.createDirectories();
+        DebugLogger.init(this); // Initialize Logging
+        ConfigManager.init(this); // Initialize Config Persistence (Internal Storage)
+
+        // Removed redundant DebugLogger.createDirectories() to save main thread I/O
+        // time
 
         initUI();
         initNavigation();
@@ -103,7 +110,34 @@ public class MainActivity extends AppCompatActivity {
         // Optimize: Pre-initialize ClusterHudManager in background to reduce lag on
         // first tab switch
         new Thread(() -> {
-            ClusterHudManager.getInstance(getApplicationContext());
+            // Load saved state (IO)
+            boolean isClusterEnabled = ConfigManager.getInstance().getBoolean("switch_cluster", false);
+            boolean isHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", false);
+            int savedMode = ConfigManager.getInstance().getInt("hud_current_mode", 0);
+
+            // HEAVY WORK: Initialize Manager (Reflection) in BACKGROUND thread
+            ClusterHudManager manager = ClusterHudManager.getInstance(getApplicationContext());
+
+            // Optimize: Parse JSON in background
+            List<ClusterHudManager.HudComponentData> hudData = null;
+            if (isHudEnabled) {
+                hudData = parseHudConfig(savedMode);
+            }
+            final List<ClusterHudManager.HudComponentData> finalHudData = hudData;
+
+            // Apply to UI/Manager on Main Thread
+            runOnUiThread(() -> {
+                if (isClusterEnabled) {
+                    manager.setClusterEnabled(true);
+                }
+                if (isHudEnabled) {
+                    manager.setHudEnabled(true);
+                    // reloadHudConfigToManager(savedMode); // Legacy sync call
+                    if (finalHudData != null) {
+                        applyHudConfigToManager(finalHudData);
+                    }
+                }
+            });
         }).start();
     }
 
@@ -113,12 +147,41 @@ public class MainActivity extends AppCompatActivity {
         registerReceivers();
         // Request immediate status update from ADB Shell
         AdbShell.getInstance(this).broadcastStatus();
+
+        // Register HUD Listener for Preview Updates
+        ClusterHudManager.getInstance(this).setListener((type, text, image) -> {
+            runOnUiThread(() -> {
+                android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
+                if (preview != null) {
+                    for (int i = 0; i < preview.getChildCount(); i++) {
+                        View child = preview.getChildAt(i);
+                        Object tag = child.getTag();
+                        if (tag != null && tag.equals("type_" + type)) {
+                            // Fix: Do NOT update text for 'time' component, as it receives the format
+                            // string "HH:mm"
+                            // We want to keep the live time preview (or calculated time)
+                            if ("time".equals(type)) {
+                                continue;
+                            }
+
+                            if (child instanceof TextView && text != null) {
+                                ((TextView) child).setText(text);
+                            } else if (child instanceof ImageView && image != null) {
+                                ((ImageView) child).setImageBitmap(image);
+                            }
+                        }
+                    }
+                }
+            });
+        });
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         unregisterReceivers();
+        // Unregister HUD Listener to prevent leak/updates when backgrounded
+        ClusterHudManager.getInstance(this).setListener(null);
     }
 
     private void registerReceivers() {
@@ -262,7 +325,7 @@ public class MainActivity extends AppCompatActivity {
             mLayoutButtons = v;
             setupSteeringWheelControl();
             setupWeChatButton();
-            setupMediaButtons();
+
             mIsButtonsInit = true;
             // Re-apply debug visibility for the newly inflated buttons
             updateDebugViewsVisibility(DebugLogger.isDebugEnabled(this));
@@ -339,7 +402,7 @@ public class MainActivity extends AppCompatActivity {
         setupSystemInfo();
         setupPermissionStatuses();
         setupAdbWireless();
-        setupScreenshotAll();
+
         updateAutoModeStatus(0, -1);
 
         // Note: Other tabs setup is deferred to ensureXInflated methods
@@ -412,10 +475,17 @@ public class MainActivity extends AppCompatActivity {
         }
 
         setupHudEditor();
+        setupHudEditor();
+        // Corrected ID reference
+
+        // Restore HUD Mode
 
         // Restore HUD Mode
         mHudMode = ConfigManager.getInstance().getInt("hud_current_mode", MODE_WHUD);
         updateHudModeButton();
+
+        // Load Layout
+        loadHudLayout(mHudMode);
     }
 
     // --- HUD Editor Logic ---
@@ -427,6 +497,7 @@ public class MainActivity extends AppCompatActivity {
     private void setupHudEditor() {
         findViewById(R.id.btnHudAdd).setOnClickListener(v -> showAddHudComponentDialog());
         findViewById(R.id.btnHudModify).setOnClickListener(v -> unlockHudComponent());
+        findViewById(R.id.btnHudDelete).setOnClickListener(v -> deleteSelectedHudComponent());
         findViewById(R.id.btnHudSave).setOnClickListener(v -> lockHudComponent());
         findViewById(R.id.btnHudReset).setOnClickListener(v -> resetHudComponent());
         findViewById(R.id.btnHudSwitchMode).setOnClickListener(v -> switchHudMode());
@@ -466,18 +537,23 @@ public class MainActivity extends AppCompatActivity {
         for (int i = 0; i < preview.getChildCount(); i++) {
             View child = preview.getChildAt(i);
             // Filter: Only save views that are explicitly HUD components (have a tag)
+            // Filter: Only save views that are explicitly HUD components (have a tag)
             Object tag = child.getTag();
-            if (child instanceof TextView && tag != null && tag.toString().startsWith("type_")) {
+            if (tag != null && tag.toString().startsWith("type_")) {
                 try {
                     JSONObject obj = new JSONObject();
                     // Determine Type
-                    if ("type_time".equals(tag.toString())) {
-                        obj.put("type", "time");
-                        obj.put("text", ((android.widget.TextClock) child).getFormat12Hour());
-                    } else {
-                        obj.put("type", "text");
-                        obj.put("text", ((TextView) child).getText().toString());
+                    String type = tag.toString().replace("type_", "");
+                    obj.put("type", type);
+
+                    String text = "";
+                    if (child instanceof TextView) {
+                        text = (child instanceof android.widget.TextClock)
+                                ? ((android.widget.TextClock) child).getFormat12Hour().toString()
+                                : ((TextView) child).getText().toString();
                     }
+                    obj.put("text", text);
+
                     obj.put("x", child.getX());
                     obj.put("y", child.getY());
                     jsonArray.put(obj);
@@ -489,6 +565,43 @@ public class MainActivity extends AppCompatActivity {
         String key = (mode == MODE_WHUD) ? "hud_layout_whud" : "hud_layout_ar";
         ConfigManager.getInstance().setString(key, jsonArray.toString());
         DebugLogger.d("HUD", "Saved layout for " + key + ": " + jsonArray.toString());
+    }
+
+    private void reloadHudConfigToManager(int mode) {
+        // Sync version for UI usage
+        List<ClusterHudManager.HudComponentData> data = parseHudConfig(mode);
+        applyHudConfigToManager(data);
+    }
+
+    private List<ClusterHudManager.HudComponentData> parseHudConfig(int mode) {
+        String key = (mode == MODE_WHUD) ? "hud_layout_whud" : "hud_layout_ar";
+        String jsonStr = ConfigManager.getInstance().getString(key, "[]");
+        List<ClusterHudManager.HudComponentData> syncList = new ArrayList<>();
+
+        if (jsonStr != null && !jsonStr.isEmpty()) {
+            try {
+                JSONArray jsonArray = new JSONArray(jsonStr);
+                boolean isSnowMode = ConfigManager.getInstance().getBoolean("hud_snow_mode", false);
+                int color = isSnowMode ? 0xFF00FFFF : 0xFFFFFFFF;
+
+                for (int i = 0; i < jsonArray.length(); i++) {
+                    JSONObject obj = jsonArray.getJSONObject(i);
+                    String type = obj.optString("type", "text");
+                    String text = obj.optString("text", "Text");
+                    float x = (float) obj.optDouble("x", 0);
+                    float y = (float) obj.optDouble("y", 0);
+
+                    syncList.add(new ClusterHudManager.HudComponentData(type, text, x * 0.5f, y * 0.5f, color));
+                }
+            } catch (JSONException e) {
+                DebugLogger.e("HUD", "Failed to parse layout config for sync", e);
+            }
+        }
+        return syncList;
+    }
+
+    private void applyHudConfigToManager(List<ClusterHudManager.HudComponentData> syncList) {
+        ClusterHudManager.getInstance(this).syncHudLayout(syncList);
     }
 
     private void loadHudLayout(int mode) {
@@ -525,9 +638,15 @@ public class MainActivity extends AppCompatActivity {
 
         // Restore Lock State
         String lockKey = (mode == MODE_WHUD) ? "hud_locked_whud" : "hud_locked_ar";
-        mIsHudComponentLocked = ConfigManager.getInstance().getBoolean(lockKey, false);
+        // User Request: Always start in Locked Mode (Non-Editable)
+        mIsHudComponentLocked = true;
+        // mIsHudComponentLocked = ConfigManager.getInstance().getBoolean(lockKey,
+        // true); // Legacy
+
+        // updateHudLockButton(); // Removed: Using separate buttons for Lock/Unlock
+
         if (mIsHudComponentLocked) {
-            DebugLogger.toast(this, "布局已恢复并锁定");
+            // DebugLogger.toast(this, "布局已恢复并锁定");
         }
 
         // Sync to Real HUD
@@ -566,45 +685,85 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // Updated helper method signature to accept type
+    // Updated helper method signature to accept type
     private void createAndAddHudComponent(String type, String text, float x, float y) {
         android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
         if (preview == null)
             return;
 
-        TextView tv;
+        View view;
+        boolean isMediaCover = "media_cover".equals(type);
+
         if ("time".equals(type)) {
-            android.widget.TextClock tc = new android.widget.TextClock(this);
-            tc.setFormat12Hour(text);
-            tc.setFormat24Hour(text);
-            tc.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-            tc.setPadding(0, 0, 0, 0); // No padding
-            tc.setTag("type_time");
-            tv = tc;
-        } else {
-            tv = new TextView(this);
-            tv.setText(text);
-            tv.setBackgroundColor(android.graphics.Color.WHITE);
-            tv.setPadding(16, 8, 16, 8);
-            tv.setTag("type_text");
+            // User Request: Show real system time immediately in Preview
+            text = new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(new java.util.Date());
         }
 
-        tv.setTextSize(24);
-        tv.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
+        if (isMediaCover) {
+            ImageView iv = new ImageView(this);
+            iv.setImageResource(android.R.drawable.ic_media_play); // Placeholder in Preview
+            iv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            // Preview size 200x200 (2x of HUD 100x100)
+            android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(200, 200);
+            view = iv;
+            view.setLayoutParams(params);
+        } else {
+            TextView tv = new TextView(this);
+            tv.setText(text);
+            // Rule: Transparent Background
+            tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            view = tv;
+        }
 
-        android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
-                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
+        view.setBackgroundColor(android.graphics.Color.TRANSPARENT); // Ensure transparent
+
+        // Font scaling for Text Views
+        if (view instanceof TextView) {
+            TextView tv = (TextView) view;
+            tv.setPadding(0, 0, 0, 0);
+            // Rule 2: Font scaling (Preview is 2x HUD)
+            if ("gear".equals(type)) {
+                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 40); // 20px * 2
+            } else {
+                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 20); // 10px * 2
+            }
+            tv.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
+
+            if ("song".equals(type)) {
+                // Preview width = 600px (HUD 300px * 2)
+                if (view.getLayoutParams() == null) {
+                    view.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
+                            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
+                }
+                view.getLayoutParams().width = 600;
+                tv.setSingleLine(false);
+                tv.setMaxLines(2);
+            }
+        }
+
+        if (view.getLayoutParams() == null) {
+            view.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
+        }
+
+        // Store specific type in Tag for Sync
+        view.setTag("type_" + type);
+
+        android.widget.FrameLayout.LayoutParams params = (android.widget.FrameLayout.LayoutParams) view
+                .getLayoutParams();
         params.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
 
-        tv.setX(x);
-        tv.setY(y);
+        view.setX(x);
+        view.setY(y);
 
-        preview.addView(tv, params);
-        mHudTestComponent = tv; // Only track last added for now
+        preview.addView(view, params);
+        mHudTestComponent = view; // Only track last added for now
         mIsHudComponentLocked = false;
 
         // Setup Drag Listener
-        setupHudComponentTouchListener(tv);
+        setupHudComponentTouchListener(view);
     }
 
     private void setupHudComponentTouchListener(View tv) {
@@ -620,8 +779,9 @@ public class MainActivity extends AppCompatActivity {
                     case android.view.MotionEvent.ACTION_DOWN:
                         dX = view.getX() - event.getRawX();
                         dY = view.getY() - event.getRawY();
-                        // Update current Selection tracking if we support multi-select later
+                        // Update current Selection tracking
                         mHudTestComponent = view;
+                        highlightSelectedComponent(view);
                         break;
                     case android.view.MotionEvent.ACTION_MOVE:
                         float newX = event.getRawX() + dX;
@@ -664,20 +824,34 @@ public class MainActivity extends AppCompatActivity {
         List<ClusterHudManager.HudComponentData> list = new ArrayList<>();
         for (int i = 0; i < preview.getChildCount(); i++) {
             View child = preview.getChildAt(i);
-            if (child instanceof TextView) {
-                String type = (child instanceof android.widget.TextClock) ? "time" : "text";
-                String text = (child instanceof android.widget.TextClock)
-                        ? ((android.widget.TextClock) child).getFormat12Hour().toString()
-                        : ((TextView) child).getText().toString();
+            String tag = (String) child.getTag();
+            if (tag == null || !tag.startsWith("type_"))
+                continue;
 
-                int color = mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF;
-                list.add(new ClusterHudManager.HudComponentData(
-                        type,
-                        text,
-                        child.getX() * 0.5f,
-                        child.getY() * 0.5f,
-                        color));
+            String type = tag.replace("type_", "");
+            String text = "";
+
+            if (child instanceof TextView) {
+                if ("time".equals(type)) {
+                    // For time component, always save the format string, regardless of preview text
+                    text = "HH:mm";
+                } else {
+                    text = (child instanceof android.widget.TextClock)
+                            ? ((android.widget.TextClock) child).getFormat12Hour().toString()
+                            : ((TextView) child).getText().toString();
+                }
+            } else if (child instanceof ImageView) {
+                // Image has no text value to sync, but we need the entry
+                text = "";
             }
+
+            int color = mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF;
+            list.add(new ClusterHudManager.HudComponentData(
+                    type,
+                    text,
+                    child.getX() * 0.5f,
+                    child.getY() * 0.5f,
+                    color));
         }
         ClusterHudManager.getInstance(this).syncHudLayout(list);
     }
@@ -698,47 +872,105 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showAddHudComponentDialog() {
-        // Allow multiple components - removed single component check
         android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this);
-        builder.setTitle("添加组件");
+        builder.setTitle("选择组件类型");
 
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.HORIZONTAL);
-        container.setPadding(32, 16, 32, 16);
-        container.setGravity(android.view.Gravity.CENTER);
+        android.widget.GridLayout grid = new android.widget.GridLayout(this);
+        grid.setColumnCount(3);
+        grid.setPadding(32, 16, 32, 16);
 
-        // Test Button (Text)
-        Button btnTest = new Button(this);
-        btnTest.setText("测试文本");
-        btnTest.setPadding(16, 16, 16, 16);
+        final android.app.AlertDialog[] dialogHolder = new android.app.AlertDialog[1];
 
-        // Time Button (Clock)
-        Button btnTime = new Button(this);
-        btnTime.setText("系统时间");
-        btnTime.setPadding(16, 16, 16, 16);
+        // Helper to add button with duplicate check
+        java.util.function.BiConsumer<String, String> addButtonWithType = (text, type) -> {
+            Button btn = new Button(this);
+            btn.setText(text);
+            btn.setTextSize(12);
+            btn.setPadding(8, 8, 8, 8);
+            android.widget.GridLayout.LayoutParams params = new android.widget.GridLayout.LayoutParams();
+            params.width = 0;
+            params.height = android.widget.GridLayout.LayoutParams.WRAP_CONTENT;
+            params.columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f);
+            params.setMargins(8, 8, 8, 8);
+            btn.setLayoutParams(params);
 
-        container.addView(btnTest);
-        container.addView(btnTime);
+            btn.setOnClickListener(v -> {
+                if (isHudComponentAdded(type)) {
+                    DebugLogger.toast(this, "该组件已存在，请勿重复添加");
+                    return;
+                }
 
-        builder.setView(container);
-        android.app.AlertDialog dialog = builder.create();
+                // Logic based on type
+                if ("time".equals(type))
+                    addHudTimeComponent();
+                else if ("song".equals(type))
+                    createAndAddHudComponent("song", "暂无歌词\n歌曲名 - 歌手", 0, 0);
+                else if ("fuel".equals(type))
+                    createAndAddHudComponent("fuel", "油量: --L", 0, 0);
+                else if ("temp_in".equals(type))
+                    createAndAddHudComponent("temp_in", "内: --°C", 0, 0);
+                else if ("temp_out".equals(type))
+                    createAndAddHudComponent("temp_out", "外: --°C", 0, 0);
+                else if ("range".equals(type))
+                    createAndAddHudComponent("range", "续航: --km", 0, 0);
+                else if ("gear".equals(type))
+                    createAndAddHudComponent("gear", "D", 0, 0);
+                else if ("turn_signal".equals(type))
+                    createAndAddHudComponent("turn_signal", "←", 0, 0);
+                else if ("volume".equals(type))
+                    createAndAddHudComponent("volume", "音量: --", 0, 0);
+                else if ("media_cover".equals(type))
+                    createAndAddHudComponent("media_cover", "", 0, 0);
+                else if ("test_media".equals(type)) {
+                    ClusterHudManager.getInstance(this).syncTestMedia();
+                    DebugLogger.toast(this, "已发送测试数据");
+                }
 
-        btnTest.setOnClickListener(v -> {
-            addHudTestComponent();
-            dialog.dismiss();
-        });
-        btnTime.setOnClickListener(v -> {
-            addHudTimeComponent();
-            dialog.dismiss();
-        });
+                if (!"test_media".equals(type)) {
+                    syncAllHudComponents();
+                }
+                if (dialogHolder[0] != null)
+                    dialogHolder[0].dismiss();
+            });
+            grid.addView(btn);
+        };
 
-        dialog.show();
+        addButtonWithType.accept("系统时间", "time");
+        addButtonWithType.accept("歌曲信息", "song");
+        addButtonWithType.accept("剩余油量", "fuel");
+        addButtonWithType.accept("车内温度", "temp_in");
+        addButtonWithType.accept("车外温度", "temp_out");
+        addButtonWithType.accept("续航里程", "range");
+        addButtonWithType.accept("档位信息", "gear");
+        addButtonWithType.accept("转向信号", "turn_signal");
+        addButtonWithType.accept("系统音量", "volume");
+        addButtonWithType.accept("媒体封面", "media_cover");
+
+        // All buttons added above
+
+        builder.setView(grid);
+        dialogHolder[0] = builder.create();
+        dialogHolder[0].show();
     }
 
-    private void addHudTestComponent() {
-        createAndAddHudComponent("text", "测试", 0, 0);
-        syncAllHudComponents();
+    // Check if component already exists in Preview
+    private boolean isHudComponentAdded(String type) {
+        if ("test_media".equals(type))
+            return false; // Always allow test
+        android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
+        if (preview != null) {
+            for (int i = 0; i < preview.getChildCount(); i++) {
+                View child = preview.getChildAt(i);
+                Object tag = child.getTag();
+                if (tag != null && tag.toString().equals("type_" + type)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
+
+    // Removed addHudTestComponent()
 
     private void addHudTimeComponent() {
         createAndAddHudComponent("time", "HH:mm", 0, 0);
@@ -746,6 +978,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void lockHudComponent() {
+        // Clear selection visual
+        clearHudSelection();
         // Save current layout to Config
         saveCurrentHudLayout(mHudMode);
         mIsHudComponentLocked = true;
@@ -775,26 +1009,76 @@ public class MainActivity extends AppCompatActivity {
         DebugLogger.toast(this, "布局已重置");
     }
 
-    private void setupDebugSwitch() {
-        SwitchMaterial switchDebug = findViewById(R.id.switchDebug);
-        if (!BuildConfig.DEBUG) {
-            switchDebug.setVisibility(View.GONE);
+    private void deleteSelectedHudComponent() {
+        if (mHudTestComponent == null) {
+            DebugLogger.toast(this, "请先选择要删除的组件");
+            return;
         }
 
-        boolean isDebug = DebugLogger.isDebugEnabled(this);
-        switchDebug.setChecked(isDebug);
-        updateDebugViewsVisibility(isDebug);
+        android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
+        if (preview != null) {
+            preview.removeView(mHudTestComponent);
+            mHudTestComponent = null;
+            syncAllHudComponents();
+            DebugLogger.toast(this, "组件已删除");
+        }
+    }
 
-        switchDebug.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            DebugLogger.setDebugEnabled(this, isChecked);
-            updateDebugViewsVisibility(isChecked);
-            updateTestButtons(isChecked); // Also update test buttons
-            if (isChecked) {
-                DebugLogger.toast(this, getString(R.string.debug_mode_enabled));
-            } else {
-                Toast.makeText(this, R.string.debug_mode_disabled, Toast.LENGTH_SHORT).show();
+    private void highlightSelectedComponent(View selected) {
+        if (selected == null)
+            return;
+        View parent = (View) selected.getParent();
+        if (parent instanceof android.view.ViewGroup) {
+            android.view.ViewGroup group = (android.view.ViewGroup) parent;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = group.getChildAt(i);
+                child.setAlpha(1.0f); // Reset
             }
-        });
+        }
+        selected.setAlpha(0.6f); // Highlight
+    }
+
+    private void clearHudSelection() {
+        mHudTestComponent = null;
+        android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
+        if (preview != null) {
+            for (int i = 0; i < preview.getChildCount(); i++) {
+                View child = preview.getChildAt(i);
+                child.setAlpha(1.0f);
+            }
+        }
+    }
+
+    private void setupDebugSwitch() {
+        SwitchMaterial switchDebug = findViewById(R.id.switchDebug);
+
+        if (!BuildConfig.DEBUG) {
+            if (switchDebug != null)
+                switchDebug.setVisibility(View.GONE);
+            return;
+        }
+
+        if (switchDebug != null) {
+            boolean isDebug = DebugLogger.isDebugEnabled(this);
+            switchDebug.setChecked(isDebug);
+            updateDebugViewsVisibility(isDebug);
+
+            // Init label
+            switchDebug.setText(isDebug ? "Debug Mode (ON)" : "Debug Mode (OFF)");
+
+            switchDebug.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                DebugLogger.setDebugEnabled(this, isChecked);
+                updateDebugViewsVisibility(isChecked);
+                switchDebug.setText(isChecked ? "Debug Mode (ON)" : "Debug Mode (OFF)");
+                // Sync to ClusterHudManager for green background
+                ClusterHudManager.getInstance(this).setDebugMode(isChecked);
+                if (isChecked) {
+                    DebugLogger.toast(this, getString(R.string.debug_mode_enabled));
+                } else {
+                    Toast.makeText(this, R.string.debug_mode_disabled, Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
     }
 
     private void updateDebugViewsVisibility(boolean isDebug) {
@@ -802,18 +1086,6 @@ public class MainActivity extends AppCompatActivity {
         // regardless of the stored preference (which handles the switch state)
         boolean allowDebugViews = isDebug && BuildConfig.DEBUG;
         int visibility = allowDebugViews ? View.VISIBLE : View.GONE;
-
-        // Theme Buttons (in layout_tab_theme.xml)
-        View debugButtons = findViewById(R.id.layoutDebugButtons);
-        if (debugButtons != null) {
-            debugButtons.setVisibility(visibility);
-        }
-
-        // Media Buttons (in layout_tab_buttons.xml)
-        View mediaButtons = findViewById(R.id.layoutMediaButtons);
-        if (mediaButtons != null) {
-            mediaButtons.setVisibility(visibility);
-        }
 
         // Third Party Test Button (in layout_tab_buttons.xml)
         // View btnTestThirdParty = findViewById(R.id.btnTestThirdPartyControl);
@@ -841,13 +1113,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // System Info & Screenshots
-        View btnScreenshot = findViewById(R.id.btnScreenshotAll);
-        if (btnScreenshot != null)
-            btnScreenshot.setVisibility(visibility);
-
-        View tvScreenshotPath = findViewById(R.id.tvScreenshotPath);
-        if (tvScreenshotPath != null)
-            tvScreenshotPath.setVisibility(visibility);
 
         // System Info (Boot Time, PSD Status)
         View layoutSystemInfo = findViewById(R.id.layoutSystemInfo);
@@ -875,8 +1140,6 @@ public class MainActivity extends AppCompatActivity {
                     getString(isChecked ? R.string.auto_theme_sync_enabled : R.string.auto_theme_sync_disabled));
         });
 
-        findViewById(R.id.btnForceLight).setOnClickListener(v -> sendAutoNaviBroadcast(1));
-        findViewById(R.id.btnForceDark).setOnClickListener(v -> sendAutoNaviBroadcast(2));
     }
 
     private void setupSoundSwitches() {
@@ -1369,14 +1632,7 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void setupMediaButtons() {
-        findViewById(R.id.btnMediaPrev)
-                .setOnClickListener(v -> simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS));
-        findViewById(R.id.btnMediaPlayPause)
-                .setOnClickListener(v -> simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
-        findViewById(R.id.btnMediaNext)
-                .setOnClickListener(v -> simulateMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT));
-    }
+    // setupMediaButtons removed as per user request
 
     // --- AutoStart Tab Logic ---
 
@@ -1534,15 +1790,47 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupPermissionStatuses() {
         View view = findViewById(R.id.statusAppPermissions);
-        if (view == null)
-            return;
+        if (view != null) {
+            TextView txtName = view.findViewById(R.id.txtPermissionName);
+            txtName.setText(R.string.title_app_permissions);
+            view.setOnClickListener(v -> showPermissionDialog());
+        }
 
-        TextView txtName = view.findViewById(R.id.txtPermissionName);
-        txtName.setText(R.string.title_app_permissions);
+        // Notification Access Check (for Media)
+        boolean hasNotifAccess = isNotificationServiceEnabled();
+        // You might want to add a UI element for this later.
+        // For now, if missing and HUD is on, toast or prompt.
+        if (!hasNotifAccess && ConfigManager.getInstance().getBoolean("switch_hud", false)) {
+            // Optional: Prompt user or show button
+            View btn = findViewById(R.id.btnGrantNotification);
+            if (btn != null) {
+                btn.setVisibility(View.VISIBLE);
+                btn.setOnClickListener(v -> {
+                    try {
+                        startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
+                    } catch (Exception e) {
+                        DebugLogger.toast(this, "无法打开通知权限设置，请手动开启");
+                    }
+                });
+            }
+        }
+    }
 
-        view.setOnClickListener(v -> showPermissionDialog());
-        view.setOnClickListener(v -> showPermissionDialog());
-        // btnFix removed from layout
+    private boolean isNotificationServiceEnabled() {
+        String pkgName = getPackageName();
+        final String flat = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
+        if (flat != null && !flat.isEmpty()) {
+            final String[] names = flat.split(":");
+            for (String name : names) {
+                final ComponentName cn = ComponentName.unflattenFromString(name);
+                if (cn != null) {
+                    if (android.text.TextUtils.equals(pkgName, cn.getPackageName())) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private void showPermissionDialog() {
@@ -1812,13 +2100,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void showSecureSettingsGuide() {
-        tryAdbGrant("pm grant " + getPackageName() + " android.permission.WRITE_SECURE_SETTINGS",
-                getString(R.string.msg_granting_secure),
-                () -> DebugLogger.toast(this,
-                        String.format(getString(R.string.perm_secure_settings_guide), getPackageName())));
-    }
-
     private boolean hasStoragePermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             return Environment.isExternalStorageManager();
@@ -1826,6 +2107,13 @@ public class MainActivity extends AppCompatActivity {
             return ContextCompat.checkSelfPermission(this,
                     Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
         }
+    }
+
+    private void showSecureSettingsGuide() {
+        tryAdbGrant("pm grant " + getPackageName() + " android.permission.WRITE_SECURE_SETTINGS",
+                getString(R.string.msg_granting_secure),
+                () -> DebugLogger.toast(this,
+                        String.format(getString(R.string.perm_secure_settings_guide), getPackageName())));
     }
 
     private boolean isAccessibilityServiceEnabled() {
@@ -2289,84 +2577,6 @@ public class MainActivity extends AppCompatActivity {
             sendBroadcast(intent);
             DebugLogger.toast(this, "Sent 1ms PSD Switch Test");
         });
-    }
-
-    private void setupScreenshotAll() {
-        View btnScreenshot = findViewById(R.id.btnScreenshotAll);
-        if (btnScreenshot != null) {
-            btnScreenshot.setOnClickListener(v -> captureAllScreens());
-        }
-    }
-
-    private void captureAllScreens() {
-        DebugLogger.toast(this, "Starting screenshot capture...");
-        new Thread(() -> {
-            try {
-                // Ensure directory exists
-                String dirPath = "/sdcard/NaviTool/";
-                java.io.File dir = new java.io.File(dirPath);
-                if (!dir.exists()) {
-                    dir.mkdirs();
-                }
-
-                android.hardware.display.DisplayManager dm = (android.hardware.display.DisplayManager) getSystemService(
-                        Context.DISPLAY_SERVICE);
-                if (dm != null) {
-                    android.view.Display[] displays = dm.getDisplays();
-                    DebugLogger.i("Screenshot", "Found displays: " + displays.length);
-
-                    if (AdbShell.getInstance(this).isConnected()) {
-                        // Priority: Use ADB Shell (Privileged)
-                        // Serialize commands to avoid concurrency issues with ADB streams
-                        StringBuilder cmdBuilder = new StringBuilder();
-                        for (android.view.Display display : displays) {
-                            int id = display.getDisplayId();
-                            String filePath = dirPath + "Display_" + id + ".png";
-                            // Chain commands with ;
-                            cmdBuilder.append("screencap -d ").append(id).append(" -p ").append(filePath).append("; ");
-
-                            // If this is Display 2 (Cluster/HUD), also capture software rendering as backup
-                            if (id == 2) {
-                                String swFilePath = dirPath + "Display_" + id + "_Software.png";
-                                ClusterHudManager.getInstance(this).capturePresentation(swFilePath);
-                            }
-                        }
-
-                        String finalCmd = cmdBuilder.toString();
-                        DebugLogger.i("Screenshot", "Executing ADB CMD: " + finalCmd);
-                        AdbShell.getInstance(this).exec(finalCmd);
-
-                        runOnUiThread(() -> DebugLogger.toast(this, "截图指令已发送(" + displays.length + "屏): " + dirPath));
-                    } else {
-                        // Fallback: Local Runtime Exec (Likely to fail or produce 0b files due to
-                        // perms)
-                        int successCount = 0;
-                        for (android.view.Display display : displays) {
-                            int id = display.getDisplayId();
-                            String filePath = dirPath + "Display_" + id + ".png";
-                            try {
-                                String command = "screencap -d " + id + " -p " + filePath;
-                                Process process = Runtime.getRuntime().exec(command);
-                                if (process.waitFor() == 0)
-                                    successCount++;
-                            } catch (Exception e) {
-                                DebugLogger.e("Screenshot", "Failed " + id, e);
-                            }
-                        }
-
-                        if (successCount > 0) {
-                            int finalSuccess = successCount;
-                            runOnUiThread(() -> DebugLogger.toast(this, "本地截图成功: " + finalSuccess + " 张"));
-                        } else {
-                            runOnUiThread(() -> DebugLogger.toast(this, "本地截图失败(0b)，请先连接ADB"));
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                DebugLogger.e("Screenshot", "Error capturing screens", e);
-                runOnUiThread(() -> DebugLogger.toast(this, "Screenshot failed: " + e.getMessage()));
-            }
-        }).start();
     }
 
 }

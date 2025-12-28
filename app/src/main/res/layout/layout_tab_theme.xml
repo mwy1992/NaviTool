@@ -29,33 +29,11 @@
                 android:layout_height="wrap_content"/>
         </LinearLayout>
 
-        <!-- Manual Buttons -->
-        <LinearLayout
-            android:id="@+id/layoutDebugButtons"
+        <View
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:visibility="gone"
-            android:layout_marginBottom="24dp">
-            <Button
-                android:id="@+id/btnForceLight"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/force_light"
-                android:layout_marginEnd="8dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
-            <Button
-                android:id="@+id/btnForceDark"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/force_dark"
-                android:layout_marginStart="8dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
-        </LinearLayout>
-
-        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?android:attr/listDivider" android:layout_marginBottom="24dp"/>
+            android:layout_height="1dp"
+            android:background="?android:attr/listDivider"
+            android:layout_marginBottom="16dp"/>
 
         <!-- Force Auto Day/Night Toggle -->
         <LinearLayout

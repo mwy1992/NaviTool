@@ -59,129 +59,132 @@
         android:orientation="horizontal">
 
         <!-- Left Sidebar (10%) -->
-        <RadioGroup
-            android:id="@+id/rgNavigation"
+        <ScrollView
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:orientation="vertical"
-            android:background="#1A000000"
-            android:paddingTop="16dp">
+            android:fillViewport="true"
+            android:background="#1A000000">
 
-            <RadioButton
-                android:id="@+id/rbADB"
+            <RadioGroup
+                android:id="@+id/rgNavigation"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/tab_adb"
-                android:textSize="18sp"
-                android:gravity="center_vertical"
-                android:padding="16dp"
-                android:button="@null"
-                android:background="?android:attr/selectableItemBackground"
-                android:textColor="@drawable/selector_nav_text"
-                android:checked="true"/>
+                android:orientation="vertical"
+                android:paddingTop="16dp">
 
-            <RadioButton
-                android:id="@+id/rbTheme"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/tab_theme"
-                android:textSize="18sp"
-                android:gravity="center_vertical"
-                android:padding="16dp"
-                android:button="@null"
-                android:background="?android:attr/selectableItemBackground"
-                android:textColor="@drawable/selector_nav_text"/>
+                <RadioButton
+                    android:id="@+id/rbADB"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tab_adb"
+                    android:textSize="18sp"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:button="@null"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:textColor="@drawable/selector_nav_text"
+                    android:checked="true"/>
 
-            <RadioButton
-                android:id="@+id/rbButtons"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/tab_buttons"
-                android:textSize="18sp"
-                android:gravity="center_vertical"
-                android:padding="16dp"
-                android:button="@null"
-                android:background="?android:attr/selectableItemBackground"
-                android:textColor="@drawable/selector_nav_text"/>
+                <RadioButton
+                    android:id="@+id/rbTheme"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tab_theme"
+                    android:textSize="18sp"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:button="@null"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:textColor="@drawable/selector_nav_text"/>
 
-            <RadioButton
-                android:id="@+id/rbBrightness"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/tab_brightness"
-                android:textSize="18sp"
-                android:gravity="center_vertical"
-                android:padding="16dp"
-                android:button="@null"
-                android:background="?android:attr/selectableItemBackground"
-                android:textColor="@drawable/selector_nav_text"/>
+                <RadioButton
+                    android:id="@+id/rbButtons"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tab_buttons"
+                    android:textSize="18sp"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:button="@null"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:textColor="@drawable/selector_nav_text"/>
 
-            <RadioButton
-                android:id="@+id/rbLights"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/tab_lights"
-                android:textSize="18sp"
-                android:gravity="center_vertical"
-                android:padding="16dp"
-                android:button="@null"
-                android:background="?android:attr/selectableItemBackground"
-                android:textColor="@drawable/selector_nav_text"/>
+                <RadioButton
+                    android:id="@+id/rbBrightness"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tab_brightness"
+                    android:textSize="18sp"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:button="@null"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:textColor="@drawable/selector_nav_text"/>
 
-            <RadioButton
-                android:id="@+id/rbSound"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/tab_sound"
-                android:textSize="18sp"
-                android:gravity="center_vertical"
-                android:padding="16dp"
-                android:button="@null"
-                android:background="?android:attr/selectableItemBackground"
-                android:textColor="@drawable/selector_nav_text"/>
+                <RadioButton
+                    android:id="@+id/rbLights"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tab_lights"
+                    android:textSize="18sp"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:button="@null"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:textColor="@drawable/selector_nav_text"/>
 
-            <RadioButton
-                android:id="@+id/rbCluster"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="仪表"
-                android:textSize="18sp"
-                android:gravity="center_vertical"
-                android:padding="16dp"
-                android:button="@null"
-                android:background="?android:attr/selectableItemBackground"
-                android:textColor="@drawable/selector_nav_text"
-                android:visibility="gone"/>
+                <RadioButton
+                    android:id="@+id/rbSound"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tab_sound"
+                    android:textSize="18sp"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:button="@null"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:textColor="@drawable/selector_nav_text"/>
 
-            <RadioButton
-                android:id="@+id/rbHud"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="HUD"
-                android:textSize="18sp"
-                android:gravity="center_vertical"
-                android:padding="16dp"
-                android:button="@null"
-                android:background="?android:attr/selectableItemBackground"
-                android:textColor="@drawable/selector_nav_text"
-                android:visibility="gone"/>
+                <RadioButton
+                    android:id="@+id/rbCluster"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="仪表"
+                    android:textSize="18sp"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:button="@null"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:textColor="@drawable/selector_nav_text"
+                    android:visibility="gone"/>
 
-            <RadioButton
-                android:id="@+id/rbAutoStart"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/tab_autostart"
-                android:textSize="18sp"
-                android:gravity="center_vertical"
-                android:padding="16dp"
-                android:button="@null"
-                android:background="?android:attr/selectableItemBackground"
-                android:textColor="@drawable/selector_nav_text"/>
+                <RadioButton
+                    android:id="@+id/rbHud"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="HUD"
+                    android:textSize="18sp"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:button="@null"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:textColor="@drawable/selector_nav_text"
+                    android:visibility="gone"/>
 
-
-
-        </RadioGroup>
+                <RadioButton
+                    android:id="@+id/rbAutoStart"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/tab_autostart"
+                    android:textSize="18sp"
+                    android:gravity="center_vertical"
+                    android:padding="16dp"
+                    android:button="@null"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:textColor="@drawable/selector_nav_text"/>
+            </RadioGroup>
+        </ScrollView>
 
         <!-- Right Content Area (90%) -->
         <FrameLayout
@@ -272,6 +275,14 @@
                         android:background="?android:attr/listDivider"/>
 
                     <include layout="@layout/item_permission_status" android:id="@+id/statusAppPermissions"/>
+
+                    <Button
+                        android:id="@+id/btnGrantNotification"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="授予通知读取权限 (用于媒体封面)"
+                        android:visibility="gone"
+                        android:layout_marginTop="8dp"/>
 
                     <View
                         android:layout_width="match_parent"
@@ -377,22 +388,7 @@
 
 
                     <!-- System Info Section -->
-                    <Button
-                        android:id="@+id/btnScreenshotAll"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="全屏截图 (All Displays)"
-                        android:layout_marginTop="16dp"/>
 
-                    <TextView
-                        android:id="@+id/tvScreenshotPath"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="Screenshots saved to /sdcard/NaviTool/"
-                        android:textSize="12sp"
-                        android:gravity="center_horizontal"
-                        android:textColor="?android:attr/textColorSecondary"
-                        android:layout_marginBottom="16dp"/>
 
                     <LinearLayout
                         android:id="@+id/layoutSystemInfo"

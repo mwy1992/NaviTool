@@ -29,39 +29,15 @@
                 android:layout_height="wrap_content"/>
         </LinearLayout>
 
-        <!-- Simulated Media Buttons (Debug Only) -->
-        <LinearLayout
-            android:id="@+id/layoutMediaButtons"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="16dp"
-            android:visibility="gone">
-            <Button
-                android:id="@+id/btnMediaPrev"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/media_prev"
-                android:layout_marginEnd="4dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
-            <Button
-                android:id="@+id/btnMediaPlayPause"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/media_play_pause"
-                android:layout_marginHorizontal="4dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
-            <Button
-                android:id="@+id/btnMediaNext"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/media_next"
-                android:layout_marginStart="4dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
-        </LinearLayout>
+
+
+
+
+        <!-- Use a divider or spacing -->
+
+
+        <!-- Simulated Display Toggle (Developer Option) -->
+
 
         <View android:layout_width="match_parent" android:layout_height="1dp" android:background="?android:attr/listDivider" android:layout_marginBottom="24dp"/>
 

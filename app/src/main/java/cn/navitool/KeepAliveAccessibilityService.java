@@ -264,6 +264,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         boolean forceAuto = prefs.getBoolean("force_auto_day_night", false);
         boolean sensor2425 = prefs.getBoolean("enable_24_25_light_sensor", false);
 
+        // Play Start Sound if enabled
+        playSound("sound_start");
+
         // Unconditionally initialize Car API (Sensor listeners)
         checkDayNightStatus(false);
 
@@ -459,7 +462,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
     private final android.os.Handler mHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private boolean mIsMonitoring = false;
-    private static final long MONITOR_INTERVAL_MS = 1000; // Updated to 1s (User Request)
+    private static final long MONITOR_INTERVAL_MS = 500; // Updated to 500ms for faster response
 
     private final Runnable mMonitorRunnable = new Runnable() {
         @Override
@@ -467,8 +470,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             if (!mIsMonitoring)
                 return;
             checkAndForceAutoDayNight();
-            mHandler.postDelayed(this, 1000); // 1s
-                                              // Interval
+            // Poll for Sound Events
+            pollSoundEvents();
+            mHandler.postDelayed(this, MONITOR_INTERVAL_MS);
         }
     };
 
@@ -493,6 +497,98 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     }
 
     private int mLastSetBrightness = -1;
+
+    private void pollSoundEvents() {
+        try {
+            // 1. Poll Gear
+            if (iSensor != null) {
+                int currentGear = iSensor.getSensorEvent(SENSOR_TYPE_GEAR);
+                // If invalid from ISensor, try ICarFunction
+                if (currentGear == -1 && iCarFunction != null) {
+                    // Try fallback function ID if known, or just skip
+                }
+
+                if (currentGear != -1 && currentGear != mLastGear) {
+                    if (mLastGear != -1) { // Skip first read sound? Or maybe play if it's startup?
+                        // Play Sound based on new gear
+                        playGearSound(currentGear);
+                    }
+                    mLastGear = currentGear;
+                }
+            }
+
+            // 2. Poll Door (Passenger)
+            if (iCarFunction != null) {
+                int doorStatus = iCarFunction.getFunctionValue(BCM_FUNC_DOOR, ZONE_ALL);
+                if (doorStatus != -1 && doorStatus != mLastDoor) {
+                    if (mLastDoor != -1) {
+                        checkDoorSound(mLastDoor, doorStatus);
+                    }
+                    mLastDoor = doorStatus;
+                }
+            }
+
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error polling sound events", e);
+        }
+    }
+
+    private void playGearSound(int gear) {
+        String key = null;
+        switch (gear) {
+            case GEAR_DRIVE:
+                key = "sound_gear_d";
+                break;
+            case GEAR_REVERSE:
+                key = "sound_gear_r";
+                break;
+            case GEAR_NEUTRAL:
+                key = "sound_gear_n";
+                break;
+            case GEAR_PARK:
+                key = "sound_gear_p";
+                break;
+        }
+        if (key != null) {
+            playSound(key);
+        }
+    }
+
+    private void checkDoorSound(int oldStatus, int newStatus) {
+        // Check if Passenger Door (Bit 2?) changed from 0 to 1 (Opened)
+        // ZONE_DOOR_FR = 4 (0x04)
+        boolean wasOpen = (oldStatus & ZONE_DOOR_FR) != 0;
+        boolean isOpen = (newStatus & ZONE_DOOR_FR) != 0;
+
+        if (!wasOpen && isOpen) {
+            playSound("sound_door_passenger");
+        }
+    }
+
+    private void playSound(String prefKeyPrefix) {
+        SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
+        boolean enabled = prefs.getBoolean(prefKeyPrefix + "_enabled", false);
+        if (!enabled)
+            return;
+
+        String filePath = prefs.getString(prefKeyPrefix + "_file", null);
+        if (filePath == null || filePath.isEmpty())
+            return;
+
+        try {
+            if (mMediaPlayer == null) {
+                mMediaPlayer = new MediaPlayer();
+            } else {
+                mMediaPlayer.reset();
+            }
+            mMediaPlayer.setDataSource(filePath);
+            mMediaPlayer.prepare();
+            mMediaPlayer.start();
+            DebugLogger.d(TAG, "Playing sound: " + filePath);
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to play sound: " + filePath, e);
+        }
+    }
 
     private void pollAndBroadcastBrightness() {
         if (iCarFunction == null)
@@ -555,7 +651,14 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             initCar();
             if (iCarFunction != null) {
                 try {
+                    // Old logic removed to fix duplication
+
                     int currentMode = iCarFunction.getFunctionValue(FUNC_DAYMODE_SETTING, ZONE_ALL);
+                    DebugLogger.d(TAG, "Polled DayMode (0x20150100): " + Integer.toHexString(currentMode));
+
+                    // Fallback / Extra Check for 688062976
+                    int altMode = iCarFunction.getFunctionValue(FUNC_BRIGHTNESS_DAYMODE, ZONE_ALL);
+                    DebugLogger.d(TAG, "Polled AltDayMode (688062976): " + Integer.toHexString(altMode));
 
                     // Explicitly poll values to ensure initial state is captured
                     try {
@@ -585,6 +688,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                             int dayNight = iSensor.getSensorEvent(ISensor.SENSOR_TYPE_DAY_NIGHT);
                             if (dayNight != -1) {
                                 mLastDayNightSensorValue = dayNight;
+                                DebugLogger.d(TAG, "Polled Sensor DayNight: " + dayNight);
                             }
                         }
 
@@ -602,6 +706,10 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
                     if (currentMode != -1 && currentMode != 0) {
                         mLastThemeMode = currentMode;
+                    } else if (altMode != -1 && altMode != 0) {
+                        // Fallback validity check
+                        DebugLogger.i(TAG, "Using AltDayMode as primary returned valid value");
+                        // Optional: usage of altMode if currentMode is invalid
                     }
 
                     // Broadcast status to UI

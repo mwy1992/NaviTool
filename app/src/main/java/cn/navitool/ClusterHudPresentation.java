@@ -22,6 +22,15 @@ public class ClusterHudPresentation extends Presentation {
 
         mLayoutCluster = findViewById(R.id.layoutCluster);
         mLayoutHud = findViewById(R.id.layoutHud);
+
+        // Ensure transparent background for the window itself
+        if (getWindow() != null) {
+            getWindow().setBackgroundDrawable(
+                    new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+        }
+
+        // Apply initial debug state
+        updateDebugMode(DebugLogger.isDebugEnabled(getContext()));
     }
 
     public void setClusterVisible(boolean visible) {
@@ -33,6 +42,17 @@ public class ClusterHudPresentation extends Presentation {
     public void setHudVisible(boolean visible) {
         if (mLayoutHud != null) {
             mLayoutHud.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    public void updateDebugMode(boolean isDebug) {
+        if (mLayoutHud != null) {
+            if (isDebug) {
+                // Light Green #3300FF00
+                mLayoutHud.setBackgroundColor(0x3300FF00);
+            } else {
+                mLayoutHud.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            }
         }
     }
 
@@ -50,50 +70,93 @@ public class ClusterHudPresentation extends Presentation {
 
             // Add new
             for (ClusterHudManager.HudComponentData data : components) {
-                // Determine View Type
-                android.widget.TextView tv;
-                if ("time".equals(data.type)) {
-                    android.widget.TextClock tc = new android.widget.TextClock(getContext());
-                    tc.setFormat12Hour(data.text); // Use text field as format (e.g. "HH:mm")
-                    tc.setFormat24Hour(data.text);
-                    tc.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                    tc.setPadding(0, 0, 0, 0); // No padding for time
-                    tv = tc;
-                } else {
-                    tv = new android.widget.TextView(getContext());
-                    tv.setText(data.text);
-                    tv.setBackgroundColor(android.graphics.Color.WHITE);
-                    tv.setPadding(8, 4, 8, 4); // Standard padding for text
-                }
-
-                tv.setTextSize(12); // Real HUD is 0.5x scale
-                tv.setTextColor(data.color);
+                View view;
+                boolean isSong = "song".equals(data.type);
+                boolean isMediaCover = "media_cover".equals(data.type);
+                int measuredWidth = 0;
+                int measuredHeight = 0;
 
                 android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
                         android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
                         android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
-                params.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
 
-                container.addView(tv, params);
+                if (isMediaCover) {
+                    android.widget.ImageView iv = new android.widget.ImageView(getContext());
+                    if (data.image != null) {
+                        iv.setImageBitmap(data.image);
+                    } else {
+                        // Placeholder or transparent
+                        iv.setImageResource(android.R.drawable.ic_media_play); // Fallback
+                        iv.setColorFilter(data.color); // Apply color to icon if needed
+                    }
+                    iv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    // Fixed size for cover
+                    params.width = 100;
+                    params.height = 100;
+                    view = iv;
+                } else if ("time".equals(data.type)) {
+                    android.widget.TextClock tc = new android.widget.TextClock(getContext());
+                    tc.setFormat12Hour(data.text);
+                    tc.setFormat24Hour(data.text);
+                    tc.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    tc.setTextColor(data.color);
+                    tc.setPadding(0, 0, 0, 0);
+                    tc.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 10);
+                    view = tc;
+                } else {
+                    android.widget.TextView tv = new android.widget.TextView(getContext());
+                    tv.setText(data.text);
+                    tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    tv.setPadding(0, 0, 0, 0);
+                    tv.setTextColor(data.color);
+
+                    // Rule 2: Font size logic
+                    if ("gear".equals(data.type)) {
+                        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 20);
+                    } else {
+                        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 10);
+                    }
+
+                    // Rule 3: Song Component Layout
+                    if (isSong) {
+                        params.width = 300;
+                        tv.setSingleLine(false);
+                        tv.setMaxLines(2);
+                    }
+                    view = tv;
+                }
+
+                params.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
+                container.addView(view, params);
 
                 // Measure
-                tv.measure(View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-                int width = tv.getMeasuredWidth();
-                int height = tv.getMeasuredHeight();
+                int widthSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+                int heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+
+                if (isSong) {
+                    widthSpec = View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY);
+                } else if (isMediaCover) {
+                    widthSpec = View.MeasureSpec.makeMeasureSpec(100, View.MeasureSpec.EXACTLY);
+                    heightSpec = View.MeasureSpec.makeMeasureSpec(100, View.MeasureSpec.EXACTLY);
+                }
+
+                view.measure(widthSpec, heightSpec);
+                measuredWidth = view.getMeasuredWidth();
+                measuredHeight = view.getMeasuredHeight();
 
                 // Bounds Clamp
                 int containerWidth = 728;
                 int containerHeight = 190;
-                float clampedX = Math.max(0, Math.min(data.x, containerWidth - width));
-                float clampedY = Math.max(0, Math.min(data.y, containerHeight - height));
+                float clampedX = Math.max(0, Math.min(data.x, containerWidth - measuredWidth));
+                float clampedY = Math.max(0, Math.min(data.y, containerHeight - measuredHeight));
 
-                tv.setX(clampedX);
-                tv.setY(clampedY);
-                tv.setVisibility(View.VISIBLE);
+                view.setX(clampedX);
+                view.setY(clampedY);
+                view.setVisibility(View.VISIBLE);
 
-                mRealHudComponents.add(tv);
+                mRealHudComponents.add(view);
             }
+
         }
     }
 
@@ -107,24 +170,4 @@ public class ClusterHudPresentation extends Presentation {
         }
     }
 
-    public void saveScreenshot(String filePath) {
-        View rootView = getWindow().getDecorView();
-        if (rootView.getWidth() <= 0 || rootView.getHeight() <= 0)
-            return;
-
-        try {
-            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(
-                    rootView.getWidth(), rootView.getHeight(), android.graphics.Bitmap.Config.ARGB_8888);
-            android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
-            rootView.draw(canvas);
-
-            java.io.File file = new java.io.File(filePath);
-            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file)) {
-                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, fos);
-                android.util.Log.i(TAG, "Software screenshot saved: " + filePath);
-            }
-        } catch (Exception e) {
-            android.util.Log.e(TAG, "Failed to save software screenshot", e);
-        }
-    }
 }
