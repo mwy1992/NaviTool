@@ -3,18 +3,21 @@
     android:id="@+id/layoutContentCluster"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
+    <!-- Root Vertical Layout -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingTop="8dp">
+        android:padding="12dp">
 
+        <!-- 1. Header: Switch -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="12dp">
+            
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -23,7 +26,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Enalbe Cluster Projection"
+                    android:text="Enable Cluster Projection"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary"/>
@@ -34,10 +37,118 @@
                     android:textSize="12sp"
                     android:textColor="?android:attr/textColorSecondary"/>
             </LinearLayout>
+
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/switchCluster"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"/>
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnClusterTestSpeed"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Test 0-270-0 km/h"
+            android:layout_marginTop="8dp"/>
+
+        <Button
+            android:id="@+id/btnClusterTestRpm"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:text="Test 0-8000 RPM"
+            android:layout_marginTop="8dp"/>
+
+        <!-- 2. Body: Theme Selector -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_horizontal"
+            android:layout_marginTop="20dp">
+
+            <!-- Item 1 (Selected) -->
+            <FrameLayout
+                android:id="@+id/layoutClusterTheme1"
+                android:layout_width="480px"
+                android:layout_height="180px"
+                android:background="@drawable/bg_cluster_selected"
+                android:clickable="true"
+                android:focusable="true"
+                android:layout_marginEnd="16dp">
+                
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="STYLE 1"
+                    android:layout_gravity="center"
+                    android:textColor="#CCCCCC"/>
+
+                <ImageView
+                    android:id="@+id/ivClusterCheck1"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_check"
+                    android:layout_gravity="top|end"
+                    android:layout_margin="8dp"
+                    android:tint="#4CAF50"/>
+            </FrameLayout>
+
+            <!-- Item 2 -->
+            <FrameLayout
+                android:id="@+id/layoutClusterTheme2"
+                android:layout_width="480px"
+                android:layout_height="180px"
+                android:background="@drawable/bg_cluster_normal"
+                android:clickable="true"
+                android:focusable="true"
+                android:layout_marginEnd="16dp">
+
+                 <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="STYLE 2"
+                    android:layout_gravity="center"
+                    android:textColor="#CCCCCC"/>
+
+                <ImageView
+                    android:id="@+id/ivClusterCheck2"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_check"
+                    android:layout_gravity="top|end"
+                    android:layout_margin="8dp"
+                    android:tint="#4CAF50"
+                    android:visibility="gone"/>
+            </FrameLayout>
+
+            <!-- Item 3 -->
+            <FrameLayout
+                android:id="@+id/layoutClusterTheme3"
+                android:layout_width="480px"
+                android:layout_height="180px"
+                android:background="@drawable/bg_cluster_normal"
+                android:clickable="true"
+                android:focusable="true">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="STYLE 3"
+                    android:layout_gravity="center"
+                    android:textColor="#CCCCCC"/>
+
+                <ImageView
+                    android:id="@+id/ivClusterCheck3"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:src="@drawable/ic_check"
+                    android:layout_gravity="top|end"
+                    android:layout_margin="8dp"
+                    android:tint="#4CAF50"
+                    android:visibility="gone"/>
+            </FrameLayout>
+
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

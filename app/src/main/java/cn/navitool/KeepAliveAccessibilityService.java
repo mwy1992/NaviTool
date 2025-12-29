@@ -82,14 +82,10 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }
 
         // 启动副驾屏保活
-        // initPsdKeepAlive(); // [Removed]
-
-        // 启动副驾屏保活
         cn.navitool.managers.PsdManager.getInstance(this).init();
 
         // [新增] 初始化车辆控制接口 (监听发动机、档位、车门等)
         initCar();
-
     }
 
     @Override

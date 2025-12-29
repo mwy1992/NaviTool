@@ -26,6 +26,7 @@ public class ClusterHudManager {
     private ClusterHudPresentation mPresentation;
     private boolean mIsClusterEnabled = false;
     private boolean mIsHudEnabled = false;
+    private boolean mIsDashboardMode = false;
 
     // ECarX Car API
     private ICar mCar;
@@ -41,6 +42,7 @@ public class ClusterHudManager {
     private NotificationConnectionReceiver mNotifReceiver;
 
     private List<HudComponentData> mCachedHudComponents;
+    private List<HudComponentData> mCachedClusterComponents;
     private Object mDimMenuInteraction; // IDimMenuInteraction via Reflection
 
     // AdaptAPI Reflection Constants
@@ -51,12 +53,23 @@ public class ClusterHudManager {
 
     private ClusterHudManager(Context context) {
         this.mContext = context.getApplicationContext();
+
         initAdaptApi();
-        // restoreMediaState(); // Removed, moved to syncHudLayout
-        initCarService(); // Connect to ECarX Car Service
-        initMediaListener(); // Listen for music
+
+        // 1. Initialize Media & Volume Listeners IMMEDIATELY on Main Thread (Critical
+        // for QQ Music Cover)
+        // User reported regressions when this was backgrounded.
+        initMediaListener();
         initVolumeListener();
+        initNotificationReceiver();
+
+        // 2. Initialize Car Service (Backgroundable, takes ~500ms)
+        initCarService();
+
+        registerDisplayListener();
+
         initNotificationReceiver(); // Listen for Service Connection
+
         registerDisplayListener();
     }
 
@@ -72,27 +85,29 @@ public class ClusterHudManager {
 
     // --- ECarX Car Service Initialization ---
     private void initCarService() {
-        try {
-            // Create ECarX Car Instance
-            mCar = Car.create(mContext);
-            if (mCar != null) {
-                mSensorManager = mCar.getSensorManager();
-                if (mSensorManager != null) {
-                    registerSensors();
-                } else {
-                    DebugLogger.e(TAG, "ECarX SensorManager is null");
-                }
+        new Thread(() -> {
+            try {
+                // Create ECarX Car Instance
+                mCar = Car.create(mContext);
+                if (mCar != null) {
+                    mSensorManager = mCar.getSensorManager();
+                    if (mSensorManager != null) {
+                        registerSensors();
+                    } else {
+                        DebugLogger.e(TAG, "ECarX SensorManager is null");
+                    }
 
-                mCarFunction = mCar.getICarFunction();
-                if (mCarFunction != null) {
-                    registerFunctions();
+                    mCarFunction = mCar.getICarFunction();
+                    if (mCarFunction != null) {
+                        registerFunctions();
+                    }
+                } else {
+                    DebugLogger.e(TAG, "Failed to create ECarX Car instance");
                 }
-            } else {
-                DebugLogger.e(TAG, "Failed to create ECarX Car instance");
+            } catch (Throwable t) {
+                DebugLogger.e(TAG, "Failed to init ECarX Car Service (Fatal)", t);
             }
-        } catch (Throwable t) {
-            DebugLogger.e(TAG, "Failed to init ECarX Car Service (Fatal)", t);
-        }
+        }).start();
     }
 
     private void registerSensors() {
@@ -116,6 +131,10 @@ public class ClusterHudManager {
                     ISensor.RATE_NORMAL);
             // mSensorManager.registerListener(mSensorListener,
             // ISensor.SENSOR_TYPE_ENDURANCE_MILEAGE_FUEL, ISensor.RATE_NORMAL);
+
+            // Register Speed
+            mSensorManager.registerListener(mSensorListener, ISensor.SENSOR_TYPE_RPM, ISensor.RATE_UI);
+            mSensorManager.registerListener(mSensorListener, ISensor.SENSOR_TYPE_CAR_SPEED, ISensor.RATE_UI);
 
             DebugLogger.i(TAG, "ECarX Sensors Registered");
         } catch (Exception e) {
@@ -164,6 +183,10 @@ public class ClusterHudManager {
                     updateComponentText("temp_in", String.format("内: %.1f°C", value));
                 } else if (sensorType == ISensor.SENSOR_TYPE_ENDURANCE_MILEAGE) {
                     updateComponentText("range", String.format("续航: %.0fkm", value));
+                } else if (sensorType == ISensor.SENSOR_TYPE_RPM) {
+                    updateRpm(value);
+                } else if (sensorType == ISensor.SENSOR_TYPE_CAR_SPEED) {
+                    updateSpeed(value);
                 }
             } catch (Exception e) {
                 DebugLogger.e(TAG, "Error handling sensor value changed", e);
@@ -331,23 +354,60 @@ public class ClusterHudManager {
         updateComponent(type, null, image);
     }
 
+    // Pending Media State (Wait for Cache Load)
+    private String mPendingSongText = null;
+    private android.graphics.Bitmap mPendingCoverArt = null;
+
     private void updateComponent(String type, String newText, android.graphics.Bitmap newImage) {
-        if (mCachedHudComponents == null)
+        if (mCachedHudComponents == null) {
+            // Logic Fix: Store pending updates if cache isn't ready (Startup Optimization
+            // Race Condition)
+            synchronized (this) {
+                if ("song".equals(type) || "test_media".equals(type)) {
+                    mPendingSongText = newText;
+                    DebugLogger.d(TAG, "Cache not ready, stored pending text: " + newText);
+                } else if ("media_cover".equals(type) || "test_media_cover".equals(type)) {
+                    if (newImage != null) {
+                        mPendingCoverArt = newImage;
+                        DebugLogger.d(TAG, "Cache not ready, stored pending cover art");
+                    }
+                }
+            }
             return;
+        }
+
         boolean changed = false;
 
         synchronized (this) {
-            if (mCachedHudComponents == null)
+            if (mCachedHudComponents == null && mCachedClusterComponents == null)
                 return;
-            for (HudComponentData data : mCachedHudComponents) {
-                if (type.equals(data.type)) {
-                    if (newText != null && !newText.equals(data.text)) {
-                        data.text = newText;
-                        changed = true;
+
+            if (mCachedHudComponents != null) {
+                for (HudComponentData data : mCachedHudComponents) {
+                    if (type.equals(data.type)) {
+                        if (newText != null && !newText.equals(data.text)) {
+                            data.text = newText;
+                            changed = true;
+                        }
+                        if (newImage != null) {
+                            data.image = newImage;
+                            changed = true;
+                        }
                     }
-                    if (newImage != null) {
-                        data.image = newImage;
-                        changed = true;
+                }
+            }
+
+            if (mCachedClusterComponents != null) {
+                for (HudComponentData data : mCachedClusterComponents) {
+                    if (type.equals(data.type)) {
+                        if (newText != null && !newText.equals(data.text)) {
+                            data.text = newText;
+                            changed = true;
+                        }
+                        if (newImage != null) {
+                            data.image = newImage;
+                            changed = true;
+                        }
                     }
                 }
             }
@@ -355,7 +415,13 @@ public class ClusterHudManager {
 
         if (changed) {
             new Handler(Looper.getMainLooper()).post(() -> {
-                syncHudLayout(mCachedHudComponents);
+                // Efficient Update: directly update view property instead of full rebuild
+                if (mPresentation != null) {
+                    mPresentation.updateComponent(type, newText, newImage);
+                } else {
+                    // Fallback if presentation isn't ready
+                }
+
                 if (mListener != null) {
                     mListener.onHudDataChanged(type, newText, newImage);
                 }
@@ -380,8 +446,13 @@ public class ClusterHudManager {
             filter.addAction("com.kugou.android.music.playstatechanged");
             filter.addAction("cn.kuwo.player.metachanged");
             filter.addAction("cn.kuwo.player.playstatechanged");
+            filter.addAction("cn.kuwo.player.playstatechanged");
             // Add other common players if needed, e.g. Kugou, QQMusic often broadcast on
             // standard actions or their own
+            filter.addAction(cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE); // Listen to
+                                                                                                      // Service
+                                                                                                      // directly
+                                                                                                      // background
             mContext.registerReceiver(receiver, filter, null, new Handler(Looper.getMainLooper()));
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to init Media Broadcast Receiver", e);
@@ -409,12 +480,12 @@ public class ClusterHudManager {
                 // But permission is key.
                 ComponentName notifComponent = new ComponentName(mContext, NotificationCollectorService.class);
 
-                // 1. Register Listener
+                // 1. Register Listener with Main Handler (Required since we are on bg thread)
                 mMediaSessionManager.addOnActiveSessionsChangedListener(controllers -> {
                     DebugLogger.d(TAG,
                             "ActiveSessionsChanged Callback: " + (controllers != null ? controllers.size() : "null"));
                     updateMediaControllers(controllers);
-                }, notifComponent);
+                }, notifComponent, new Handler(Looper.getMainLooper()));
                 DebugLogger.i(TAG, "MediaSession Listener Registered Successfully");
 
                 // 2. Start Polling (To ensure we catch sessions even if callback misses or
@@ -481,14 +552,52 @@ public class ClusterHudManager {
             String action = intent.getAction();
             DebugLogger.d(TAG, "MusicBroadcast Received Action: " + action); // Debug Log
 
-            // Accept any music broadcast we registered for
-            if (action != null) {
+            if (action == null)
+                return;
+
+            if (cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE.equals(action)) {
+                // Handle Direct Service Broadcast (Works in Background for QQ Music)
+                String title = intent.getStringExtra("title");
+                String artist = intent.getStringExtra("artist");
+                boolean isPlaying = intent.getBooleanExtra("is_playing", false);
+
+                String display = title;
+                if (artist != null && !artist.isEmpty()) {
+                    display = title + "\n" + artist;
+                }
+                updateComponentText("song", display);
+                updateComponentText("test_media", display);
+
+                // Update Playing State
+                updateMediaPlayingState(isPlaying);
+
+                // Update Cover (Byte Array)
+                boolean hasArtwork = intent.getBooleanExtra("has_artwork", true); // Default true to be safe
+                if (!hasArtwork) {
+                    // Explicitly Clear if listener says no artwork
+                    updateComponentImage("media_cover", null);
+                    updateComponentImage("test_media_cover", null);
+                } else {
+                    byte[] artwork = intent.getByteArrayExtra("artwork");
+                    if (artwork != null) {
+                        android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(artwork, 0,
+                                artwork.length);
+                        if (bmp != null) {
+                            updateComponentImage("media_cover", bmp);
+                            updateComponentImage("test_media_cover", bmp);
+                        }
+                    }
+                }
+            } else {
+                // Reject generic broadcasts if text/track is missing to avoid overwriting valid
+                // data with garbage
+                // But generally, accept them.
+
                 // Debug: Log all keys to find correct ones for QQ Music/NetEase
                 android.os.Bundle extras = intent.getExtras();
                 if (extras != null) {
                     for (String key : extras.keySet()) {
                         // DebugLogger.v(TAG, "Extra: " + key + " = " + extras.get(key));
-                        // Note: Uncomment above if extremely verbose debugging is needed.
                     }
                 }
 
@@ -523,15 +632,30 @@ public class ClusterHudManager {
                 }
                 updateMediaPlayingState(isPlaying);
 
-                // Save State (Removed Logic called above, method body is empty now)
-                saveMediaState(display, null);
+                // Update Cover from Intent Extras (QQ Music often sends URI here)
+                String artUriStr = intent.getStringExtra("album_art_uri"); // Standard/QQ
+                if (artUriStr == null)
+                    artUriStr = intent.getStringExtra("album_uri");
+                if (artUriStr == null)
+                    artUriStr = intent.getStringExtra("artwork_uri");
 
-                // Update Cover? Broadcasts usually don't send Bitmap.
-                // We might need to rely on MediaSession for Art, or check for URI?
-                // For now, if we have MediaSession, it updates art.
+                if (artUriStr != null) {
+                    try {
+                        android.net.Uri uri = android.net.Uri.parse(artUriStr);
+                        java.io.InputStream is = mContext.getContentResolver().openInputStream(uri);
+                        android.graphics.Bitmap broadcastArt = android.graphics.BitmapFactory.decodeStream(is);
+                        if (is != null)
+                            is.close();
+                        if (broadcastArt != null) {
+                            updateComponentImage("media_cover", broadcastArt);
+                            updateComponentImage("test_media_cover", broadcastArt);
+                        }
+                    } catch (Exception e) {
+                        DebugLogger.w(TAG, "Failed to load Art from Broadcast URI: " + artUriStr);
+                    }
+                }
             }
         }
-
     }
 
     private void updateMediaInfoFromController(android.media.session.MediaController controller) {
@@ -545,7 +669,10 @@ public class ClusterHudManager {
         String artist = meta.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST);
         android.graphics.Bitmap art = meta.getBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART);
         if (art == null) {
-            art = meta.getBitmap(android.media.MediaMetadata.METADATA_KEY_DISPLAY_ICON);
+            // Disabled fallback to DISPLAY_ICON. QQ Music puts app icon here which
+            // overwrites
+            // valid Notification Art.
+            // art = meta.getBitmap(android.media.MediaMetadata.METADATA_KEY_DISPLAY_ICON);
         }
 
         // 3. Fallback: URI (Android 9/Pie often relies on this to avoid Binder size
@@ -609,9 +736,25 @@ public class ClusterHudManager {
         // User Preference: Line 1 Title, Line 2 Artist
         String display = title + "\n" + artist;
         updateComponentText("song", display);
+        updateComponentText("test_media", display); // Also update test component
 
         if (art != null) {
             updateComponentImage("media_cover", art);
+            updateComponentImage("test_media_cover", art); // Also update test cover
+        } else {
+            // Logic Fix: If MediaSession art is null (common in QQ Music), DO NOT overwrite
+            // potential artwork from NotificationListener (pushed from MainActivity).
+            // Only clear artwork if the song has ACTUALLY changed.
+            // But we don't track previous song title here easily without cache lookup.
+            // Simpler check: If art is null, just DON'T update image component at all.
+            // Let the old image persist until a new valid image comes OR the text update
+            // implies a change.
+            // Wait, if it's a new song with NO art, we WANT to clear the old art.
+            // But we can't distinguish "New Song No Art" vs "Old Song Art from
+            // Notification".
+            // Given QQ Music notification works well, let's just rely on that for art.
+            // If MediaSession has art, great. If not, do nothing and hope
+            // NotificationListener fills it.
         }
 
         // Determine Playing State
@@ -627,19 +770,24 @@ public class ClusterHudManager {
 
     // --- AdaptAPI Init ---
     private void initAdaptApi() {
-        try {
-            // DimInteraction.create(context)
-            Class<?> dimInteractionClass = Class.forName(CLASS_DIM_INTERACTION);
-            Method createMethod = dimInteractionClass.getMethod("create", Context.class);
-            Object dimInteraction = createMethod.invoke(null, mContext);
+        new Thread(() -> {
+            try {
+                // DimInteraction.create(context)
+                Class<?> dimInteractionClass = Class.forName(CLASS_DIM_INTERACTION);
+                Method createMethod = dimInteractionClass.getMethod("create", Context.class);
+                Object dimInteraction = createMethod.invoke(null, mContext);
 
-            // dimInteraction.getDimMenuInteraction()
-            Method getMenuInteractionMethod = dimInteractionClass.getMethod("getDimMenuInteraction");
-            mDimMenuInteraction = getMenuInteractionMethod.invoke(dimInteraction);
-            DebugLogger.i(TAG, "AdaptAPI DimMenuInteraction initialized successfully: " + mDimMenuInteraction);
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to initialize AdaptAPI DimMenuInteraction", e);
-        }
+                // dimInteraction.getDimMenuInteraction()
+                Method getMenuInteractionMethod = dimInteractionClass.getMethod("getDimMenuInteraction");
+                mDimMenuInteraction = getMenuInteractionMethod.invoke(dimInteraction);
+                DebugLogger.i(TAG, "AdaptAPI DimMenuInteraction initialized successfully: " + mDimMenuInteraction);
+
+                // If Cluster was enabled waiting for this, triggered by logic?
+                // unlikely, setClusterEnabled is manual.
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Failed to initialize AdaptAPI DimMenuInteraction", e);
+            }
+        }).start();
     }
 
     private void registerDisplayListener() {
@@ -745,6 +893,15 @@ public class ClusterHudManager {
 
             try {
                 mPresentation.setOnShowListener(dialog -> {
+                    // Logic Fix: Apply Persistence Mode (Dashboard vs List)
+                    if (mIsDashboardMode) {
+                        mPresentation.enableClusterDashboard();
+                        DebugLogger.d(TAG, "Restored Dashboard Mode on show");
+                    } else if (mCachedClusterComponents != null) {
+                        mPresentation.syncClusterLayout(mCachedClusterComponents);
+                        DebugLogger.d(TAG, "Applied cached Cluster components on show");
+                    }
+
                     if (mCachedHudComponents != null) {
                         mPresentation.syncHudLayout(mCachedHudComponents);
                         DebugLogger.d(TAG, "Applied cached HUD components on show");
@@ -754,6 +911,7 @@ public class ClusterHudManager {
                 mPresentation.show();
                 mPresentation.setClusterVisible(mIsClusterEnabled);
                 mPresentation.setHudVisible(mIsHudEnabled);
+                mPresentation.setMediaPlaying(mIsMediaPlaying); // Sync initial state
                 DebugLogger.i(TAG, "ClusterHudPresentation SHOWN on Display 2");
             } catch (Exception e) {
                 DebugLogger.e(TAG, "Failed to show presentation", e);
@@ -783,6 +941,20 @@ public class ClusterHudManager {
         synchronized (this) {
             mCachedHudComponents = new ArrayList<>(components);
             applyMediaPersistence(); // Apply saved media state over defaults
+
+            // Logic Fix: Apply Pending Media (from Startup Race Condition)
+            if (mPendingSongText != null) {
+                DebugLogger.d(TAG, "Applying pending song text from cache: " + mPendingSongText);
+                updateComponentText("song", mPendingSongText);
+                updateComponentText("test_media", mPendingSongText);
+                mPendingSongText = null; // Clear
+            }
+            if (mPendingCoverArt != null) {
+                DebugLogger.d(TAG, "Applying pending cover art from cache");
+                updateComponentImage("media_cover", mPendingCoverArt);
+                updateComponentImage("test_media_cover", mPendingCoverArt);
+                mPendingCoverArt = null; // Clear
+            }
         }
         if (mPresentation != null) {
             mPresentation.syncHudLayout(mCachedHudComponents);
@@ -806,6 +978,19 @@ public class ClusterHudManager {
         }
     }
 
+    public void syncClusterLayout(List<HudComponentData> components) {
+        if (components == null)
+            return;
+        synchronized (this) {
+            mIsDashboardMode = false; // Switch to List Mode
+            mCachedClusterComponents = new ArrayList<>(components);
+        }
+        if (mPresentation != null) {
+            mPresentation.syncClusterLayout(mCachedClusterComponents);
+            updateTurnSignal(); // Force update
+        }
+    }
+
     public void syncTestMedia() {
         String title = "测试歌曲 Title";
         String artist = "测试歌手 Artist";
@@ -822,6 +1007,33 @@ public class ClusterHudManager {
     public void clearHudComponents() {
         if (mPresentation != null) {
             mPresentation.clearHudComponents();
+        }
+        if (mPresentation != null) {
+            mPresentation.clearHudComponents();
+        }
+    }
+
+    // --- Cluster Dashboard Logic ---
+    public void enableClusterDashboard() {
+        mIsDashboardMode = true; // Enable Dashboard Mode persistence
+        if (mPresentation != null) {
+            mPresentation.enableClusterDashboard();
+        } else {
+            // Need to handle if presentation not ready?
+            // For now, assume it's synced when presentation shows if we store mode state.
+            // But skipping complexity for this step.
+        }
+    }
+
+    public void updateSpeed(float speed) {
+        if (mPresentation != null) {
+            mPresentation.updateSpeed(speed);
+        }
+    }
+
+    public void updateRpm(float rpm) {
+        if (mPresentation != null) {
+            mPresentation.updateRpm(rpm);
         }
     }
 

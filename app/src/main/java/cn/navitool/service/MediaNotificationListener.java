@@ -1,6 +1,7 @@
 package cn.navitool.service;
 
 import android.app.Notification;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -8,6 +9,7 @@ import android.graphics.Bitmap;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSession;
+import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
 import android.os.Bundle;
 import android.os.Parcelable;
@@ -16,6 +18,7 @@ import android.service.notification.StatusBarNotification;
 import android.util.Log;
 
 import java.io.ByteArrayOutputStream;
+import java.util.List;
 
 import cn.navitool.DebugLogger;
 
@@ -23,9 +26,14 @@ public class MediaNotificationListener extends NotificationListenerService {
     private static final String TAG = "MediaNotifListener";
     public static final String ACTION_MEDIA_INFO_UPDATE = "cn.navitool.MEDIA_INFO_UPDATE";
     public static final String ACTION_REQUEST_MEDIA_REBROADCAST = "cn.navitool.ACTION_REQUEST_MEDIA_REBROADCAST";
+
     private android.os.Handler mWorkHandler;
     private android.os.HandlerThread mHandlerThread;
     private RequestReceiver mRequestReceiver;
+
+    private MediaSessionManager mMediaSessionManager;
+    private MediaController mCurrentController;
+    private final MediaControllerCallback mMediaControllerCallback = new MediaControllerCallback();
 
     @Override
     public void onCreate() {
@@ -36,6 +44,13 @@ public class MediaNotificationListener extends NotificationListenerService {
         mHandlerThread = new android.os.HandlerThread("MediaNotifWorker");
         mHandlerThread.start();
         mWorkHandler = new android.os.Handler(mHandlerThread.getLooper());
+
+        // Initialize MediaSessionManager
+        try {
+            mMediaSessionManager = (MediaSessionManager) getSystemService(Context.MEDIA_SESSION_SERVICE);
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to get MediaSessionManager", e);
+        }
 
         // Register Request Receiver
         mRequestReceiver = new RequestReceiver();
@@ -49,6 +64,19 @@ public class MediaNotificationListener extends NotificationListenerService {
         if (mRequestReceiver != null) {
             unregisterReceiver(mRequestReceiver);
         }
+
+        // Unregister Session Listener
+        if (mMediaSessionManager != null) {
+            try {
+                mMediaSessionManager.removeOnActiveSessionsChangedListener(mSessionChangedListener);
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+
+        // Unregister Controller Callback
+        unregisterCurrentController();
+
         if (mHandlerThread != null) {
             mHandlerThread.quitSafely();
             mHandlerThread = null;
@@ -60,90 +88,253 @@ public class MediaNotificationListener extends NotificationListenerService {
     public void onListenerConnected() {
         super.onListenerConnected();
         DebugLogger.i(TAG, "Notification Listener Connected");
-        // Offload processing to avoid blocking Main Thread startup
+
+        // Initialize Media Session Monitoring logic in Background
         if (mWorkHandler != null) {
-            mWorkHandler.post(this::checkForActiveMedia);
+            mWorkHandler.post(this::initMediaSessionMonitoring);
         }
     }
 
-    private void checkForActiveMedia() {
+    private void initMediaSessionMonitoring() {
+        if (mMediaSessionManager == null)
+            return;
+
+        ComponentName componentName = new ComponentName(this, MediaNotificationListener.class);
         try {
-            StatusBarNotification[] notifications = getActiveNotifications();
-            if (notifications != null) {
-                for (StatusBarNotification sbn : notifications) {
-                    processNotification(sbn);
-                }
-            }
+            mMediaSessionManager.addOnActiveSessionsChangedListener(mSessionChangedListener, componentName,
+                    mWorkHandler);
+            // Initial Check
+            List<MediaController> controllers = mMediaSessionManager.getActiveSessions(componentName);
+            updateActiveSession(controllers);
+        } catch (SecurityException e) {
+            DebugLogger.e(TAG, "Security Exception accessing Active Sessions. Is Notification Permission granted?", e);
         } catch (Exception e) {
-            DebugLogger.e(TAG, "Error checking active media", e);
+            DebugLogger.e(TAG, "Error init monitoring", e);
         }
     }
 
+    private final MediaSessionManager.OnActiveSessionsChangedListener mSessionChangedListener = this::updateActiveSession;
+
+    private void updateActiveSession(List<MediaController> controllers) {
+        if (controllers == null || controllers.isEmpty())
+            return;
+
+        // Strategy: Find the first controller that is PLAYING, or default to the first
+        // one
+        MediaController targetController = null;
+
+        for (MediaController controller : controllers) {
+            PlaybackState state = controller.getPlaybackState();
+            if (state != null && state.getState() == PlaybackState.STATE_PLAYING) {
+                targetController = controller;
+                break;
+            }
+        }
+
+        if (targetController == null && !controllers.isEmpty()) {
+            targetController = controllers.get(0);
+        }
+
+        if (targetController != null) {
+            // Check if it's the same as current
+            if (mCurrentController != null &&
+                    mCurrentController.getPackageName().equals(targetController.getPackageName())) {
+                // Same app, maybe nice to just keep it, but ensure callback is registered
+                // For simplicity, if it's the same object, do nothing. If different object
+                // (recreated), re-register.
+                // But MediaController objects might be different for same session?
+                // Let's just switch if the Token is different?
+                // Actually, simple logic: Unregister old, Register new.
+            }
+            registerNewController(targetController);
+        }
+    }
+
+    private void registerNewController(MediaController controller) {
+        unregisterCurrentController();
+        mCurrentController = controller;
+        if (mCurrentController != null) {
+            // Unregister needs to be happening on mCurrentController, which is now set.
+            // Wait, logic is: Unregister OLD, set NEW, Register NEW.
+            mCurrentController.registerCallback(mMediaControllerCallback, mWorkHandler);
+            // Force immediate update
+            extractMediaInfo(mCurrentController);
+        }
+    }
+
+    private void unregisterCurrentController() {
+        if (mCurrentController != null) {
+            mCurrentController.unregisterCallback(mMediaControllerCallback);
+            mCurrentController = null;
+        }
+    }
+
+    private class MediaControllerCallback extends MediaController.Callback {
+        @Override
+        public void onPlaybackStateChanged(PlaybackState state) {
+            if (mCurrentController != null) {
+                extractMediaInfo(mCurrentController);
+            }
+        }
+
+        @Override
+        public void onMetadataChanged(MediaMetadata metadata) {
+            if (mCurrentController != null) {
+                extractMediaInfo(mCurrentController);
+            }
+        }
+    }
+
+    // Keep RequestReceiver for Re-Broadcasts
     private class RequestReceiver extends android.content.BroadcastReceiver {
         @Override
         public void onReceive(Context context, Intent intent) {
             if (ACTION_REQUEST_MEDIA_REBROADCAST.equals(intent.getAction())) {
                 DebugLogger.i(TAG, "Received Re-Broadcast Request");
                 if (mWorkHandler != null) {
-                    mWorkHandler.post(MediaNotificationListener.this::checkForActiveMedia);
+                    mWorkHandler.post(() -> {
+                        if (mCurrentController != null) {
+                            extractMediaInfo(mCurrentController);
+                        } else {
+                            // Try to refresh active sessions
+                            initMediaSessionMonitoring();
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    // Fallback: If no sessions, or to catch legacy/odd apps, we can still listen to
+    // notifications?
+    // User requested optimization using MediaSession, implying Session is primary.
+    // mconfig+ logic relies heavily on MediaSession logic but might have used
+    // Notification as entry point?
+    // No, mconfig+ NotificationListener inherits NLS but uses getActiveSessions
+    // primarily.
+    // We will stick to Session logic as primary.
+
+    // Fallback variable for Notification Large Icon
+    private Bitmap mFallbackNotificationBitmap = null;
+
+    @Override
+    public void onNotificationPosted(StatusBarNotification sbn) {
+        if (mCurrentController != null && sbn.getPackageName().equals(mCurrentController.getPackageName())) {
+            Notification notification = sbn.getNotification();
+            Bundle extras = notification.extras;
+            if (extras != null) {
+                Bitmap largeIcon = extras.getParcelable(Notification.EXTRA_LARGE_ICON);
+                if (largeIcon != null) {
+                    DebugLogger.d(TAG, "Captured LargeIcon from Notification for fallback: " + sbn.getPackageName());
+                    mFallbackNotificationBitmap = largeIcon;
+                    // Trigger update to use this new bitmap if needed
+                    extractMediaInfo(mCurrentController);
                 }
             }
         }
     }
 
     @Override
-    public void onNotificationPosted(StatusBarNotification sbn) {
-        if (mWorkHandler != null) {
-            mWorkHandler.post(() -> processNotification(sbn));
-        }
-    }
-
-    @Override
     public void onNotificationRemoved(StatusBarNotification sbn) {
-        // Optional: Handle removal if needed
-    }
-
-    private void processNotification(StatusBarNotification sbn) {
-        if (sbn == null)
-            return;
-
-        Notification notification = sbn.getNotification();
-        if (notification == null || notification.extras == null)
-            return;
-
-        Bundle extras = notification.extras;
-        String packageName = sbn.getPackageName();
-
-        // Check for MediaSession Token
-        Parcelable tokenParcelable = extras.getParcelable(Notification.EXTRA_MEDIA_SESSION);
-        MediaSession.Token token = null;
-        if (tokenParcelable instanceof MediaSession.Token) {
-            token = (MediaSession.Token) tokenParcelable;
-        }
-
-        if (token != null) {
-            MediaController controller = new MediaController(this, token);
-            extractMediaInfo(controller, packageName);
+        if (mCurrentController != null && sbn.getPackageName().equals(mCurrentController.getPackageName())) {
+            // If we rely on notification for art, and it's gone, maybe we should clear it?
+            // But music might still be playing. Let's keep it until session dies or new art
+            // comes.
         }
     }
 
-    private void extractMediaInfo(MediaController controller, String packageName) {
+    private Bitmap mLastBitmap = null;
+    private String mLastPackage = null;
+
+    private void extractMediaInfo(MediaController controller) {
         if (controller == null)
             return;
 
         MediaMetadata metadata = controller.getMetadata();
         PlaybackState playbackState = controller.getPlaybackState();
+        String packageName = controller.getPackageName();
 
-        if (metadata == null)
+        // Reset fallback if package changed
+        if (mLastPackage != null && !mLastPackage.equals(packageName)) {
+            mFallbackNotificationBitmap = null;
+        }
+
+        if (metadata == null) {
+            // Try to use fallback even if metadata is null? Usually metadata isn't null if
+            // session is active.
+            // But if specific keys are null...
+            // DebugLogger.e(TAG, "Metadata is null for package: " + packageName);
+            // return;
+        }
+
+        String title = null;
+        String artist = null;
+        String album = null;
+        Bitmap albumArt = null;
+
+        if (metadata != null) {
+            title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE);
+            artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST);
+            album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM);
+            albumArt = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
+
+            if (albumArt == null) {
+                albumArt = metadata.getBitmap(MediaMetadata.METADATA_KEY_ART);
+            }
+            if (albumArt == null) {
+                albumArt = metadata.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON);
+            }
+
+            // Fallback: Check for URI strings
+            if (albumArt == null) {
+                String artUriStr = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI);
+                if (artUriStr == null)
+                    artUriStr = metadata.getString(MediaMetadata.METADATA_KEY_ART_URI);
+                if (artUriStr == null)
+                    artUriStr = metadata.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI);
+
+                if (artUriStr != null) {
+                    try {
+                        android.net.Uri uri = android.net.Uri.parse(artUriStr);
+                        java.io.InputStream is = getContentResolver().openInputStream(uri);
+                        albumArt = android.graphics.BitmapFactory.decodeStream(is);
+                        if (is != null)
+                            is.close();
+                    } catch (Exception e) {
+                        DebugLogger.w(TAG, "Failed URI load: " + e.getMessage());
+                    }
+                }
+            }
+        }
+
+        // Final Fallback: Notification Large Icon
+        if (albumArt == null && mFallbackNotificationBitmap != null) {
+            DebugLogger.d(TAG, "Using Notification LargeIcon as fallback artwork");
+            albumArt = mFallbackNotificationBitmap;
+        }
+
+        // Ensure we have a Title (fallback to package name? No, skip empty/unknown)
+        if (title == null) {
+            // If Notification fallback exists, maybe get title from Notification too?
+            // Notification.EXTRA_TITLE
+            // For now, assume Metadata provides at least Title.
+            // For now, assume Metadata provides at least Title.
+
+            // Fix for NetEase: Check if we are Playing but lack Title.
+            boolean isPlayingCheck = false;
+            if (playbackState != null) {
+                isPlayingCheck = playbackState.getState() == PlaybackState.STATE_PLAYING;
+            }
+            if (isPlayingCheck) {
+                DebugLogger.w(TAG, "Playing but Title is null (NetEase delay?). Retrying in 1000ms...");
+                if (mWorkHandler != null) {
+                    mWorkHandler.postDelayed(() -> {
+                        if (mCurrentController != null)
+                            extractMediaInfo(mCurrentController);
+                    }, 1000);
+                }
+            }
             return;
-
-        String title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE);
-        String artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST);
-        String album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM);
-        Bitmap albumArt = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
-
-        if (albumArt == null) {
-            albumArt = metadata.getBitmap(MediaMetadata.METADATA_KEY_ART);
         }
 
         boolean isPlaying = false;
@@ -151,44 +342,57 @@ public class MediaNotificationListener extends NotificationListenerService {
             isPlaying = playbackState.getState() == PlaybackState.STATE_PLAYING;
         }
 
-        // Only broadcast if we have at least a title
-        if (title != null) {
-            Intent intent = new Intent(ACTION_MEDIA_INFO_UPDATE);
-            intent.putExtra("package_name", packageName);
-            intent.putExtra("title", title);
-            intent.putExtra("artist", artist != null ? artist : "");
-            intent.putExtra("album", album != null ? album : "");
-            intent.putExtra("is_playing", isPlaying);
+        Intent intent = new Intent(ACTION_MEDIA_INFO_UPDATE);
+        intent.putExtra("package_name", packageName);
+        intent.putExtra("title", title);
+        intent.putExtra("artist", artist != null ? artist : "");
+        intent.putExtra("album", album != null ? album : "");
+        intent.putExtra("is_playing", isPlaying);
+        intent.putExtra("has_artwork", albumArt != null);
 
-            // Compress Bitmap if exists (Transporting large bitmaps via Intent is risky,
-            // keep it small)
+        // Optimization: Check if artwork changed
+        boolean isPackageChanged = mLastPackage == null || !mLastPackage.equals(packageName);
+        if (isPackageChanged) {
+            mLastPackage = packageName;
+        }
+
+        boolean isArtChanged = false;
+        if (isPackageChanged) {
+            isArtChanged = true;
+        } else {
+            if (albumArt == null && mLastBitmap == null)
+                isArtChanged = false;
+            else if (albumArt != null && mLastBitmap != null)
+                isArtChanged = !albumArt.sameAs(mLastBitmap);
+            else
+                isArtChanged = true;
+        }
+
+        if (isArtChanged) {
+            mLastBitmap = albumArt;
             if (albumArt != null) {
-                // Resize if too big to avoid TransactionTooLargeException
-                if (albumArt.getByteCount() > 500000) { // Limit to ~500KB
-                    // Simple scaling logic could go here, for now just skip if massive
-                    // or send a flag saying "has_art" and handle retrieval separately if needed
+                int byteCount = albumArt.getByteCount();
+                if (byteCount > 1000000) {
+                    try {
+                        Bitmap scaled = Bitmap.createScaledBitmap(albumArt, 200, 200, true);
+                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                        scaled.compress(Bitmap.CompressFormat.PNG, 100, baos);
+                        intent.putExtra("artwork", baos.toByteArray());
+                    } catch (Exception e) {
+                    }
                 } else {
                     try {
                         ByteArrayOutputStream baos = new ByteArrayOutputStream();
                         albumArt.compress(Bitmap.CompressFormat.PNG, 100, baos);
-                        byte[] b = baos.toByteArray();
-                        intent.putExtra("artwork", b);
+                        intent.putExtra("artwork", baos.toByteArray());
                     } catch (Exception e) {
-                        DebugLogger.e(TAG, "Failed to compress artwork", e);
                     }
                 }
             }
-
-            // Using sendBroadcast (explicit permission required by receiver usually,
-            // but we are same app signed, so standard broadcast works for internal usage)
-            // Ideally use LocalBroadcastManager if entirely internal, but HUDService might
-            // be separate process later?
-            // Current Plan: MainActivity receives it.
-            // Since Service and Activity likely same process, simple broadcast is fine.
-            intent.setPackage(getPackageName()); // Restrict to own app
-            sendBroadcast(intent);
-
-            DebugLogger.i(TAG, "Broadcast Media Update: " + title + " - " + artist);
         }
+        intent.setPackage(getPackageName());
+        sendBroadcast(intent);
+        DebugLogger.i(TAG, "Broadcast Update: " + title + " (Has Art: " + (albumArt != null) + ")");
+
     }
 }

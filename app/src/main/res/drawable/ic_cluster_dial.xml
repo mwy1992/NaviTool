@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="400px"
+    android:height="400px"
+    android:viewportWidth="400"
+    android:viewportHeight="400">
+    
+    <!-- Dial Arc: Start Bottom, Clockwise to Right (270 degrees) -->
+    <!-- M 200 396: Start at Bottom (Radius 196 + Center 200) -->
+    <!-- A 196 196 0 1 1 396 200: Arc to Right -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:pathData="M 200 396 A 196 196 0 1 1 396 200"
+        android:strokeLineCap="round"/>
+        
+    <!-- Optional: Ticks or Decoration could be added here -->
+    
+</vector>

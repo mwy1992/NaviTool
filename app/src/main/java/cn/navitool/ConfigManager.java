@@ -42,6 +42,7 @@ public class ConfigManager {
     }
 
     private void loadConfig() {
+        long tStart = System.currentTimeMillis();
         // Priority 1: Internal Storage (Reliable)
         boolean loaded = false;
         if (sContext != null) {
@@ -56,6 +57,8 @@ public class ConfigManager {
                 }
             }
         }
+        long tInternal = System.currentTimeMillis();
+        Log.d(TAG, "Internal load time: " + (tInternal - tStart) + "ms");
 
         // Priority 2: External Storage (User/Legacy)
         if (!loaded) {
@@ -65,13 +68,15 @@ public class ConfigManager {
                     properties.loadFromXML(fis);
                     Log.i(TAG, "Loaded config from External Storage: " + EXTERNAL_PATH);
                     loaded = true;
-                    // Migrate to Internal immediately
+                    // Migrate to Internal immediately (Async this?)
                     saveConfig();
                 } catch (IOException e) {
                     Log.e(TAG, "Failed to load External config", e);
                 }
             }
         }
+        long tExternal = System.currentTimeMillis();
+        Log.d(TAG, "External load time: " + (tExternal - tInternal) + "ms");
 
         if (!loaded) {
             Log.i(TAG, "No config found. Creating new default.");

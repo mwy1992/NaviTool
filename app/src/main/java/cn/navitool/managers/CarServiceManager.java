@@ -55,7 +55,8 @@ public class CarServiceManager {
         }
 
         try {
-            mCar = Car.create(mContext);
+            mCar = Car.create(mContext); // Suspicious blocking call
+
             if (mCar != null) {
                 mCarFunction = mCar.getICarFunction();
 

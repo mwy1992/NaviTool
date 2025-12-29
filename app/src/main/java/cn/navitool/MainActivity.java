@@ -94,27 +94,38 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+
+        // Restore saved instance state for HUD/Cluster if possible
+        if (savedInstanceState != null) {
+            // Restore any critical flags
+            // currently mostly handled by managers or config
+        }
+
         super.onCreate(savedInstanceState);
+
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
+
+        // Init Logger first
+        DebugLogger.init(this);
+
+        // Init Config (Synchronous I/O likely bottleneck 1)
+        ConfigManager.init(this);
+
         setContentView(R.layout.activity_main);
 
-        DebugLogger.init(this); // Initialize Logging
-        ConfigManager.init(this); // Initialize Config Persistence (Internal Storage)
+        initUI(); // View lookups & value setting (UI bottleneck?)
 
-        // Removed redundant DebugLogger.createDirectories() to save main thread I/O
-        // time
+        initNavigation(); // Click listeners
 
-        initUI();
-        initNavigation();
         checkPermissions();
 
-        // Optimize: Pre-initialize ClusterHudManager in background to reduce lag on
-        // first tab switch
+        // Start Cluster/HUD Service logic in background to avoid blocking?
+        // Currently getInstance() works on main thread but connects async
         new Thread(() -> {
             // Load saved state (IO)
             boolean isClusterEnabled = ConfigManager.getInstance().getBoolean("switch_cluster", false);
             boolean isHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", false);
-            int savedMode = ConfigManager.getInstance().getInt("hud_current_mode", 0);
+            int currentMode = ConfigManager.getInstance().getInt("hud_current_mode", 0);
 
             // HEAVY WORK: Initialize Manager (Reflection) in BACKGROUND thread
             ClusterHudManager manager = ClusterHudManager.getInstance(getApplicationContext());
@@ -122,18 +133,27 @@ public class MainActivity extends AppCompatActivity {
             // Optimize: Parse JSON in background
             List<ClusterHudManager.HudComponentData> hudData = null;
             if (isHudEnabled) {
-                hudData = parseHudConfig(savedMode);
+                hudData = parseHudConfig(currentMode);
             }
+
+            List<ClusterHudManager.HudComponentData> clusterData = null;
+            if (isClusterEnabled) {
+                clusterData = parseClusterConfig();
+            }
+
             final List<ClusterHudManager.HudComponentData> finalHudData = hudData;
+            final List<ClusterHudManager.HudComponentData> finalClusterData = clusterData;
 
             // Apply to UI/Manager on Main Thread
             runOnUiThread(() -> {
                 if (isClusterEnabled) {
                     manager.setClusterEnabled(true);
+                    if (finalClusterData != null) {
+                        manager.syncClusterLayout(finalClusterData);
+                    }
                 }
                 if (isHudEnabled) {
                     manager.setHudEnabled(true);
-                    // reloadHudConfigToManager(savedMode); // Legacy sync call
                     if (finalHudData != null) {
                         applyHudConfigToManager(finalHudData);
                     }
@@ -154,16 +174,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Trigger generic status refresh
         if (cn.navitool.managers.CarServiceManager.getInstance(this).isInitialized()) {
-            // If init, force a check? Or just wait for broadcast.
-            // Best to trigger managers to broadcast current known state
-            // ThemeBrightnessManager broadcasts on change, let's trigger a check
-            // But we don't have a direct "Request" intent for them yet except the logic
-            // inside Service...
-            // Let's add specific request broadcast or just rely on the fact that if it
-            // connects it sends?
-            // Re-registering listener in Activity? No.
-
-            // Simplest: If CarService is initialized, we assume Managers are working.
+            // ...
         }
         registerReceivers();
         // Request immediate status update from ADB Shell
@@ -172,33 +183,35 @@ public class MainActivity extends AppCompatActivity {
         // Register HUD Listener for Preview Updates
         ClusterHudManager.getInstance(this).setListener((type, text, image) -> {
             runOnUiThread(() -> {
-                android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
-                if (preview != null) {
-                    for (int i = 0; i < preview.getChildCount(); i++) {
-                        View child = preview.getChildAt(i);
-                        Object tag = child.getTag();
-                        if (tag != null && tag.equals("type_" + type)) {
-                            // Fix: Do NOT update text for 'time' component, as it receives the format
-                            // string
-                            if ("time".equals(type)) {
-                                continue;
-                            }
-                            // Fix: Do NOT hide 'turn_signal' in Preview when value is empty (OFF)
-                            // Keep the placeholder visible for layout editing
-                            if ("turn_signal".equals(type) && (text == null || text.isEmpty())) {
-                                continue;
-                            }
-
-                            if (child instanceof TextView && text != null) {
-                                ((TextView) child).setText(text);
-                            } else if (child instanceof ImageView && image != null) {
-                                ((ImageView) child).setImageBitmap(image);
-                            }
-                        }
-                    }
-                }
+                updatePreviewContainer(findViewById(R.id.layoutHudPreview), type, text, image);
+                // updatePreviewContainer(findViewById(R.id.layoutClusterPreview), type, text,
+                // image);
             });
         });
+    }
+
+    private void updatePreviewContainer(android.widget.FrameLayout preview, String type, String text,
+            android.graphics.Bitmap image) {
+        if (preview != null) {
+            for (int i = 0; i < preview.getChildCount(); i++) {
+                View child = preview.getChildAt(i);
+                Object tag = child.getTag();
+                if (tag != null && tag.equals("type_" + type)) {
+                    if ("time".equals(type))
+                        continue;
+
+                    if ("turn_signal".equals(type) && (text == null || text.isEmpty())) {
+                        continue;
+                    }
+
+                    if (child instanceof TextView && text != null) {
+                        ((TextView) child).setText(text);
+                    } else if (child instanceof ImageView && image != null) {
+                        ((ImageView) child).setImageBitmap(image);
+                    }
+                }
+            }
+        }
     }
 
     @Override
@@ -407,6 +420,7 @@ public class MainActivity extends AppCompatActivity {
             View v = tryInflate(mLayoutCluster, R.id.stubCluster, R.id.layoutContentCluster);
             mLayoutCluster = v;
             setupCluster();
+            setupClusterThemeSelector();
             mIsClusterInit = true;
         }
     }
@@ -434,6 +448,10 @@ public class MainActivity extends AppCompatActivity {
 
         updateAutoModeStatus(0, -1);
 
+        // --- Auto-Initialize Cluster ---
+        // Ensure Cluster Service starts even if tab is not visited
+        int savedTheme = ConfigManager.getInstance().getInt("cluster_theme", 1);
+        cn.navitool.managers.ClusterManager.getInstance(this).applyClusterTheme(savedTheme);
         // Note: Other tabs setup is deferred to ensureXInflated methods
     }
 
@@ -602,6 +620,29 @@ public class MainActivity extends AppCompatActivity {
         applyHudConfigToManager(data);
     }
 
+    private List<ClusterHudManager.HudComponentData> parseClusterConfig() {
+        String key = "cluster_layout";
+        String jsonStr = ConfigManager.getInstance().getString(key, "[]");
+        List<ClusterHudManager.HudComponentData> syncList = new ArrayList<>();
+
+        if (jsonStr != null && !jsonStr.isEmpty()) {
+            try {
+                JSONArray jsonArray = new JSONArray(jsonStr);
+                for (int i = 0; i < jsonArray.length(); i++) {
+                    JSONObject obj = jsonArray.getJSONObject(i);
+                    String type = obj.optString("type", "text");
+                    String text = obj.optString("text", "Text");
+                    float x = (float) obj.optDouble("x", 0);
+                    float y = (float) obj.optDouble("y", 0);
+                    syncList.add(new ClusterHudManager.HudComponentData(type, text, x, y));
+                }
+            } catch (JSONException e) {
+                DebugLogger.e("Cluster", "Failed to parse layout config for sync", e);
+            }
+        }
+        return syncList;
+    }
+
     private List<ClusterHudManager.HudComponentData> parseHudConfig(int mode) {
         String key = (mode == MODE_WHUD) ? "hud_layout_whud" : "hud_layout_ar";
         String jsonStr = ConfigManager.getInstance().getString(key, "[]");
@@ -721,7 +762,7 @@ public class MainActivity extends AppCompatActivity {
             return;
 
         View view;
-        boolean isMediaCover = "media_cover".equals(type);
+        boolean isMediaCover = "media_cover".equals(type) || "test_media_cover".equals(type);
 
         if ("time".equals(type)) {
             // User Request: Show real system time immediately in Preview
@@ -951,6 +992,8 @@ public class MainActivity extends AppCompatActivity {
                     createAndAddHudComponent("volume", "音量: --", 0, 0);
                 else if ("media_cover".equals(type))
                     createAndAddHudComponent("media_cover", "", 0, 0);
+                else if ("test_media_cover".equals(type))
+                    createAndAddHudComponent("test_media_cover", "", 0, 0);
                 else if ("test_media".equals(type)) {
                     createAndAddHudComponent("test_media", "等待通知数据...", 0, 0);
                     // Request the Notification Service to resend current media info if available
@@ -977,6 +1020,7 @@ public class MainActivity extends AppCompatActivity {
         addButtonWithType.accept("转向信号", "turn_signal");
         addButtonWithType.accept("系统音量", "volume");
         addButtonWithType.accept("媒体封面", "media_cover");
+        addButtonWithType.accept("测试封面", "test_media_cover");
 
         // All buttons added above
 
@@ -1078,6 +1122,127 @@ public class MainActivity extends AppCompatActivity {
                 View child = preview.getChildAt(i);
                 child.setAlpha(1.0f);
             }
+        }
+    }
+
+    // --- Cluster Editor Logic ---
+
+    // --- Cluster Theme Selector Logic ---
+
+    private int mSelectedClusterTheme = 1;
+
+    private void setupClusterThemeSelector() {
+        View theme1 = findViewById(R.id.layoutClusterTheme1);
+        View theme2 = findViewById(R.id.layoutClusterTheme2);
+        View theme3 = findViewById(R.id.layoutClusterTheme3);
+
+        if (theme1 == null)
+            return;
+
+        // Load saved theme
+        mSelectedClusterTheme = ConfigManager.getInstance().getInt("cluster_theme", 1);
+        updateClusterThemeUI();
+
+        // Initial Apply
+        cn.navitool.managers.ClusterManager.getInstance(this).applyClusterTheme(mSelectedClusterTheme);
+
+        theme1.setOnClickListener(v -> selectClusterTheme(1));
+        theme2.setOnClickListener(v -> selectClusterTheme(2));
+        theme3.setOnClickListener(v -> selectClusterTheme(3));
+
+        // Test Button Logic
+        if (findViewById(R.id.btnClusterTestSpeed) != null) {
+            findViewById(R.id.btnClusterTestSpeed).setOnClickListener(v -> {
+                new Thread(() -> {
+                    DebugLogger.d("MN_Tag", "Starting Speed Simulation");
+                    // 0 -> 270
+                    for (int i = 0; i <= 270; i += 2) {
+                        try {
+                            Thread.sleep(10);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        final int speed = i;
+                        runOnUiThread(() -> cn.navitool.ClusterHudManager.getInstance(this).updateSpeed(speed));
+                    }
+                    // 270 -> 0
+                    for (int i = 270; i >= 0; i -= 2) {
+                        try {
+                            Thread.sleep(10);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        final int speed = i;
+                        runOnUiThread(() -> cn.navitool.ClusterHudManager.getInstance(this).updateSpeed(speed));
+                    }
+                    DebugLogger.d("MN_Tag", "Speed Simulation Complete");
+                }).start();
+            });
+        }
+
+        // Test RPM Button Logic
+        if (findViewById(R.id.btnClusterTestRpm) != null) {
+            findViewById(R.id.btnClusterTestRpm).setOnClickListener(v -> {
+                new Thread(() -> {
+                    // 0 -> 8000
+                    for (int i = 0; i <= 8000; i += 100) {
+                        final int rpm = i;
+                        runOnUiThread(() -> cn.navitool.ClusterHudManager.getInstance(this).updateRpm(rpm));
+                        try {
+                            Thread.sleep(10);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    // 8000 -> 0
+                    for (int i = 8000; i >= 0; i -= 100) {
+                        final int rpm = i;
+                        runOnUiThread(() -> cn.navitool.ClusterHudManager.getInstance(this).updateRpm(rpm));
+                        try {
+                            Thread.sleep(10);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }).start();
+            });
+        }
+    }
+
+    private void selectClusterTheme(int themeId) {
+        if (themeId != 1) {
+            DebugLogger.toast(this, "该样式暂未开放");
+            return;
+        }
+        mSelectedClusterTheme = themeId;
+        ConfigManager.getInstance().setInt("cluster_theme", themeId);
+        updateClusterThemeUI();
+
+        // Notify Manager
+        cn.navitool.managers.ClusterManager.getInstance(this).applyClusterTheme(themeId);
+        DebugLogger.toast(this, "已切换至样式 " + themeId);
+    }
+
+    private void updateClusterThemeUI() {
+        updateThemeItem(findViewById(R.id.layoutClusterTheme1), findViewById(R.id.ivClusterCheck1),
+                mSelectedClusterTheme == 1);
+        updateThemeItem(findViewById(R.id.layoutClusterTheme2), findViewById(R.id.ivClusterCheck2),
+                mSelectedClusterTheme == 2);
+        updateThemeItem(findViewById(R.id.layoutClusterTheme3), findViewById(R.id.ivClusterCheck3),
+                mSelectedClusterTheme == 3);
+    }
+
+    private void updateThemeItem(View container, View checkmark, boolean isSelected) {
+        if (container == null)
+            return;
+        if (isSelected) {
+            container.setBackgroundResource(R.drawable.bg_cluster_selected);
+            if (checkmark != null)
+                checkmark.setVisibility(View.VISIBLE);
+        } else {
+            container.setBackgroundResource(R.drawable.bg_cluster_normal);
+            if (checkmark != null)
+                checkmark.setVisibility(View.GONE);
         }
     }
 
@@ -2680,7 +2845,7 @@ public class MainActivity extends AppCompatActivity {
 
                 String display = title;
                 if (artist != null && !artist.isEmpty()) {
-                    display = title + " - " + artist;
+                    display = title + "\n" + artist;
                 }
 
                 // Update HUD
@@ -2696,6 +2861,7 @@ public class MainActivity extends AppCompatActivity {
                     android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(artwork, 0,
                             artwork.length);
                     ClusterHudManager.getInstance(MainActivity.this).updateComponentImage("media_cover", bmp);
+                    ClusterHudManager.getInstance(MainActivity.this).updateComponentImage("test_media_cover", bmp);
                 }
             }
         }

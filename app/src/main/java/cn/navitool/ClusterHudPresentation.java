@@ -57,22 +57,33 @@ public class ClusterHudPresentation extends Presentation {
     }
 
     private java.util.List<View> mRealHudComponents = new java.util.ArrayList<>();
+    private java.util.List<View> mRealClusterComponents = new java.util.ArrayList<>();
 
     public void syncHudLayout(java.util.List<ClusterHudManager.HudComponentData> components) {
-        if (mLayoutHud instanceof android.widget.FrameLayout) {
-            android.widget.FrameLayout container = (android.widget.FrameLayout) mLayoutHud;
+        syncLayoutGeneric(mLayoutHud, mRealHudComponents, components, 728, 190);
+    }
+
+    public void syncClusterLayout(java.util.List<ClusterHudManager.HudComponentData> components) {
+        syncLayoutGeneric(mLayoutCluster, mRealClusterComponents, components, 1920, 720);
+    }
+
+    private void syncLayoutGeneric(View layoutView, java.util.List<View> viewList,
+            java.util.List<ClusterHudManager.HudComponentData> components,
+            int maxWidth, int maxHeight) {
+        if (layoutView instanceof android.widget.FrameLayout) {
+            android.widget.FrameLayout container = (android.widget.FrameLayout) layoutView;
 
             // Clear existing
-            for (View v : mRealHudComponents) {
+            for (View v : viewList) {
                 container.removeView(v);
             }
-            mRealHudComponents.clear();
+            viewList.clear();
 
             // Add new
             for (ClusterHudManager.HudComponentData data : components) {
                 View view;
                 boolean isSong = "song".equals(data.type);
-                boolean isMediaCover = "media_cover".equals(data.type);
+                boolean isMediaCover = "media_cover".equals(data.type) || "test_media_cover".equals(data.type);
                 int measuredWidth = 0;
                 int measuredHeight = 0;
 
@@ -84,6 +95,7 @@ public class ClusterHudPresentation extends Presentation {
                     android.widget.ImageView iv = new android.widget.ImageView(getContext());
                     if (data.image != null) {
                         iv.setImageBitmap(data.image);
+                        iv.clearColorFilter(); // Ensure no tint on real image
                     } else {
                         // Placeholder or transparent
                         iv.setImageResource(android.R.drawable.ic_media_play); // Fallback
@@ -148,17 +160,19 @@ public class ClusterHudPresentation extends Presentation {
                 measuredWidth = view.getMeasuredWidth();
                 measuredHeight = view.getMeasuredHeight();
 
-                // Bounds Clamp
-                int containerWidth = 728;
-                int containerHeight = 190;
-                float clampedX = Math.max(0, Math.min(data.x, containerWidth - measuredWidth));
-                float clampedY = Math.max(0, Math.min(data.y, containerHeight - measuredHeight));
+                // Bounds Clamp, using dynamic maxWidth/maxHeight
+                float clampedX = Math.max(0, Math.min(data.x, maxWidth - measuredWidth));
+                float clampedY = Math.max(0, Math.min(data.y, maxHeight - measuredHeight));
 
                 view.setX(clampedX);
                 view.setY(clampedY);
 
                 // Tag the view for dynamic visibility control
                 view.setTag(data.type);
+
+                // Update boolean flags for visibility check
+                isSong = "song".equals(data.type) || "test_media".equals(data.type);
+                isMediaCover = "media_cover".equals(data.type) || "test_media_cover".equals(data.type);
 
                 // Apply Media/Volume Visibility Rule immediately
                 if (isSong || isMediaCover) {
@@ -169,7 +183,7 @@ public class ClusterHudPresentation extends Presentation {
                     view.setVisibility(View.VISIBLE);
                 }
 
-                mRealHudComponents.add(view);
+                viewList.add(view);
             }
         }
     }
@@ -182,13 +196,10 @@ public class ClusterHudPresentation extends Presentation {
             return;
         mIsMediaPlaying = isPlaying;
 
-        // Update existing views
-        for (View v : mRealHudComponents) {
-            Object tag = v.getTag();
-            if (tag != null && (tag.equals("song") || tag.equals("media_cover"))) {
-                v.setVisibility(isPlaying ? View.VISIBLE : View.GONE);
-            }
-        }
+        // Update existing views (HUD)
+        updateVisibilityGeneric(mRealHudComponents, isPlaying, "media");
+        // Update existing views (Cluster)
+        updateVisibilityGeneric(mRealClusterComponents, isPlaying, "media");
     }
 
     public void setVolumeVisible(boolean isVisible) {
@@ -196,11 +207,49 @@ public class ClusterHudPresentation extends Presentation {
             return;
         mIsVolumeVisible = isVisible;
 
-        // Update existing views
-        for (View v : mRealHudComponents) {
+        // Update existing views (HUD)
+        updateVisibilityGeneric(mRealHudComponents, isVisible, "volume");
+        // Update existing views (Cluster)
+        updateVisibilityGeneric(mRealClusterComponents, isVisible, "volume");
+    }
+
+    // Helper to update visibility based on Tag Groups
+    private void updateVisibilityGeneric(java.util.List<View> viewList, boolean visible, String group) {
+        for (View v : viewList) {
             Object tag = v.getTag();
-            if (tag != null && "volume".equals(tag)) {
-                v.setVisibility(isVisible ? View.VISIBLE : View.GONE);
+            if (tag != null) {
+                if ("media".equals(group)) {
+                    if (tag.equals("song") || tag.equals("media_cover") || tag.equals("test_media")
+                            || tag.equals("test_media_cover")) {
+                        v.setVisibility(visible ? View.VISIBLE : View.GONE);
+                    }
+                } else if ("volume".equals(group)) {
+                    if ("volume".equals(tag)) {
+                        v.setVisibility(visible ? View.VISIBLE : View.GONE);
+                    }
+                }
+            }
+        }
+    }
+
+    public void updateComponent(String type, String text, android.graphics.Bitmap image) {
+        // Update HUD
+        updateComponentGeneric(mRealHudComponents, type, text, image);
+        // Update Cluster
+        updateComponentGeneric(mRealClusterComponents, type, text, image);
+    }
+
+    private void updateComponentGeneric(java.util.List<View> viewList, String type, String text,
+            android.graphics.Bitmap image) {
+        for (View v : viewList) {
+            Object tag = v.getTag();
+            if (tag != null && tag.equals(type)) {
+                if (v instanceof android.widget.TextView && text != null) {
+                    ((android.widget.TextView) v).setText(text);
+                } else if (v instanceof android.widget.ImageView && image != null) {
+                    ((android.widget.ImageView) v).setImageBitmap(image);
+                    ((android.widget.ImageView) v).clearColorFilter();
+                }
             }
         }
     }
@@ -213,6 +262,50 @@ public class ClusterHudPresentation extends Presentation {
             }
             mRealHudComponents.clear();
         }
+
+        if (mLayoutCluster instanceof android.widget.FrameLayout) {
+            android.widget.FrameLayout container = (android.widget.FrameLayout) mLayoutCluster;
+            for (View v : mRealClusterComponents) {
+                container.removeView(v);
+            }
+            mRealClusterComponents.clear();
+        }
     }
 
+    // --- Cluster Dashboard Mode ---
+    private View mClusterSpeedPointer;
+    private View mClusterRpmPointer;
+
+    public void enableClusterDashboard() {
+        if (mLayoutCluster instanceof android.view.ViewGroup) {
+            android.view.ViewGroup container = (android.view.ViewGroup) mLayoutCluster;
+            container.removeAllViews();
+            mRealClusterComponents.clear(); // Clear tracked components
+
+            android.view.LayoutInflater.from(getContext()).inflate(R.layout.layout_cluster_dashboard, container, true);
+
+            // Find Components
+            mClusterSpeedPointer = container.findViewById(R.id.ivClusterSpeedPointer);
+            mClusterRpmPointer = container.findViewById(R.id.ivClusterRpmPointer);
+        }
+    }
+
+    public void updateSpeed(float speed) {
+        if (mClusterSpeedPointer != null) {
+            // Speed 0 -> 0 km/h (Bottom/South) = 180 degrees.
+            // Speed 270 -> 270 km/h (Right/East) = 180 + 270 = 450 (90) degrees.
+            // Direction: Clockwise (Positive addition).
+            mClusterSpeedPointer.setRotation(180 + speed);
+        }
+    }
+
+    public void updateRpm(float rpm) {
+        if (mClusterRpmPointer != null) {
+            // RPM 0 -> Left (West) = 270 degrees.
+            // RPM 8000 -> Bottom (South) = 180 + 360 = 540 degrees.
+            // Range: 270 degrees Clockwise (Left -> Top -> Right -> Bottom).
+            // Factor: 270 / 8000 = 0.03375
+            mClusterRpmPointer.setRotation(270 + (rpm * 0.03375f));
+        }
+    }
 }

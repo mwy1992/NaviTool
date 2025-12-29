@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="400px"
+    android:height="400px"
+    android:viewportWidth="400"
+    android:viewportHeight="400">
+
+    <!-- Needle: Points UP from Center -->
+    <!-- Center: 200, 200 -->
+    <!-- Top Tip: 200, 10 (Length 190) -->
+    <!-- Width: 6px -->
+    <path
+        android:fillColor="#FF0000"
+        android:pathData="M 197,200 L 197,10 L 203,10 L 203,200 Z" />
+
+    <!-- Center Cap (Circle) using Path -->
+    <!-- Center 200, 200. Radius 8. -->
+    <path
+        android:fillColor="#FF0000"
+        android:pathData="M 200,192 A 8,8 0 0,1 200,208 A 8,8 0 0,1 200,192" />
+
+</vector>
