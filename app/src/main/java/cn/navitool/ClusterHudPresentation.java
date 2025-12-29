@@ -35,13 +35,13 @@ public class ClusterHudPresentation extends Presentation {
 
     public void setClusterVisible(boolean visible) {
         if (mLayoutCluster != null) {
-            mLayoutCluster.setVisibility(visible ? View.VISIBLE : View.GONE);
+            mLayoutCluster.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
         }
     }
 
     public void setHudVisible(boolean visible) {
         if (mLayoutHud != null) {
-            mLayoutHud.setVisibility(visible ? View.VISIBLE : View.GONE);
+            mLayoutHud.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
         }
     }
 
@@ -101,20 +101,24 @@ public class ClusterHudPresentation extends Presentation {
                     tc.setBackgroundColor(android.graphics.Color.TRANSPARENT);
                     tc.setTextColor(data.color);
                     tc.setPadding(0, 0, 0, 0);
-                    tc.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 10);
+                    tc.setIncludeFontPadding(false); // Minimized vertical spacing
+                    tc.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 12);
                     view = tc;
                 } else {
                     android.widget.TextView tv = new android.widget.TextView(getContext());
                     tv.setText(data.text);
                     tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
                     tv.setPadding(0, 0, 0, 0);
+                    tv.setIncludeFontPadding(false); // Minimized vertical spacing
                     tv.setTextColor(data.color);
 
                     // Rule 2: Font size logic
                     if ("gear".equals(data.type)) {
-                        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 20);
+                        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
+                    } else if ("turn_signal".equals(data.type)) {
+                        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24); // Same size as gear
                     } else {
-                        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 10);
+                        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 12);
                     }
 
                     // Rule 3: Song Component Layout
@@ -152,11 +156,52 @@ public class ClusterHudPresentation extends Presentation {
 
                 view.setX(clampedX);
                 view.setY(clampedY);
-                view.setVisibility(View.VISIBLE);
+
+                // Tag the view for dynamic visibility control
+                view.setTag(data.type);
+
+                // Apply Media/Volume Visibility Rule immediately
+                if (isSong || isMediaCover) {
+                    view.setVisibility(mIsMediaPlaying ? View.VISIBLE : View.GONE);
+                } else if ("volume".equals(data.type)) {
+                    view.setVisibility(mIsVolumeVisible ? View.VISIBLE : View.GONE);
+                } else {
+                    view.setVisibility(View.VISIBLE);
+                }
 
                 mRealHudComponents.add(view);
             }
+        }
+    }
 
+    private boolean mIsMediaPlaying = false;
+    private boolean mIsVolumeVisible = false;
+
+    public void setMediaPlaying(boolean isPlaying) {
+        if (mIsMediaPlaying == isPlaying)
+            return;
+        mIsMediaPlaying = isPlaying;
+
+        // Update existing views
+        for (View v : mRealHudComponents) {
+            Object tag = v.getTag();
+            if (tag != null && (tag.equals("song") || tag.equals("media_cover"))) {
+                v.setVisibility(isPlaying ? View.VISIBLE : View.GONE);
+            }
+        }
+    }
+
+    public void setVolumeVisible(boolean isVisible) {
+        if (mIsVolumeVisible == isVisible)
+            return;
+        mIsVolumeVisible = isVisible;
+
+        // Update existing views
+        for (View v : mRealHudComponents) {
+            Object tag = v.getTag();
+            if (tag != null && "volume".equals(tag)) {
+                v.setVisibility(isVisible ? View.VISIBLE : View.GONE);
+            }
         }
     }
 

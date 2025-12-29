@@ -22,6 +22,7 @@
     <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusStorage"/>
     <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusBattery"/>
     <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusAutoStart"/>
+    <include layout="@layout/item_permission_status" android:id="@+id/dialogStatusNotification"/>
     
     <Button
         android:id="@+id/btnAutoRepair"

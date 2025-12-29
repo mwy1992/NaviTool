@@ -27,7 +27,7 @@ public class DebugLogger {
             return;
         sIsDebugEnabled = ConfigManager.getInstance().getBoolean(KEY_DEBUG_MODE, false);
         if (sIsDebugEnabled) {
-            createDirectories();
+            new Thread(DebugLogger::createDirectories).start();
         }
     }
 

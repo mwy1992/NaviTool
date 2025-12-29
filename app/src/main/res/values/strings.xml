@@ -48,7 +48,8 @@
     <string name="status_on">开启</string>
     <string name="status_off">关闭</string>
     <string name="title_psd_always_on">副驾屏(PSD)常亮</string>
-    <string name="label_psd_always_on">副驾屏常亮</string>
+    <string name="label_psd_always_on">副驾屏常亮 (方法1)</string>
+    <string name="label_psd_always_on_method2">副驾屏常亮 (方法2)</string>
     <string name="warn_psd_burn_in">警 告：可能导致屏幕烧屏</string>
     <string name="sound_prompt_title">提示音效</string>
     <string name="sound_prompt_desc">自定义提示音</string>
@@ -116,5 +117,6 @@
     <string name="key_play_pause">播放/暂停</string>
     <string name="simulated_media_key">模拟按键: %1$s</string>
     <string name="status_adb_unknown">未知状态</string>
+    <string name="perm_notification_listener">通知使用权 (读取歌词)</string>
     <string name="btn_enable_wireless_adb">开启无线调试</string>
 </resources>

@@ -37,6 +37,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import cn.navitool.managers.AppLaunchManager;
 
 import com.google.android.material.switchmaterial.SwitchMaterial;
 
@@ -144,6 +145,26 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        // Check Media Key Service
+        boolean isOneOSConnected = cn.navitool.managers.KeyHandlerManager.getInstance(this).isOneOSConnected();
+        updateOneOSStatus(isOneOSConnected);
+
+        // Request Status Updates from Services
+        sendBroadcast(new Intent("cn.navitool.ACTION_REQUEST_ONEOS_STATUS"));
+
+        // Trigger generic status refresh
+        if (cn.navitool.managers.CarServiceManager.getInstance(this).isInitialized()) {
+            // If init, force a check? Or just wait for broadcast.
+            // Best to trigger managers to broadcast current known state
+            // ThemeBrightnessManager broadcasts on change, let's trigger a check
+            // But we don't have a direct "Request" intent for them yet except the logic
+            // inside Service...
+            // Let's add specific request broadcast or just rely on the fact that if it
+            // connects it sends?
+            // Re-registering listener in Activity? No.
+
+            // Simplest: If CarService is initialized, we assume Managers are working.
+        }
         registerReceivers();
         // Request immediate status update from ADB Shell
         AdbShell.getInstance(this).broadcastStatus();
@@ -158,9 +179,13 @@ public class MainActivity extends AppCompatActivity {
                         Object tag = child.getTag();
                         if (tag != null && tag.equals("type_" + type)) {
                             // Fix: Do NOT update text for 'time' component, as it receives the format
-                            // string "HH:mm"
-                            // We want to keep the live time preview (or calculated time)
+                            // string
                             if ("time".equals(type)) {
+                                continue;
+                            }
+                            // Fix: Do NOT hide 'turn_signal' in Preview when value is empty (OFF)
+                            // Keep the placeholder visible for layout editing
+                            if ("turn_signal".equals(type) && (text == null || text.isEmpty())) {
                                 continue;
                             }
 
@@ -197,6 +222,10 @@ public class MainActivity extends AppCompatActivity {
 
         android.content.IntentFilter oneOsFilter = new android.content.IntentFilter("cn.navitool.ACTION_ONEOS_STATUS");
         registerReceiver(mOneOSStatusReceiver, oneOsFilter);
+
+        android.content.IntentFilter mediaFilter = new android.content.IntentFilter(
+                cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE);
+        registerReceiver(mMediaInfoReceiver, mediaFilter);
     }
 
     private void unregisterReceivers() {
@@ -721,15 +750,16 @@ public class MainActivity extends AppCompatActivity {
         if (view instanceof TextView) {
             TextView tv = (TextView) view;
             tv.setPadding(0, 0, 0, 0);
+            tv.setIncludeFontPadding(false); // Minimized vertical spacing
             // Rule 2: Font scaling (Preview is 2x HUD)
-            if ("gear".equals(type)) {
-                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 40); // 20px * 2
+            if ("gear".equals(type) || "turn_signal".equals(type)) {
+                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 48); // 24px * 2
             } else {
-                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 20); // 10px * 2
+                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24); // 12px * 2
             }
             tv.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
 
-            if ("song".equals(type)) {
+            if ("song".equals(type) || "test_media".equals(type)) {
                 // Preview width = 600px (HUD 300px * 2)
                 if (view.getLayoutParams() == null) {
                     view.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
@@ -916,19 +946,20 @@ public class MainActivity extends AppCompatActivity {
                 else if ("gear".equals(type))
                     createAndAddHudComponent("gear", "D", 0, 0);
                 else if ("turn_signal".equals(type))
-                    createAndAddHudComponent("turn_signal", "←", 0, 0);
+                    createAndAddHudComponent("turn_signal", "←      →", 0, 0);
                 else if ("volume".equals(type))
                     createAndAddHudComponent("volume", "音量: --", 0, 0);
                 else if ("media_cover".equals(type))
                     createAndAddHudComponent("media_cover", "", 0, 0);
                 else if ("test_media".equals(type)) {
-                    ClusterHudManager.getInstance(this).syncTestMedia();
-                    DebugLogger.toast(this, "已发送测试数据");
+                    createAndAddHudComponent("test_media", "等待通知数据...", 0, 0);
+                    // Request the Notification Service to resend current media info if available
+                    // This ensures the user sees data immediately if a song is already playing
+                    sendBroadcast(new android.content.Intent(
+                            cn.navitool.service.MediaNotificationListener.ACTION_REQUEST_MEDIA_REBROADCAST));
                 }
 
-                if (!"test_media".equals(type)) {
-                    syncAllHudComponents();
-                }
+                syncAllHudComponents();
                 if (dialogHolder[0] != null)
                     dialogHolder[0].dismiss();
             });
@@ -937,6 +968,7 @@ public class MainActivity extends AppCompatActivity {
 
         addButtonWithType.accept("系统时间", "time");
         addButtonWithType.accept("歌曲信息", "song");
+        addButtonWithType.accept("测试歌曲信息", "test_media");
         addButtonWithType.accept("剩余油量", "fuel");
         addButtonWithType.accept("车内温度", "temp_in");
         addButtonWithType.accept("车外温度", "temp_out");
@@ -1418,7 +1450,7 @@ public class MainActivity extends AppCompatActivity {
             });
         }
 
-        // PSD Always On Switch
+        // PSD Always On Switch (Method 1)
         com.google.android.material.switchmaterial.SwitchMaterial switchPsd = findViewById(R.id.switchPsdAlwaysOn);
         if (switchPsd != null) {
             boolean isPsdEnabled = ConfigManager.getInstance().getBoolean("psd_always_on_enabled", false);
@@ -1432,10 +1464,25 @@ public class MainActivity extends AppCompatActivity {
             });
         }
 
+        // PSD Always On Switch (Method 2)
+        com.google.android.material.switchmaterial.SwitchMaterial switchPsd2 = findViewById(
+                R.id.switchPsdAlwaysOnMethod2);
+        if (switchPsd2 != null) {
+            boolean isPsd2Enabled = ConfigManager.getInstance().getBoolean("psd_always_on_method2_enabled", false);
+            switchPsd2.setChecked(isPsd2Enabled);
+            switchPsd2.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                ConfigManager.getInstance().setBoolean("psd_always_on_method2_enabled", isChecked);
+                // Trigger Immediate Service Update via Broadcast
+                Intent intent = new Intent("cn.navitool.ACTION_PSD_METHOD2_STATUS_CHANGED");
+                intent.putExtra("enabled", isChecked);
+                sendBroadcast(intent);
+            });
+        }
+
         // Day Brightness
         SeekBar seekDay = findViewById(R.id.seekBrightnessDay);
         TextView tvDay = findViewById(R.id.tvBrightnessDay);
-        int dayVal = ConfigManager.getInstance().getInt("override_day_value", 5);
+        int dayVal = ConfigManager.getInstance().getInt("override_day_value", 12);
         seekDay.setProgress(dayVal);
         tvDay.setText(getString(R.string.format_brightness_value, dayVal));
         seekDay.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -1462,7 +1509,7 @@ public class MainActivity extends AppCompatActivity {
         // Night Brightness
         SeekBar seekNight = findViewById(R.id.seekBrightnessNight);
         TextView tvNight = findViewById(R.id.tvBrightnessNight);
-        int nightVal = ConfigManager.getInstance().getInt("override_night_value", 3);
+        int nightVal = ConfigManager.getInstance().getInt("override_night_value", 5);
         seekNight.setProgress(nightVal);
         tvNight.setText(getString(R.string.format_brightness_value, nightVal));
         seekNight.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -1865,6 +1912,8 @@ public class MainActivity extends AppCompatActivity {
                 this::requestAutoStart);
         setupDialogItem(mPermissionDialogView, R.id.dialogStatusSecureSettings, R.string.perm_secure_settings,
                 null);
+        setupDialogItem(mPermissionDialogView, R.id.dialogStatusNotification, R.string.perm_notification_listener,
+                this::requestNotificationPermission);
 
         Button btnAutoRepair = mPermissionDialogView.findViewById(R.id.btnAutoRepair);
         btnAutoRepair.setOnClickListener(v -> startAutoRepair());
@@ -1986,6 +2035,22 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        // 6. Notification Listener Permission
+        if (!isNotificationListenerEnabled()) {
+            if (AdbShell.getInstance(this).isConnected()) {
+                showRepairingToast(R.string.perm_notification_listener);
+                // "cmd notification allow_listener" available on Android 7+
+                String componentName = new ComponentName(this, cn.navitool.service.MediaNotificationListener.class)
+                        .flattenToString();
+                AdbShell.getInstance(this).exec("cmd notification allow_listener " + componentName);
+                scheduleNextCheck(1000, this::requestNotificationPermission, this::isNotificationListenerEnabled);
+                return;
+            }
+            showRepairingToast(R.string.perm_notification_listener);
+            requestNotificationPermission();
+            return;
+        }
+
         // All Done
         isAutoRepairing = false;
         refreshPermissionDialog(mPermissionDialogView); // Final refresh dialog
@@ -2035,6 +2100,7 @@ public class MainActivity extends AppCompatActivity {
 
         updateDialogStatusItem(dialogView, R.id.dialogStatusAutoStart, true);
         updateDialogStatusItem(dialogView, R.id.dialogStatusSecureSettings, hasSecureSettingsPermission());
+        updateDialogStatusItem(dialogView, R.id.dialogStatusNotification, isNotificationListenerEnabled());
     }
 
     private boolean hasSecureSettingsPermission() {
@@ -2440,15 +2506,20 @@ public class MainActivity extends AppCompatActivity {
     // --- ADB Wireless Logic ---
 
     private void setupAdbWireless() {
-        // Default to auto-connect
-        AdbShell.getInstance(this).connect();
+        // Default to auto-connect in background to avoid blocking Main Thread startup
+        new Thread(() -> {
+            AdbShell.getInstance(this).connect();
+        }).start();
 
         // Manual Reconnect
         View layoutAdbStatus = findViewById(R.id.layoutAdbStatus);
         if (layoutAdbStatus != null) {
             layoutAdbStatus.setOnClickListener(v -> {
                 DebugLogger.toast(this, "正在尝试重新连接 ADB...");
-                AdbShell.getInstance(this).connect();
+                // Manual click can also be async, but usually user expects response.
+                // However, connect logic likely handles internal threading or blocking.
+                // Better safe to keep manual click async too if it blocks.
+                new Thread(() -> AdbShell.getInstance(this).connect()).start();
             });
         }
     }
@@ -2470,6 +2541,7 @@ public class MainActivity extends AppCompatActivity {
                         imgAdbStatus.setImageResource(R.drawable.ic_check);
                         imgAdbStatus.setColorFilter(android.graphics.Color.parseColor("#4CAF50"));
                         DebugLogger.toast(MainActivity.this, status);
+                        autoRepairPermissionsSilent(); // Trigger Auto Repair
                     } else if (status.contains("连接失败")) {
                         imgAdbStatus.setImageResource(R.drawable.ic_close);
                         imgAdbStatus.setColorFilter(android.graphics.Color.parseColor("#F44336"));
@@ -2577,6 +2649,115 @@ public class MainActivity extends AppCompatActivity {
             sendBroadcast(intent);
             DebugLogger.toast(this, "Sent 1ms PSD Switch Test");
         });
+    }
+
+    // --- New Notification Listener logic ---
+    private boolean isNotificationListenerEnabled() {
+        String enabledListeners = android.provider.Settings.Secure.getString(getContentResolver(),
+                "enabled_notification_listeners");
+        String myComponent = new ComponentName(this, cn.navitool.service.MediaNotificationListener.class)
+                .flattenToString();
+        return enabledListeners != null && enabledListeners.contains(myComponent);
+    }
+
+    private void requestNotificationPermission() {
+        try {
+            startActivity(new android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+        } catch (Exception e) {
+            DebugLogger.e("MainActivity", "Failed to open notif listener settings", e);
+            DebugLogger.toast(this, "无法打开通知权限设置，请手动前往设置开启");
+        }
+    }
+
+    private final android.content.BroadcastReceiver mMediaInfoReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE.equals(intent.getAction())) {
+                String title = intent.getStringExtra("title");
+                String artist = intent.getStringExtra("artist");
+                // String album = intent.getStringExtra("album");
+                boolean isPlaying = intent.getBooleanExtra("is_playing", false);
+
+                String display = title;
+                if (artist != null && !artist.isEmpty()) {
+                    display = title + " - " + artist;
+                }
+
+                // Update HUD
+                ClusterHudManager.getInstance(MainActivity.this).updateComponentText("song", display);
+                ClusterHudManager.getInstance(MainActivity.this).updateComponentText("test_media", display); // Also
+                                                                                                             // update
+                                                                                                             // test
+                                                                                                             // component
+
+                // Optional: Update Album Art if passed (byte array)
+                byte[] artwork = intent.getByteArrayExtra("artwork");
+                if (artwork != null) {
+                    android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(artwork, 0,
+                            artwork.length);
+                    ClusterHudManager.getInstance(MainActivity.this).updateComponentImage("media_cover", bmp);
+                }
+            }
+        }
+    };
+
+    private void autoRepairPermissionsSilent() {
+        if (!AdbShell.getInstance(this).isConnected())
+            return;
+        DebugLogger.i("AutoRepair", "Starting Silent Permission Repair...");
+
+        // 1. Notification Listener
+        if (!isNotificationListenerEnabled()) {
+            String componentName = new ComponentName(this, cn.navitool.service.MediaNotificationListener.class)
+                    .flattenToString();
+            AdbShell.getInstance(this).exec("cmd notification allow_listener " + componentName);
+            DebugLogger.i("AutoRepair", "Repaired Notification Listener");
+        }
+
+        // 2. Accessibility Service
+        if (!isAccessibilityServiceEnabled()) {
+            String serviceName = new ComponentName(this, KeepAliveAccessibilityService.class).flattenToString();
+            String enabledServices = Settings.Secure.getString(getContentResolver(),
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            if (enabledServices == null)
+                enabledServices = "";
+
+            if (!enabledServices.contains(serviceName)) {
+                if (enabledServices.isEmpty())
+                    enabledServices = serviceName;
+                else
+                    enabledServices += ":" + serviceName;
+
+                String cmd = "settings put secure enabled_accessibility_services '" + enabledServices
+                        + "'; settings put secure accessibility_enabled 1";
+                AdbShell.getInstance(this).exec(cmd);
+                DebugLogger.i("AutoRepair", "Repaired Accessibility Service");
+            }
+        }
+
+        // 3. Overlay (System Alert Window)
+        if (!Settings.canDrawOverlays(this)) {
+            AdbShell.getInstance(this).exec("appops set " + getPackageName() + " SYSTEM_ALERT_WINDOW allow");
+            DebugLogger.i("AutoRepair", "Repaired Overlay Permission");
+        }
+
+        // 4. Secure Settings
+        if (!hasSecureSettingsPermission()) {
+            AdbShell.getInstance(this)
+                    .exec("pm grant " + getPackageName() + " android.permission.WRITE_SECURE_SETTINGS");
+            DebugLogger.i("AutoRepair", "Repaired Secure Settings");
+        }
+
+        // 5. Battery Optimization (Allow WhiteList)
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+        boolean ignoringBattery = pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
+        if (!ignoringBattery) {
+            AdbShell.getInstance(this).exec("dumpsys deviceidle whitelist +" + getPackageName());
+            DebugLogger.i("AutoRepair", "Repaired Battery Opt");
+        }
+
+        // Refresh Main UI Status after a short delay to allow system to apply changes
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this::checkPermissions, 1500);
     }
 
 }

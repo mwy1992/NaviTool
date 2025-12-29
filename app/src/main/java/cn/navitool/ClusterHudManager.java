@@ -45,7 +45,9 @@ public class ClusterHudManager {
 
     // AdaptAPI Reflection Constants
     private static final String CLASS_DIM_INTERACTION = "com.ecarx.xui.adaptapi.diminteraction.DimInteraction";
-    private static final int FUNC_TURN_SIGNAL = 289408008; // VehiclePropertyIds.TURN_SIGNAL_STATE
+    // Typo in AdaptAPI: TRUN instead of TURN
+    private static final int FUNC_LEFT_TURN = 553980160;
+    private static final int FUNC_RIGHT_TURN = 553980416;
 
     private ClusterHudManager(Context context) {
         this.mContext = context.getApplicationContext();
@@ -57,6 +59,9 @@ public class ClusterHudManager {
         initNotificationReceiver(); // Listen for Service Connection
         registerDisplayListener();
     }
+
+    // ... (Lines 60-120 unchanged via copy/paste or keeping surrounding context if
+    // I could... but here I replace the block mostly)
 
     public static synchronized ClusterHudManager getInstance(Context context) {
         if (instance == null) {
@@ -123,8 +128,9 @@ public class ClusterHudManager {
             return;
         mFunctionListener = new ECarFunctionListener();
         try {
-            // Register Turn Signal
-            mCarFunction.registerFunctionValueWatcher(FUNC_TURN_SIGNAL, mFunctionListener);
+            // Register Turn Signals (Separate IDs)
+            mCarFunction.registerFunctionValueWatcher(FUNC_LEFT_TURN, mFunctionListener);
+            mCarFunction.registerFunctionValueWatcher(FUNC_RIGHT_TURN, mFunctionListener);
         } catch (Exception e) {
             DebugLogger.e(TAG, "Error registering functions", e);
         }
@@ -170,23 +176,20 @@ public class ClusterHudManager {
         }
     }
 
+    private boolean mLeftTurnOn = false;
+    private boolean mRightTurnOn = false;
+
     // --- ECarX Function Listener ---
     private class ECarFunctionListener implements ICarFunction.IFunctionValueWatcher {
         @Override
         public void onFunctionValueChanged(int funcId, int zone, int value) {
-            if (funcId == FUNC_TURN_SIGNAL) {
-                // Value: 1=Left, 2=Right, 4=Hazard(Both)? Check logic.
-                // Creating text based on standard: 1=Left, 2=Right
-                String signal = "";
-                if (value == 1)
-                    signal = "←";
-                else if (value == 2)
-                    signal = "→";
-                else if (value == 3 || value == 4)
-                    signal = "↔"; // Hazard?
-
-                updateComponentText("turn_signal", signal);
+            boolean isOn = (value == 1);
+            if (funcId == FUNC_LEFT_TURN) {
+                mLeftTurnOn = isOn;
+            } else if (funcId == FUNC_RIGHT_TURN) {
+                mRightTurnOn = isOn;
             }
+            updateTurnSignal();
         }
 
         @Override
@@ -206,7 +209,28 @@ public class ClusterHudManager {
         }
     }
 
+    private void updateTurnSignal() {
+        String signal = "";
+        // Use spaces to maintain layout relative to center (assuming gear is in middle)
+        if (mLeftTurnOn && mRightTurnOn) {
+            signal = "←      →"; // Hazard
+        } else if (mLeftTurnOn) {
+            signal = "←       "; // Left only
+        } else if (mRightTurnOn) {
+            signal = "       →"; // Right only
+        }
+        // If both off, signal is "" (Hidden)
+        updateComponentText("turn_signal", signal);
+    }
+
     // --- Volume Listener ---
+    private Handler mVolumeHandler = new Handler(Looper.getMainLooper());
+    private Runnable mVolumeHideRunnable = () -> {
+        if (mPresentation != null) {
+            mPresentation.setVolumeVisible(false);
+        }
+    };
+
     private void initVolumeListener() {
         try {
             mAudioManager = (android.media.AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
@@ -225,6 +249,13 @@ public class ClusterHudManager {
         if (mAudioManager != null) {
             int vol = mAudioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC);
             updateComponentText("volume", "音量: " + vol);
+
+            // Auto-Hide Logic
+            if (mPresentation != null) {
+                mPresentation.setVolumeVisible(true);
+            }
+            mVolumeHandler.removeCallbacks(mVolumeHideRunnable);
+            mVolumeHandler.postDelayed(mVolumeHideRunnable, 3000); // Hide after 3 seconds
         }
     }
 
@@ -485,8 +516,14 @@ public class ClusterHudManager {
                 String display = lyric + "\n" + (track != null ? track : "") + " - " + (artist != null ? artist : "");
                 updateComponentText("song", display);
 
-                // Save State (Broadcast doesn't usually give art, pass null to conserve
-                // existing art)
+                // Determine Playing State from Broadcast
+                boolean isPlaying = intent.getBooleanExtra("playing", true); // Default to true if receiving metadata
+                if ("com.android.music.playbackcomplete".equals(action)) {
+                    isPlaying = false;
+                }
+                updateMediaPlayingState(isPlaying);
+
+                // Save State (Removed Logic called above, method body is empty now)
                 saveMediaState(display, null);
 
                 // Update Cover? Broadcasts usually don't send Bitmap.
@@ -577,7 +614,14 @@ public class ClusterHudManager {
             updateComponentImage("media_cover", art);
         }
 
-        // Save State
+        // Determine Playing State
+        boolean isPlaying = false;
+        if (controller.getPlaybackState() != null) {
+            isPlaying = (controller.getPlaybackState().getState() == android.media.session.PlaybackState.STATE_PLAYING);
+        }
+        updateMediaPlayingState(isPlaying);
+
+        // Save State (Removed Logic called above, method body is empty now)
         saveMediaState(display, art);
     }
 
@@ -742,6 +786,8 @@ public class ClusterHudManager {
         }
         if (mPresentation != null) {
             mPresentation.syncHudLayout(mCachedHudComponents);
+            // Force update turn_signal with current real sensor state (hiding placeholder)
+            updateTurnSignal();
         }
 
         // Notify Listener (MainActivity Preview) of the full sync (Logic Fix for
@@ -770,6 +816,7 @@ public class ClusterHudManager {
         String display = "测试歌词 Lyric\n" + title + " - " + artist;
         updateComponentText("song", display);
         updateComponentImage("media_cover", art);
+        updateMediaPlayingState(true); // Force show for testing
     }
 
     public void clearHudComponents() {
@@ -805,63 +852,28 @@ public class ClusterHudManager {
     }
 
     // --- Media Persistence ---
-    // --- Media Persistence ---
-    private void applyMediaPersistence() {
-        if (mCachedHudComponents == null)
-            return;
+    // --- Media Visibility ---
+    private boolean mIsMediaPlaying = false;
 
-        try {
-            // Restore Text
-            String savedText = ConfigManager.getInstance().getString("last_media_text", null);
-            if (savedText != null && !savedText.isEmpty()) {
-                // Iterate manually to update list
-                for (HudComponentData data : mCachedHudComponents) {
-                    if ("song".equals(data.type)) {
-                        data.text = savedText;
-                        DebugLogger.i(TAG, "Restored Media Text to Cache: " + savedText);
-                    }
-                }
+    private void updateMediaPlayingState(boolean isPlaying) {
+        if (mIsMediaPlaying != isPlaying) {
+            mIsMediaPlaying = isPlaying;
+            DebugLogger.d(TAG, "Media Playing State Changed: " + isPlaying);
+            if (mPresentation != null) {
+                mPresentation.setMediaPlaying(mIsMediaPlaying);
             }
-
-            // Restore Image
-            java.io.File cacheFile = new java.io.File(mContext.getFilesDir(), "last_cover.png");
-            if (cacheFile.exists() && cacheFile.length() > 0) {
-                android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeFile(cacheFile.getAbsolutePath());
-                if (bmp != null) {
-                    for (HudComponentData data : mCachedHudComponents) {
-                        if ("media_cover".equals(data.type)) {
-                            data.image = bmp;
-                            DebugLogger.i(TAG, "Restored Media Cover");
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to restore media state", e);
         }
+    }
+
+    private void applyMediaPersistence() {
+        // Removed per user request: No longer restore saved media state.
+        // We rely on real-time data or defaults.
     }
 
     private String mLastSavedText = null;
 
     private void saveMediaState(String text, android.graphics.Bitmap image) {
-        try {
-            // Save Text
-            if (text != null) {
-                ConfigManager.getInstance().setString("last_media_text", text);
-                mLastSavedText = text;
-            }
-
-            // Save Image (if provided)
-            if (image != null) {
-                java.io.File cacheFile = new java.io.File(mContext.getFilesDir(), "last_cover.png");
-                java.io.FileOutputStream out = new java.io.FileOutputStream(cacheFile);
-                image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
-                out.flush();
-                out.close();
-            }
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to save media state", e);
-        }
+        // Removed per user request: No longer save media state to disk.
     }
 
     public static class HudComponentData {
