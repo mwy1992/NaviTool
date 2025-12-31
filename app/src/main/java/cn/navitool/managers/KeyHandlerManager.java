@@ -231,7 +231,7 @@ public class KeyHandlerManager {
 
         if (keyCode == ONEOS_KEY_MEDIA_NEXT || keyCode == ONEOS_KEY_MEDIA_PREV || keyCode == ONEOS_KEY_MEDIA_PP) {
             SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
-            if (!prefs.getBoolean("steering_wheel_control", false)) {
+            if (!prefs.getBoolean("steering_wheel_control_v2", true)) {
                 DebugLogger.d(TAG, "Steering wheel control disabled");
                 return;
             }
@@ -269,14 +269,16 @@ public class KeyHandlerManager {
 
     private void processWechatAction(String type) {
         SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
-        if (!prefs.getBoolean("wechat_button_enabled", false))
+        if (!prefs.getBoolean("wechat_button_enabled_v2", true))
             return;
 
         int action = prefs.getInt("wechat_" + type + "_press_action", 0);
         String packageName = prefs.getString("wechat_" + type + "_press_app", "");
 
-        if (packageName.isEmpty())
+        if (packageName.isEmpty()) {
+            DebugLogger.toast(mContext, "请先设置微信按键关联应用");
             return;
+        }
 
         if (action == 1) { // Launch
             launchApp(packageName);

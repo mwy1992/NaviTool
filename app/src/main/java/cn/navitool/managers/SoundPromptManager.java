@@ -74,6 +74,10 @@ public class SoundPromptManager {
         }
     }
 
+    public void playStartSound() {
+        playSound("sound_start");
+    }
+
     public void checkDoorSound(int oldStatus, int newStatus) {
         // Zone 4 (Front Right) check
         boolean wasOpen = (oldStatus & ZONE_DOOR_FR) != 0;
@@ -94,12 +98,16 @@ public class SoundPromptManager {
     private void playSound(String prefKeyPrefix) {
         SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
         boolean enabled = prefs.getBoolean(prefKeyPrefix + "_enabled", false);
-        if (!enabled)
+        if (!enabled) {
+            DebugLogger.d(TAG, "Sound skipped (Disabled): " + prefKeyPrefix);
             return;
+        }
 
         String filePath = prefs.getString(prefKeyPrefix + "_file", null);
-        if (filePath == null || filePath.isEmpty())
+        if (filePath == null || filePath.isEmpty()) {
+            DebugLogger.d(TAG, "Sound skipped (Path Empty): " + prefKeyPrefix);
             return;
+        }
 
         // Check if absolute path or just filename
         java.io.File file = new java.io.File(filePath);
@@ -113,7 +121,7 @@ public class SoundPromptManager {
         if (file.exists()) {
             playFile(file.getAbsolutePath());
         } else {
-            DebugLogger.e(TAG, "Sound file not found: " + filePath);
+            DebugLogger.e(TAG, "Sound file not found: " + filePath + " (Orig: " + filePath + ")");
         }
     }
 

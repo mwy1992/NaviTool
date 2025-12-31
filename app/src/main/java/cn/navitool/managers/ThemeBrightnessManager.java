@@ -3,12 +3,14 @@ package cn.navitool.managers;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.os.Handler;
 import android.os.Looper;
 
 import cn.navitool.DebugLogger;
+import cn.navitool.ConfigManager;
 import cn.navitool.R;
 import com.ecarx.xui.adaptapi.car.base.ICarFunction;
 import com.ecarx.xui.adaptapi.car.sensor.ISensor;
@@ -88,38 +90,202 @@ public class ThemeBrightnessManager {
     }
 
     public void init() {
-        SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
-        mIsOverrideEnabled = prefs.getBoolean("override_brightness_enabled", false);
-        mTargetBrightnessDay = prefs.getInt("override_day_value", 12);
-        mTargetBrightnessNight = prefs.getInt("override_night_value", 5);
-        mTargetBrightnessAvm = prefs.getInt("override_avm_value", 15);
+        ConfigManager config = ConfigManager.getInstance();
+        mIsOverrideEnabled = config.getBoolean("override_brightness_enabled", false);
+        mTargetBrightnessDay = config.getInt("override_day_value", 12);
+        mTargetBrightnessNight = config.getInt("override_night_value", 5);
+        mTargetBrightnessAvm = config.getInt("override_avm_value", 15);
 
-        boolean forceAuto = prefs.getBoolean("force_auto_day_night", false);
-        boolean sensor2425 = prefs.getBoolean("enable_24_25_light_sensor", false);
+        boolean forceAuto = config.getBoolean("force_auto_day_night", false);
+        boolean sensor2425 = config.getBoolean("enable_24_25_light_sensor", false);
+        
+        // ... Logic continues
 
         CarServiceManager.getInstance(mContext).registerListener(() -> {
             DebugLogger.i(TAG, "Car Service Ready. Triggering Initial Check...");
             checkDayNightStatus(forceAuto); // Trigger initial check once connected
+            registerWatchers();
         });
+    }
+
+    private void registerWatchers() {
+        ICarFunction carFunc = CarServiceManager.getInstance(mContext).getCarFunction();
+        ISensor sensor = CarServiceManager.getInstance(mContext).getSensor();
+
+        if (carFunc != null) {
+            int[] funcIds = { FUNC_AVM_STATUS, FUNC_DAYMODE_SETTING };
+            carFunc.registerFunctionValueWatcher(funcIds, new ICarFunction.IFunctionValueWatcher() {
+                @Override
+                public void onFunctionValueChanged(int functionId, int zone, int value) {
+                    ThemeBrightnessManager.this.onFunctionValueChanged(functionId, value);
+                }
+
+                @Override
+                public void onCustomizeFunctionValueChanged(int functionId, int zone, float value) {
+                }
+
+                @Override
+                public void onSupportedFunctionStatusChanged(int functionId, int zone,
+                        com.ecarx.xui.adaptapi.FunctionStatus status) {
+                }
+
+                @Override
+                public void onSupportedFunctionValueChanged(int functionId, int[] value) {
+                }
+
+                @Override
+                public void onFunctionChanged(int functionId) {
+                }
+            });
+
+            int[] custFuncIds = { FUNC_BRIGHTNESS_DAY, FUNC_BRIGHTNESS_NIGHT };
+            carFunc.registerFunctionValueWatcher(custFuncIds, new ICarFunction.IFunctionValueWatcher() {
+                @Override
+                public void onFunctionValueChanged(int functionId, int zone, int value) {
+                }
+
+                @Override
+                public void onCustomizeFunctionValueChanged(int functionId, int zone, float value) {
+                    ThemeBrightnessManager.this.onCustomizeFunctionValueChanged(functionId, value);
+                }
+
+                @Override
+                public void onSupportedFunctionStatusChanged(int functionId, int zone,
+                        com.ecarx.xui.adaptapi.FunctionStatus status) {
+                }
+
+                @Override
+                public void onSupportedFunctionValueChanged(int functionId, int[] value) {
+                }
+
+                @Override
+                public void onFunctionChanged(int functionId) {
+                }
+            });
+        }
+
+        if (sensor != null) {
+            sensor.registerListener(new ISensor.ISensorListener() {
+                @Override
+                public void onSensorEventChanged(int sensorType, int value) {
+                    ThemeBrightnessManager.this.onSensorEventChanged(sensorType, value);
+                }
+
+                @Override
+                public void onSensorValueChanged(int sensorType, float value) {
+                    ThemeBrightnessManager.this.onSensorChanged(sensorType, value);
+                }
+
+                @Override
+                public void onSensorSupportChanged(int sensorType, com.ecarx.xui.adaptapi.FunctionStatus status) {
+                }
+            }, SENSOR_TYPE_LIGHT);
+
+            sensor.registerListener(new ISensor.ISensorListener() {
+                @Override
+                public void onSensorEventChanged(int sensorType, int value) {
+                    ThemeBrightnessManager.this.onSensorEventChanged(sensorType, value);
+                }
+
+                @Override
+                public void onSensorValueChanged(int sensorType, float value) {
+                }
+
+                @Override
+                public void onSensorSupportChanged(int sensorType, com.ecarx.xui.adaptapi.FunctionStatus status) {
+                }
+            }, ISensor.SENSOR_TYPE_DAY_NIGHT);
+        }
 
         // Also try immediately in case it's already ready (handled by registerListener
         // logic)
         // But for fallback or retry logic, we can also check regularly if we want,
         // though registerListener handles the "ready" event better.
 
-        if (forceAuto || sensor2425) {
-            startMonitoring();
-        }
+        checkMonitoringRequirement();
 
         if (mIsOverrideEnabled) {
             mOverrideHandler.post(mOverrideRunnable);
         }
+
+        // Register Command Receiver (Restored from Plus logic)
+        IntentFilter filter = new IntentFilter();
+        filter.addAction("cn.navitool.ACTION_SET_THEME_MODE");
+        filter.addAction("cn.navitool.ACTION_SET_BRIGHTNESS");
+        mContext.registerReceiver(mCommandReceiver, filter);
     }
 
     public void destroy() {
         stopMonitoring();
         mOverrideHandler.removeCallbacksAndMessages(null);
+        try {
+            mContext.unregisterReceiver(mCommandReceiver);
+        } catch (Exception e) {
+            // Ignore
+        }
     }
+
+    // --- Command Receiver (Restored from Plus) ---
+    private final android.content.BroadcastReceiver mCommandReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            ICarFunction iCarFunction = CarServiceManager.getInstance(mContext).getCarFunction();
+
+            if ("cn.navitool.ACTION_SET_THEME_MODE".equals(action)) {
+                if (iCarFunction != null) {
+                    int modeValue = intent.getIntExtra("mode_value", VALUE_DAYMODE_AUTO);
+                    try {
+                        DebugLogger.i(TAG, "Setting Theme Mode to: " + Integer.toHexString(modeValue));
+                        boolean success = iCarFunction.setFunctionValue(FUNC_DAYMODE_SETTING, ZONE_ALL, modeValue);
+                        if (success) {
+                            DebugLogger.toast(context, "已设置主题模式");
+                            checkDayNightStatus(false);
+                        } else {
+                            DebugLogger.e(TAG, "Failed to set Theme Mode");
+                            DebugLogger.toast(context, "设置主题模式失败");
+                        }
+                    } catch (Exception e) {
+                        DebugLogger.e(TAG, "Error setting Theme Mode", e);
+                    }
+                }
+            } else if ("cn.navitool.ACTION_SET_BRIGHTNESS".equals(action)) {
+                if (iCarFunction != null) {
+                    boolean isDay = intent.getBooleanExtra("is_day", true);
+                    int value = intent.getIntExtra("value", 0);
+                    int funcId = isDay ? FUNC_BRIGHTNESS_DAY : FUNC_BRIGHTNESS_NIGHT;
+
+                    try {
+                        DebugLogger.d(TAG, "Setting Brightness - IsDay: " + isDay + ", Value: " + value);
+                        boolean success = iCarFunction.setCustomizeFunctionValue(funcId, ZONE_CSD, (float) value); // Use
+                                                                                                                   // ZONE_CSD
+                                                                                                                   // or
+                                                                                                                   // driver?
+                                                                                                                   // Plus
+                                                                                                                   // used
+                                                                                                                   // ZONE_DRIVER(1).
+                                                                                                                   // ZONE_CSD=1.
+                                                                                                                   // Match.
+
+                        if (!success) {
+                            // Fallback
+                            success = iCarFunction.setFunctionValue(funcId, ZONE_CSD, value);
+                        }
+
+                        if (success) {
+                            if (isDay)
+                                mLastBrightnessDayValue = value;
+                            else
+                                mLastBrightnessNightValue = value;
+                            pollAndBroadcastBrightness();
+                        }
+                    } catch (Exception e) {
+                        DebugLogger.e(TAG, "Error setting brightness", e);
+                    }
+                }
+            }
+        }
+    };
 
     // --- Public API for Config Changes ---
 
@@ -193,6 +359,11 @@ public class ThemeBrightnessManager {
         } else if (functionId == FUNC_BRIGHTNESS_DAY || functionId == FUNC_BRIGHTNESS_NIGHT) {
             // DebugLogger.d(TAG, "Brightness Changed: " + value);
             pollAndBroadcastBrightness();
+        } else if (functionId == FUNC_DAYMODE_SETTING) {
+            DebugLogger.i(TAG, "Theme Mode Changed to: " + value);
+            mLastThemeMode = value;
+            // Trigger enforcement check immediately
+            checkDayNightStatus(true);
         }
     }
 
@@ -237,7 +408,12 @@ public class ThemeBrightnessManager {
 
                 if (currentMode != -1 && currentMode != 0) {
                     mLastThemeMode = currentMode;
+                } else {
+                    DebugLogger.w(TAG, "Theme Mode invalid or 0: " + currentMode);
+                    // Force broadcast even if invalid to update UI state (e.g. to "Unknown")
                 }
+                
+                DebugLogger.d(TAG, "Polled Theme Mode: " + currentMode + " (Last: " + mLastThemeMode + ")");
 
                 broadcastSensorValues(mLastDayNightSensorValue, mLastAvmValue, mLastBrightnessDayValue,
                         mLastBrightnessNightValue);

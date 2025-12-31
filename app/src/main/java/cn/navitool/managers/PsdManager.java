@@ -67,7 +67,41 @@ public class PsdManager {
         CarServiceManager.getInstance(mContext).registerListener(() -> {
             DebugLogger.i(TAG, "Car Service Ready. Fetching Initial PSD Status...");
             fetchInitialStatus();
+            registerFunctionWatcher();
         });
+    }
+
+    private void registerFunctionWatcher() {
+        ICarFunction carFunc = CarServiceManager.getInstance(mContext).getCarFunction();
+        if (carFunc != null) {
+            carFunc.registerFunctionValueWatcher(new int[] { FUNC_PSD_SCREEN_SWITCH },
+                    new ICarFunction.IFunctionValueWatcher() {
+                        @Override
+                        public void onFunctionValueChanged(int functionId, int zone, int value) {
+                            if (functionId == FUNC_PSD_SCREEN_SWITCH) {
+                                DebugLogger.i(TAG, "PSD Switch Changed: " + value);
+                                onPsdStatusChanged(value);
+                            }
+                        }
+
+                        @Override
+                        public void onCustomizeFunctionValueChanged(int functionId, int zone, float value) {
+                        }
+
+                        @Override
+                        public void onSupportedFunctionStatusChanged(int functionId, int zone,
+                                com.ecarx.xui.adaptapi.FunctionStatus status) {
+                        }
+
+                        @Override
+                        public void onSupportedFunctionValueChanged(int functionId, int[] value) {
+                        }
+
+                        @Override
+                        public void onFunctionChanged(int functionId) {
+                        }
+                    });
+        }
     }
 
     private void fetchInitialStatus() {
@@ -264,7 +298,12 @@ public class PsdManager {
     }
 
     public void onPsdStatusChanged(int value) {
-        broadcastPsdStatus(value);
+        // User Request: "Update only when detecting OFF"
+        if (value == 0) {
+            broadcastPsdStatus(value);
+        } else {
+            DebugLogger.d(TAG, "PSD ON detected. Suppressing broadcast as per user request.");
+        }
 
         if (mIsPsdAlwaysOnEnabled && value == 0) { // Screen turn OFF detected
             DebugLogger.w(TAG, "PSD OFF Detected! Reacting...");

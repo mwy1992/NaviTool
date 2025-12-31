@@ -1,6 +1,7 @@
 package cn.navitool;
 
 import android.util.Log;
+import android.content.SharedPreferences;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -10,28 +11,28 @@ import java.util.Properties;
 public class ConfigManager {
     private static final String TAG = "ConfigManager";
     private static final String EXTERNAL_PATH = "/sdcard/NaviTool/config.xml";
-    private static final String INTERNAL_FILENAME = "config.xml";
+    // private static final String INTERNAL_FILENAME = "config.xml"; // Unused
 
     private static ConfigManager instance;
     private static android.content.Context sContext;
-    private Properties properties;
+    private Properties mProperties;
+    private SharedPreferences mPrefs;
 
     private ConfigManager() {
-        properties = new Properties();
-        loadConfig();
+        mProperties = new Properties();
+        // Setup mPrefs when init is called with context
     }
 
     public static void init(android.content.Context context) {
-        boolean wasNull = (sContext == null);
+        android.util.Log.e(TAG, "ConfigManager.init() called");
         sContext = context.getApplicationContext();
-
-        // If instance already exists but was initialized without context
-        // (Headless/Service start),
-        // we must reload now that we have FilesDir access.
-        if (instance != null && wasNull) {
-            Log.i(TAG, "Context injected after initialization. Reloading config from Internal Storage...");
-            instance.loadConfig();
+        if (instance == null) {
+            instance = new ConfigManager();
         }
+        // Use DefaultSharedPreferences for maximum compatibility and standard file
+        // location
+        instance.mPrefs = sContext.getSharedPreferences("navitool_prefs", android.content.Context.MODE_PRIVATE);
+        android.util.Log.e(TAG, "ConfigManager initialized mPrefs: " + (instance.mPrefs != null));
     }
 
     public static synchronized ConfigManager getInstance() {
@@ -41,64 +42,44 @@ public class ConfigManager {
         return instance;
     }
 
-    private void loadConfig() {
-        long tStart = System.currentTimeMillis();
-        // Priority 1: Internal Storage (Reliable)
-        boolean loaded = false;
-        if (sContext != null) {
-            File internalFile = new File(sContext.getFilesDir(), INTERNAL_FILENAME);
-            if (internalFile.exists()) {
-                try (FileInputStream fis = new FileInputStream(internalFile)) {
-                    properties.loadFromXML(fis);
-                    Log.i(TAG, "Loaded config from Internal Storage: " + internalFile.getAbsolutePath());
-                    loaded = true;
-                } catch (IOException e) {
-                    Log.e(TAG, "Failed to load Internal config", e);
-                }
-            }
-        }
-        long tInternal = System.currentTimeMillis();
-        Log.d(TAG, "Internal load time: " + (tInternal - tStart) + "ms");
+    // Manual Import (Reset/Override SharedPreferences from XML)
+    public void importConfig() {
+        if (sContext == null)
+            return;
+        File externalFile = new File(EXTERNAL_PATH);
+        if (externalFile.exists()) {
+            try (FileInputStream fis = new FileInputStream(externalFile)) {
+                mProperties.clear();
+                mProperties.loadFromXML(fis);
 
-        // Priority 2: External Storage (User/Legacy)
-        if (!loaded) {
-            File externalFile = new File(EXTERNAL_PATH);
-            if (externalFile.exists()) {
-                try (FileInputStream fis = new FileInputStream(externalFile)) {
-                    properties.loadFromXML(fis);
-                    Log.i(TAG, "Loaded config from External Storage: " + EXTERNAL_PATH);
-                    loaded = true;
-                    // Migrate to Internal immediately (Async this?)
-                    saveConfig();
-                } catch (IOException e) {
-                    Log.e(TAG, "Failed to load External config", e);
+                if (mPrefs != null) {
+                    SharedPreferences.Editor editor = mPrefs.edit();
+                    for (String key : mProperties.stringPropertyNames()) {
+                        editor.putString(key, mProperties.getProperty(key));
+                    }
+                    editor.commit(); // Ensure write
                 }
+                Log.i(TAG, "Imported config from External Storage");
+            } catch (IOException e) {
+                Log.e(TAG, "Failed to import External config", e);
             }
-        }
-        long tExternal = System.currentTimeMillis();
-        Log.d(TAG, "External load time: " + (tExternal - tInternal) + "ms");
-
-        if (!loaded) {
-            Log.i(TAG, "No config found. Creating new default.");
-            saveConfig();
         }
     }
 
-    public synchronized void saveConfig() {
-        // Prio 1: Save to Internal
-        if (sContext != null) {
-            try {
-                File internalFile = new File(sContext.getFilesDir(), INTERNAL_FILENAME);
-                try (FileOutputStream fos = new FileOutputStream(internalFile)) {
-                    properties.storeToXML(fos, "NaviTool Configuration");
-                    Log.i(TAG, "Saved to Internal: " + internalFile.getAbsolutePath());
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save Internal config", e);
+    public synchronized void saveProperties() {
+        // Export Current SharedPreferences to XML (Backup)
+        if (mPrefs == null || sContext == null)
+            return;
+
+        mProperties.clear();
+        java.util.Map<String, ?> allEntries = mPrefs.getAll();
+        for (java.util.Map.Entry<String, ?> entry : allEntries.entrySet()) {
+            if (entry.getValue() != null) {
+                mProperties.setProperty(entry.getKey(), String.valueOf(entry.getValue()));
             }
         }
 
-        // Prio 2: Save to External (Best Effort)
+        // Save to External (Backup)
         try {
             File externalFile = new File(EXTERNAL_PATH);
             File parent = externalFile.getParentFile();
@@ -106,52 +87,90 @@ public class ConfigManager {
                 parent.mkdirs();
 
             try (FileOutputStream fos = new FileOutputStream(externalFile)) {
-                properties.storeToXML(fos, "NaviTool Configuration");
-                Log.i(TAG, "Saved to External: " + EXTERNAL_PATH);
+                mProperties.storeToXML(fos, "NaviTool Configuration");
+                Log.i(TAG, "Exported config to: " + EXTERNAL_PATH);
             }
         } catch (Exception e) {
-            // Log but don't crash, external might be restricted
-            Log.w(TAG, "Failed to save External config (Permission?): " + e.getMessage());
+            Log.w(TAG, "Failed to export config: " + e.getMessage());
         }
     }
 
     // String
     public synchronized void setString(String key, String value) {
-        if (value == null)
-            value = "";
-        properties.setProperty(key, value);
-        saveConfig();
+        if (mPrefs != null) {
+            SharedPreferences.Editor editor = mPrefs.edit();
+            editor.putString(key, value);
+            // Critical: Use commit() to ensure write to disk before process death
+            boolean success = editor.commit();
+            android.util.Log.e(TAG, "setString(" + key + ", " + value + ") success=" + success);
+        } else {
+            android.util.Log.e(TAG, "setString(" + key + ", " + value + ") FAILED: mPrefs is null");
+        }
+        // saveProperties(); // Disable auto-export on every change for performance
     }
 
     public String getString(String key, String defaultValue) {
-        return properties.getProperty(key, defaultValue);
+        if (mPrefs != null) {
+            String val = mPrefs.getString(key, defaultValue);
+            android.util.Log.e(TAG, "getString(" + key + ") returned: " + val);
+            return val;
+        }
+        android.util.Log.e(TAG, "getString(" + key + ") FAILED: mPrefs is null, returning default: " + defaultValue);
+        return defaultValue;
     }
 
     // Boolean
     public synchronized void setBoolean(String key, boolean value) {
-        setString(key, String.valueOf(value));
+        if (mPrefs != null) {
+            SharedPreferences.Editor editor = mPrefs.edit();
+            editor.putBoolean(key, value);
+            boolean success = editor.commit(); // Use commit() for sync save
+            android.util.Log.e(TAG, "setBoolean(" + key + ", " + value + ") success=" + success);
+        } else {
+            android.util.Log.e(TAG, "setBoolean(" + key + ", " + value + ") FAILED: mPrefs is null");
+        }
     }
 
     public boolean getBoolean(String key, boolean defaultValue) {
-        String val = properties.getProperty(key);
-        if (val != null) {
-            return Boolean.parseBoolean(val);
+        if (mPrefs != null && mPrefs.contains(key)) {
+            try {
+                return mPrefs.getBoolean(key, defaultValue);
+            } catch (ClassCastException e) {
+                // Compatibility: Parse from String if type mismatch
+                String val = mPrefs.getString(key, String.valueOf(defaultValue));
+                if ("true".equalsIgnoreCase(val) || "false".equalsIgnoreCase(val)) {
+                    return Boolean.parseBoolean(val);
+                }
+                return defaultValue;
+            }
         }
         return defaultValue;
     }
 
     // Integer
     public synchronized void setInt(String key, int value) {
-        setString(key, String.valueOf(value));
+        if (mPrefs != null) {
+            SharedPreferences.Editor editor = mPrefs.edit();
+            editor.putInt(key, value);
+            boolean success = editor.commit(); // Use commit() for sync save
+            android.util.Log.e(TAG, "setInt(" + key + ", " + value + ") success=" + success);
+        } else {
+            android.util.Log.e(TAG, "setInt(" + key + ", " + value + ") FAILED: mPrefs is null");
+        }
     }
 
     public int getInt(String key, int defaultValue) {
-        String val = properties.getProperty(key);
-        if (val != null) {
+        if (mPrefs != null && mPrefs.contains(key)) {
             try {
-                return Integer.parseInt(val);
-            } catch (NumberFormatException e) {
-                Log.e(TAG, "Error parsing int for key: " + key, e);
+                return mPrefs.getInt(key, defaultValue);
+            } catch (ClassCastException e) {
+                // Compatibility: Parse from String if type mismatch
+                String val = mPrefs.getString(key, String.valueOf(defaultValue));
+                try {
+                    return Integer.parseInt(val);
+                } catch (NumberFormatException nfe) {
+                    return defaultValue;
+                }
             }
         }
         return defaultValue;

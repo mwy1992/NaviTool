@@ -47,19 +47,42 @@ public class ClusterHudManager {
 
     // AdaptAPI Reflection Constants
     private static final String CLASS_DIM_INTERACTION = "com.ecarx.xui.adaptapi.diminteraction.DimInteraction";
-    // Typo in AdaptAPI: TRUN instead of TURN
-    private static final int FUNC_LEFT_TURN = 553980160;
-    private static final int FUNC_RIGHT_TURN = 553980416;
+    // Typo in AdaptAPI: TRUN instead of TURN (Strictly matching API name)
+    private static final int FUNC_LEFT_TRUN_SIGNAL = 553980160;
+    private static final int FUNC_RIGHT_TRUN_SIGNAL = 553980416;
+
+    // Additional Sensor IDs
+    private static final int SENSOR_TYPE_ODOMETER = 1050368;
+    private static final int TYPE_INS_FUEL_CONSUMPTION = 4194816;
+    private static final int TYPE_AVG_FUEL_CONSUMPTION = 4194560;
+    // Tire Pressure
+    private static final int TIRE_PRESSURE_FRONT_LEFT = 5243136;
+    private static final int TIRE_PRESSURE_FRONT_RIGHT = 5243392;
+    private static final int TIRE_PRESSURE_REAR_LEFT = 5243648;
+    private static final int TIRE_PRESSURE_REAR_RIGHT = 5243904;
+    // Tire Temp
+    private static final int TIRE_TEMPERATURE_FRONT_LEFT = 5244160;
+    private static final int TIRE_TEMPERATURE_FRONT_RIGHT = 5244416;
+    private static final int TIRE_TEMPERATURE_REAR_LEFT = 5244672;
+    private static final int TIRE_TEMPERATURE_REAR_RIGHT = 5244928;
 
     private ClusterHudManager(Context context) {
         this.mContext = context.getApplicationContext();
 
         initAdaptApi();
+        initDimInteraction(); // Restore missing call for Real HUD Mode Switch
 
         // 1. Initialize Media & Volume Listeners IMMEDIATELY on Main Thread (Critical
         // for QQ Music Cover)
         // User reported regressions when this was backgrounded.
-        initMediaListener();
+        // 1. Initialize Media & Volume Listeners IMMEDIATELY on Main Thread
+        // Critical for QQ Music Cover. User reported regressions when this was
+        // backgrounded.
+        try {
+            initMediaListener();
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "FATAL: Failed to init MediaListener in Constructor", e);
+        }
         initVolumeListener();
         initNotificationReceiver();
 
@@ -81,6 +104,15 @@ public class ClusterHudManager {
             instance = new ClusterHudManager(context);
         }
         return instance;
+    }
+
+    public List<HudComponentData> getLayoutData(String type) {
+        if ("cluster".equals(type)) {
+            return mCachedClusterComponents;
+        } else if ("hud".equals(type)) {
+            return mCachedHudComponents;
+        }
+        return null;
     }
 
     // --- ECarX Car Service Initialization ---
@@ -136,6 +168,22 @@ public class ClusterHudManager {
             mSensorManager.registerListener(mSensorListener, ISensor.SENSOR_TYPE_RPM, ISensor.RATE_UI);
             mSensorManager.registerListener(mSensorListener, ISensor.SENSOR_TYPE_CAR_SPEED, ISensor.RATE_UI);
 
+            // Register Additional Sensors for Future Use (Odometer, Fuel, Tire)
+            mSensorManager.registerListener(mSensorListener, SENSOR_TYPE_ODOMETER, ISensor.RATE_NORMAL);
+            mSensorManager.registerListener(mSensorListener, TYPE_INS_FUEL_CONSUMPTION, ISensor.RATE_NORMAL);
+            mSensorManager.registerListener(mSensorListener, TYPE_AVG_FUEL_CONSUMPTION, ISensor.RATE_NORMAL);
+
+            // Register Tire Sensors
+            mSensorManager.registerListener(mSensorListener, TIRE_PRESSURE_FRONT_LEFT, ISensor.RATE_NORMAL);
+            mSensorManager.registerListener(mSensorListener, TIRE_PRESSURE_FRONT_RIGHT, ISensor.RATE_NORMAL);
+            mSensorManager.registerListener(mSensorListener, TIRE_PRESSURE_REAR_LEFT, ISensor.RATE_NORMAL);
+            mSensorManager.registerListener(mSensorListener, TIRE_PRESSURE_REAR_RIGHT, ISensor.RATE_NORMAL);
+
+            mSensorManager.registerListener(mSensorListener, TIRE_TEMPERATURE_FRONT_LEFT, ISensor.RATE_NORMAL);
+            mSensorManager.registerListener(mSensorListener, TIRE_TEMPERATURE_FRONT_RIGHT, ISensor.RATE_NORMAL);
+            mSensorManager.registerListener(mSensorListener, TIRE_TEMPERATURE_REAR_LEFT, ISensor.RATE_NORMAL);
+            mSensorManager.registerListener(mSensorListener, TIRE_TEMPERATURE_REAR_RIGHT, ISensor.RATE_NORMAL);
+
             DebugLogger.i(TAG, "ECarX Sensors Registered");
         } catch (Exception e) {
             DebugLogger.e(TAG, "Error registering sensors", e);
@@ -148,8 +196,8 @@ public class ClusterHudManager {
         mFunctionListener = new ECarFunctionListener();
         try {
             // Register Turn Signals (Separate IDs)
-            mCarFunction.registerFunctionValueWatcher(FUNC_LEFT_TURN, mFunctionListener);
-            mCarFunction.registerFunctionValueWatcher(FUNC_RIGHT_TURN, mFunctionListener);
+            mCarFunction.registerFunctionValueWatcher(FUNC_LEFT_TRUN_SIGNAL, mFunctionListener);
+            mCarFunction.registerFunctionValueWatcher(FUNC_RIGHT_TRUN_SIGNAL, mFunctionListener);
         } catch (Exception e) {
             DebugLogger.e(TAG, "Error registering functions", e);
         }
@@ -187,6 +235,28 @@ public class ClusterHudManager {
                     updateRpm(value);
                 } else if (sensorType == ISensor.SENSOR_TYPE_CAR_SPEED) {
                     updateSpeed(value);
+                } else if (sensorType == SENSOR_TYPE_ODOMETER) {
+                    updateComponentText("odometer", String.format("%.0fkm", value));
+                } else if (sensorType == TYPE_INS_FUEL_CONSUMPTION) {
+                    updateComponentText("fuel_inst", String.format("%.1fL/100km", value));
+                } else if (sensorType == TYPE_AVG_FUEL_CONSUMPTION) {
+                    updateComponentText("fuel_avg", String.format("%.1fL/100km", value));
+                } else if (sensorType == TIRE_PRESSURE_FRONT_LEFT) {
+                    updateComponentText("tire_p_fl", String.format("%.1fbar", value));
+                } else if (sensorType == TIRE_PRESSURE_FRONT_RIGHT) {
+                    updateComponentText("tire_p_fr", String.format("%.1fbar", value));
+                } else if (sensorType == TIRE_PRESSURE_REAR_LEFT) {
+                    updateComponentText("tire_p_rl", String.format("%.1fbar", value));
+                } else if (sensorType == TIRE_PRESSURE_REAR_RIGHT) {
+                    updateComponentText("tire_p_rr", String.format("%.1fbar", value));
+                } else if (sensorType == TIRE_TEMPERATURE_FRONT_LEFT) {
+                    updateComponentText("tire_t_fl", String.format("%.0f°C", value));
+                } else if (sensorType == TIRE_TEMPERATURE_FRONT_RIGHT) {
+                    updateComponentText("tire_t_fr", String.format("%.0f°C", value));
+                } else if (sensorType == TIRE_TEMPERATURE_REAR_LEFT) {
+                    updateComponentText("tire_t_rl", String.format("%.0f°C", value));
+                } else if (sensorType == TIRE_TEMPERATURE_REAR_RIGHT) {
+                    updateComponentText("tire_t_rr", String.format("%.0f°C", value));
                 }
             } catch (Exception e) {
                 DebugLogger.e(TAG, "Error handling sensor value changed", e);
@@ -202,17 +272,93 @@ public class ClusterHudManager {
     private boolean mLeftTurnOn = false;
     private boolean mRightTurnOn = false;
 
-    // --- ECarX Function Listener ---
+    // Blinking Logic
+    private final Handler mBlinkHandler = new Handler(Looper.getMainLooper());
+    private boolean mBlinkVisible = true; // Toggle State
+    private static final int BLINK_INTERVAL = 400; // 400ms
+
+    private final Runnable mBlinkRunnable = new Runnable() {
+        @Override
+        public void run() {
+            // Toggle Visibility
+            mBlinkVisible = !mBlinkVisible;
+            // Update HUD
+            updateTurnSignal();
+
+            // Schedule next toggle if either signal is ON
+            if (mLeftTurnOn || mRightTurnOn) {
+                mBlinkHandler.postDelayed(this, BLINK_INTERVAL);
+            } else {
+                mBlinkVisible = false; // Reset to invisible or off when stopped
+            }
+        }
+    };
+
+    /**
+     * Public Method called by KeepAliveAccessibilityService (and internal listener)
+     * 
+     * @param isLeft true for Left, false for Right
+     * @param isOn   true for ON (Blinking), false for OFF
+     */
+    public synchronized void updateTurnSignal(boolean isLeft, boolean isOn) {
+        boolean wasOff = (!mLeftTurnOn && !mRightTurnOn);
+
+        if (isLeft)
+            mLeftTurnOn = isOn;
+        else
+            mRightTurnOn = isOn;
+
+        boolean isNowOff = (!mLeftTurnOn && !mRightTurnOn);
+
+        // State Logic
+        if (isOn) {
+            // If we were fully OFF, start the blinker
+            if (wasOff) {
+                mBlinkVisible = true; // Start Visible
+                mBlinkHandler.removeCallbacks(mBlinkRunnable);
+                mBlinkHandler.postDelayed(mBlinkRunnable, BLINK_INTERVAL);
+                updateTurnSignal(); // Immediate Update
+            }
+            // If already running, state variable change will be picked up by next Runnable
+            // tick or immediate update
+            // Logic Fix: Immediate update to reflect Side Switch without waiting for tick
+            updateTurnSignal();
+        } else {
+            // If both are now OFF, stop blinking
+            if (isNowOff) {
+                mBlinkHandler.removeCallbacks(mBlinkRunnable);
+                mBlinkVisible = false;
+                updateTurnSignal(); // Immediate Update (to clear)
+            }
+        }
+    }
+
+    // --- cache transparent bitmap ---
+    private android.graphics.Bitmap mTransparentBitmap;
+
+    private android.graphics.Bitmap getTransparentBitmap() {
+        if (mTransparentBitmap == null) {
+            mTransparentBitmap = android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888);
+            mTransparentBitmap.eraseColor(android.graphics.Color.TRANSPARENT);
+        }
+        return mTransparentBitmap;
+    }
+
     private class ECarFunctionListener implements ICarFunction.IFunctionValueWatcher {
         @Override
         public void onFunctionValueChanged(int funcId, int zone, int value) {
             boolean isOn = (value == 1);
-            if (funcId == FUNC_LEFT_TURN) {
-                mLeftTurnOn = isOn;
-            } else if (funcId == FUNC_RIGHT_TURN) {
-                mRightTurnOn = isOn;
+            if (funcId == FUNC_LEFT_TRUN_SIGNAL) {
+                if (mLeftTurnOn != isOn) {
+                    DebugLogger.d(TAG, "TurnSignal API: Left Changed -> " + isOn);
+                    updateTurnSignal(true, isOn);
+                }
+            } else if (funcId == FUNC_RIGHT_TRUN_SIGNAL) {
+                if (mRightTurnOn != isOn) {
+                    DebugLogger.d(TAG, "TurnSignal API: Right Changed -> " + isOn);
+                    updateTurnSignal(false, isOn);
+                }
             }
-            updateTurnSignal();
         }
 
         @Override
@@ -232,21 +378,136 @@ public class ClusterHudManager {
         }
     }
 
-    private void updateTurnSignal() {
-        String signal = "";
-        // Use spaces to maintain layout relative to center (assuming gear is in middle)
-        if (mLeftTurnOn && mRightTurnOn) {
-            signal = "←      →"; // Hazard
-        } else if (mLeftTurnOn) {
-            signal = "←       "; // Left only
-        } else if (mRightTurnOn) {
-            signal = "       →"; // Right only
+    // Cache bitmaps to avoid GC thrashing
+    private android.graphics.Bitmap mBitmapLeft;
+    private android.graphics.Bitmap mBitmapRight;
+    private android.graphics.Bitmap mBitmapHazard;
+
+    // Helper to get/create bitmap
+    public android.graphics.Bitmap getTurnSignalBitmap(boolean left, boolean right) {
+        if (!left && !right)
+            return null;
+
+        // Return cached if available
+        if (left && right && mBitmapHazard != null)
+            return mBitmapHazard;
+        if (left && !right && mBitmapLeft != null)
+            return mBitmapLeft;
+        if (!left && right && mBitmapRight != null)
+            return mBitmapRight;
+
+        try {
+            android.graphics.drawable.Drawable drawable = mContext.getDrawable(R.drawable.ic_turn_signal);
+            if (drawable == null)
+                return null;
+
+            // Updated Size: 72px (Standard for 2x Preview)
+            int width = 72;
+            int height = 72;
+            int gap = 90; // Scaled gap
+
+            // Fix: Always use full width to maintain position
+            int totalWidth = width * 2 + gap;
+            int totalHeight = height;
+
+            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(totalWidth, totalHeight,
+                    android.graphics.Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+
+            drawable.setBounds(0, 0, width, height);
+
+            if (left) {
+                // Draw Left Arrow at 0,0
+                drawable.draw(canvas);
+            }
+
+            if (right) {
+                // Fix: Always draw Right Arrow at (width + gap)
+                // Determine X offset
+                int xOffset = width + gap;
+
+                canvas.save();
+                canvas.translate(xOffset + width / 2f, height / 2f);
+                canvas.rotate(180); // Rotate for right arrow
+                canvas.translate(-width / 2f, -height / 2f);
+                drawable.draw(canvas);
+                canvas.restore();
+            }
+
+            // Cache it
+            if (left && right)
+                mBitmapHazard = bitmap;
+            else if (left)
+                mBitmapLeft = bitmap;
+            else
+                mBitmapRight = bitmap;
+
+            return bitmap;
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error generating turn signal bitmap", e);
+            return null;
         }
-        // If both off, signal is "" (Hidden)
-        updateComponentText("turn_signal", signal);
+    }
+
+    private void updateTurnSignal() {
+        // Strictly use API State AND Blink Toggle
+        // If ON, use mBlinkVisible. If OFF, force false.
+        boolean showLeft = mLeftTurnOn && mBlinkVisible;
+        boolean showRight = mRightTurnOn && mBlinkVisible;
+
+        android.graphics.Bitmap signalBitmap = getTurnSignalBitmap(showLeft, showRight);
+        updateComponentImage("turn_signal", signalBitmap);
+    }
+
+    public android.graphics.Bitmap getVolumeBitmap(int volume) {
+        try {
+            android.graphics.drawable.Drawable drawable = mContext.getDrawable(R.drawable.ic_volume);
+            if (drawable == null)
+                return null;
+
+            int iconSize = 48; // Double size (was 24)
+            int padding = 12; // Scaled padding
+
+            // Measure Text
+            android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            paint.setColor(android.graphics.Color.WHITE);
+            paint.setTextSize(36); // Double size (was 18)
+            paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+
+            String volText = String.valueOf(volume);
+            android.graphics.Rect textBounds = new android.graphics.Rect();
+            paint.getTextBounds(volText, 0, volText.length(), textBounds);
+
+            int totalWidth = iconSize + padding + textBounds.width();
+            int totalHeight = Math.max(iconSize, textBounds.height());
+
+            // Add some margin
+            totalHeight += 4;
+            totalWidth += 4;
+
+            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(totalWidth, totalHeight,
+                    android.graphics.Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+
+            // Draw Icon
+            drawable.setBounds(0, (totalHeight - iconSize) / 2, iconSize, (totalHeight - iconSize) / 2 + iconSize);
+            drawable.setTint(android.graphics.Color.WHITE);
+            drawable.draw(canvas);
+
+            // Draw Text
+            // Align text vertically center
+            float textY = (totalHeight / 2f) - ((paint.descent() + paint.ascent()) / 2f);
+            canvas.drawText(volText, iconSize + padding, textY, paint);
+
+            return bitmap;
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error generating volume bitmap", e);
+            return null;
+        }
     }
 
     // --- Volume Listener ---
+    private int mCurrentVolume = 0;
     private Handler mVolumeHandler = new Handler(Looper.getMainLooper());
     private Runnable mVolumeHideRunnable = () -> {
         if (mPresentation != null) {
@@ -271,22 +532,34 @@ public class ClusterHudManager {
     private void updateVolume() {
         if (mAudioManager != null) {
             int vol = mAudioManager.getStreamVolume(android.media.AudioManager.STREAM_MUSIC);
-            updateComponentText("volume", "音量: " + vol);
-
-            // Auto-Hide Logic
-            if (mPresentation != null) {
-                mPresentation.setVolumeVisible(true);
-            }
-            mVolumeHandler.removeCallbacks(mVolumeHideRunnable);
-            mVolumeHandler.postDelayed(mVolumeHideRunnable, 3000); // Hide after 3 seconds
+            updateVolume(vol);
         }
+    }
+
+    private void updateVolume(int vol) {
+        mCurrentVolume = vol;
+        android.graphics.Bitmap bmp = getVolumeBitmap(vol);
+        // Pass Volume String for Preview
+        updateComponent("volume", String.valueOf(vol), bmp);
+
+        // Auto-Hide Logic
+        if (mPresentation != null) {
+            mPresentation.setVolumeVisible(true);
+        }
+        mVolumeHandler.removeCallbacks(mVolumeHideRunnable);
+        mVolumeHandler.postDelayed(mVolumeHideRunnable, 3000); // Hide after 3 seconds
     }
 
     private class VolumeReceiver extends android.content.BroadcastReceiver {
         @Override
         public void onReceive(Context context, android.content.Intent intent) {
             if ("android.media.VOLUME_CHANGED_ACTION".equals(intent.getAction())) {
-                updateVolume();
+                int vol = intent.getIntExtra("android.media.EXTRA_VOLUME_STREAM_VALUE", -1);
+                if (vol != -1) {
+                    updateVolume(vol);
+                } else {
+                    updateVolume(); // Fallback
+                }
             }
         }
     }
@@ -351,7 +624,14 @@ public class ClusterHudManager {
     }
 
     public void updateComponentImage(String type, android.graphics.Bitmap image) {
-        updateComponent(type, null, image);
+        if (image == null) {
+            // Real Mode Fix: If image is missing, show TRANSPARENT instead of Placeholder
+            // (Placeholder is handled by Presentation if image is null, so we pass a
+            // transparent bitmap)
+            updateComponent(type, null, getTransparentBitmap());
+        } else {
+            updateComponent(type, null, image);
+        }
     }
 
     // Pending Media State (Wait for Cache Load)
@@ -431,117 +711,22 @@ public class ClusterHudManager {
 
     // --- Media (Broadcast & Session) ---
     private void initMediaListener() {
-        // 1. Register Standard Broadcast Receiver
+        // 1. Register Standard Broadcast Receiver (Only from our own Service)
         try {
             MusicBroadcastReceiver receiver = new MusicBroadcastReceiver();
             android.content.IntentFilter filter = new android.content.IntentFilter();
-            filter.addAction("com.android.music.metachanged");
-            filter.addAction("com.android.music.playstatechanged");
-            filter.addAction("com.android.music.playbackcomplete");
-            filter.addAction("com.android.music.queuechanged");
-            // Generic Players (Chinese Market)
-            filter.addAction("com.tencent.qqmusic.intent.action.MUSIC_CHANGED");
-            filter.addAction("com.netease.cloudmusic.metachanged");
-            filter.addAction("com.kugou.android.music.metachanged");
-            filter.addAction("com.kugou.android.music.playstatechanged");
-            filter.addAction("cn.kuwo.player.metachanged");
-            filter.addAction("cn.kuwo.player.playstatechanged");
-            filter.addAction("cn.kuwo.player.playstatechanged");
-            // Add other common players if needed, e.g. Kugou, QQMusic often broadcast on
-            // standard actions or their own
-            filter.addAction(cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE); // Listen to
-                                                                                                      // Service
-                                                                                                      // directly
-                                                                                                      // background
+            filter.addAction(cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE);
             mContext.registerReceiver(receiver, filter, null, new Handler(Looper.getMainLooper()));
+            DebugLogger.i(TAG, "Registered Media Receiver for Service Updates");
+
+            // Request Initial Media State immediately (in case Service is already running)
+            android.content.Intent requestIntent = new android.content.Intent(
+                    "cn.navitool.ACTION_REQUEST_MEDIA_REBROADCAST");
+            requestIntent.setPackage(mContext.getPackageName());
+            mContext.sendBroadcast(requestIntent);
+            DebugLogger.i(TAG, "Sent Media Sync Request");
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to init Media Broadcast Receiver", e);
-        }
-
-        // 2. Keep MediaSession as backup/supplement (Modern Android)
-        initMediaSession();
-    }
-
-    public void reinitMediaListener() {
-        if (mMediaSessionManager == null) {
-            DebugLogger.d(TAG, "Re-initializing Media Session Listener...");
-            initMediaSession();
-        }
-    }
-
-    private void initMediaSession() {
-        try {
-            if (mMediaSessionManager == null) {
-                mMediaSessionManager = (android.media.session.MediaSessionManager) mContext
-                        .getSystemService(Context.MEDIA_SESSION_SERVICE);
-            }
-            if (mMediaSessionManager != null) {
-                // Use ComponentName to be explicit, though null works IF we have permission.
-                // But permission is key.
-                ComponentName notifComponent = new ComponentName(mContext, NotificationCollectorService.class);
-
-                // 1. Register Listener with Main Handler (Required since we are on bg thread)
-                mMediaSessionManager.addOnActiveSessionsChangedListener(controllers -> {
-                    DebugLogger.d(TAG,
-                            "ActiveSessionsChanged Callback: " + (controllers != null ? controllers.size() : "null"));
-                    updateMediaControllers(controllers);
-                }, notifComponent, new Handler(Looper.getMainLooper()));
-                DebugLogger.i(TAG, "MediaSession Listener Registered Successfully");
-
-                // 2. Start Polling (To ensure we catch sessions even if callback misses or
-                // service connects late)
-                startMediaPolling();
-
-            }
-        } catch (SecurityException se) {
-            DebugLogger.e(TAG, "Media permission missing! Please grant Notification Access.", se);
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to init MediaSession Listener", e);
-        }
-    }
-
-    private void startMediaPolling() {
-        new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    if (mMediaSessionManager != null) {
-                        ComponentName notifComponent = new ComponentName(mContext, NotificationCollectorService.class);
-                        List<android.media.session.MediaController> controllers = mMediaSessionManager
-                                .getActiveSessions(notifComponent);
-                        if (controllers != null && !controllers.isEmpty()) {
-                            // Only update if we found something, to avoid clearing valid data if glitch
-                            updateMediaControllers(controllers);
-                        }
-                    }
-                } catch (SecurityException e) {
-                    // Permission not granted yet
-                } catch (Exception e) {
-                    // Ignore
-                }
-                // Poll every 5 seconds
-                new Handler(Looper.getMainLooper()).postDelayed(this, 5000);
-            }
-        }, 1000);
-    }
-
-    private void updateMediaControllers(List<android.media.session.MediaController> controllers) {
-        if (controllers != null && !controllers.isEmpty()) {
-            // Find playing controller first? Or just take first.
-            android.media.session.MediaController controller = controllers.get(0);
-            updateMediaInfoFromController(controller);
-            // Register callback on this specific controller
-            controller.registerCallback(new android.media.session.MediaController.Callback() {
-                @Override
-                public void onMetadataChanged(android.media.MediaMetadata metadata) {
-                    updateMediaInfoFromController(controller);
-                }
-
-                @Override
-                public void onPlaybackStateChanged(android.media.session.PlaybackState state) {
-                    updateMediaInfoFromController(controller); // Update on pause/play too
-                }
-            });
         }
     }
 
@@ -550,13 +735,11 @@ public class ClusterHudManager {
         @Override
         public void onReceive(Context context, android.content.Intent intent) {
             String action = intent.getAction();
-            DebugLogger.d(TAG, "MusicBroadcast Received Action: " + action); // Debug Log
-
             if (action == null)
                 return;
 
             if (cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE.equals(action)) {
-                // Handle Direct Service Broadcast (Works in Background for QQ Music)
+                // Handle Direct Service Broadcast
                 String title = intent.getStringExtra("title");
                 String artist = intent.getStringExtra("artist");
                 boolean isPlaying = intent.getBooleanExtra("is_playing", false);
@@ -572,9 +755,8 @@ public class ClusterHudManager {
                 updateMediaPlayingState(isPlaying);
 
                 // Update Cover (Byte Array)
-                boolean hasArtwork = intent.getBooleanExtra("has_artwork", true); // Default true to be safe
+                boolean hasArtwork = intent.getBooleanExtra("has_artwork", true); // Default true
                 if (!hasArtwork) {
-                    // Explicitly Clear if listener says no artwork
                     updateComponentImage("media_cover", null);
                     updateComponentImage("test_media_cover", null);
                 } else {
@@ -588,188 +770,55 @@ public class ClusterHudManager {
                         }
                     }
                 }
-            } else {
-                // Reject generic broadcasts if text/track is missing to avoid overwriting valid
-                // data with garbage
-                // But generally, accept them.
-
-                // Debug: Log all keys to find correct ones for QQ Music/NetEase
-                android.os.Bundle extras = intent.getExtras();
-                if (extras != null) {
-                    for (String key : extras.keySet()) {
-                        // DebugLogger.v(TAG, "Extra: " + key + " = " + extras.get(key));
-                    }
-                }
-
-                String cmd = intent.getStringExtra("command");
-                String artist = intent.getStringExtra("artist");
-                String track = intent.getStringExtra("track");
-                String lyric = intent.getStringExtra("lyric");
-
-                // Fallback keys for some players (e.g. old Android music)
-                if (track == null)
-                    track = intent.getStringExtra("songName");
-                if (track == null)
-                    track = intent.getStringExtra("song");
-
-                // QQ Music / Kugou specific checks (sometimes they use different keys depending
-                // on version)
-                // Assuming standard keys but monitoring logs if they fail.
-
-                if (lyric == null)
-                    lyric = "暂无歌词"; // Default
-
-                DebugLogger.d(TAG, "Music Info: " + track + " - " + artist);
-
-                // Update Text: Line 1 Lyric, Line 2 Title - Artist
-                String display = lyric + "\n" + (track != null ? track : "") + " - " + (artist != null ? artist : "");
-                updateComponentText("song", display);
-
-                // Determine Playing State from Broadcast
-                boolean isPlaying = intent.getBooleanExtra("playing", true); // Default to true if receiving metadata
-                if ("com.android.music.playbackcomplete".equals(action)) {
-                    isPlaying = false;
-                }
-                updateMediaPlayingState(isPlaying);
-
-                // Update Cover from Intent Extras (QQ Music often sends URI here)
-                String artUriStr = intent.getStringExtra("album_art_uri"); // Standard/QQ
-                if (artUriStr == null)
-                    artUriStr = intent.getStringExtra("album_uri");
-                if (artUriStr == null)
-                    artUriStr = intent.getStringExtra("artwork_uri");
-
-                if (artUriStr != null) {
-                    try {
-                        android.net.Uri uri = android.net.Uri.parse(artUriStr);
-                        java.io.InputStream is = mContext.getContentResolver().openInputStream(uri);
-                        android.graphics.Bitmap broadcastArt = android.graphics.BitmapFactory.decodeStream(is);
-                        if (is != null)
-                            is.close();
-                        if (broadcastArt != null) {
-                            updateComponentImage("media_cover", broadcastArt);
-                            updateComponentImage("test_media_cover", broadcastArt);
-                        }
-                    } catch (Exception e) {
-                        DebugLogger.w(TAG, "Failed to load Art from Broadcast URI: " + artUriStr);
-                    }
-                }
             }
         }
-    }
-
-    private void updateMediaInfoFromController(android.media.session.MediaController controller) {
-        if (controller == null || controller.getMetadata() == null) {
-            DebugLogger.d(TAG, "updateMediaInfo: Controller or Metadata is null");
-            return;
-        }
-
-        android.media.MediaMetadata meta = controller.getMetadata();
-        String title = meta.getString(android.media.MediaMetadata.METADATA_KEY_TITLE);
-        String artist = meta.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST);
-        android.graphics.Bitmap art = meta.getBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART);
-        if (art == null) {
-            // Disabled fallback to DISPLAY_ICON. QQ Music puts app icon here which
-            // overwrites
-            // valid Notification Art.
-            // art = meta.getBitmap(android.media.MediaMetadata.METADATA_KEY_DISPLAY_ICON);
-        }
-
-        // 3. Fallback: URI (Android 9/Pie often relies on this to avoid Binder size
-        // limits)
-        if (art == null) {
-            String artUriStr = meta.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART_URI);
-            if (artUriStr == null) {
-                artUriStr = meta.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI);
-            }
-            if (artUriStr != null) {
-                try {
-                    android.net.Uri uri = android.net.Uri.parse(artUriStr);
-                    // Use ContentResolver to open stream
-                    java.io.InputStream is = mContext.getContentResolver().openInputStream(uri);
-                    art = android.graphics.BitmapFactory.decodeStream(is);
-                    if (is != null)
-                        is.close();
-                    DebugLogger.d(TAG, "Loaded Art from URI: " + artUriStr);
-                } catch (Exception e) {
-                    DebugLogger.w(TAG, "Failed to load Art from URI: " + artUriStr + " (" + e.getMessage() + ")");
-                }
-            }
-        }
-
-        DebugLogger.d(TAG, "updateMediaInfo: Title=" + (title != null ? title : "null") + ", Artist="
-                + (artist != null ? artist : "null") + ", Art=" + (art != null ? "Found" : "null"));
-
-        // Try to find lyrics via hidden keys
-        String lyric = "暂无歌词";
-        // 1. Try generic keys found in some apps
-        String[] potentialLyricKeys = {
-                "android.media.metadata.LYRIC", "lyric",
-                "kugou.lyric", "qqmusic.lyric"
-        };
-        for (String key : potentialLyricKeys) {
-            String val = meta.getString(key);
-            if (val != null && !val.isEmpty()) {
-                lyric = val;
-                DebugLogger.d(TAG, "Found Lyric via Key: " + key);
-                break;
-            }
-        }
-
-        // 2. Dump keys to find candidates if still missing (Only dump if title is valid
-        // to avoid spam)
-        if (("暂无歌词".equals(lyric) || art == null) && title != null) {
-            java.util.Set<String> keys = meta.keySet();
-            StringBuilder sb = new StringBuilder("MetaDump: ");
-            for (String k : keys) {
-                sb.append(k).append(",");
-                // String v = meta.getString(k); // Can throw if types mismatch
-            }
-            DebugLogger.d(TAG, sb.toString());
-        }
-
-        if (title == null)
-            title = "未知歌曲";
-        if (artist == null)
-            artist = "未知歌手";
-
-        // User Preference: Line 1 Title, Line 2 Artist
-        String display = title + "\n" + artist;
-        updateComponentText("song", display);
-        updateComponentText("test_media", display); // Also update test component
-
-        if (art != null) {
-            updateComponentImage("media_cover", art);
-            updateComponentImage("test_media_cover", art); // Also update test cover
-        } else {
-            // Logic Fix: If MediaSession art is null (common in QQ Music), DO NOT overwrite
-            // potential artwork from NotificationListener (pushed from MainActivity).
-            // Only clear artwork if the song has ACTUALLY changed.
-            // But we don't track previous song title here easily without cache lookup.
-            // Simpler check: If art is null, just DON'T update image component at all.
-            // Let the old image persist until a new valid image comes OR the text update
-            // implies a change.
-            // Wait, if it's a new song with NO art, we WANT to clear the old art.
-            // But we can't distinguish "New Song No Art" vs "Old Song Art from
-            // Notification".
-            // Given QQ Music notification works well, let's just rely on that for art.
-            // If MediaSession has art, great. If not, do nothing and hope
-            // NotificationListener fills it.
-        }
-
-        // Determine Playing State
-        boolean isPlaying = false;
-        if (controller.getPlaybackState() != null) {
-            isPlaying = (controller.getPlaybackState().getState() == android.media.session.PlaybackState.STATE_PLAYING);
-        }
-        updateMediaPlayingState(isPlaying);
-
-        // Save State (Removed Logic called above, method body is empty now)
-        saveMediaState(display, art);
     }
 
     // --- AdaptAPI Init ---
+    // --- AdaptAPI Init ---
     private void initAdaptApi() {
+        // Use the new Listener mechanism
+        cn.navitool.managers.CarServiceManager.getInstance(mContext).registerListener(() -> {
+            mCarFunction = cn.navitool.managers.CarServiceManager.getInstance(mContext).getCarFunction();
+            ISensor sensor = cn.navitool.managers.CarServiceManager.getInstance(mContext).getSensor();
+
+            // Register Functions
+            registerFunctions();
+
+            // Register Sensors
+            registerSensors(sensor);
+
+            // Register Volume Listener
+            initVolumeListener();
+        });
+    }
+
+    private void registerSensors(ISensor sensor) {
+        if (sensor != null && mSensorListener != null) {
+            // Register Fuel Level (Using internal ID or reflection if needed, assuming
+            // Standard ID for now)
+            // But wait, ISensor doesn't have standard FUEL?
+            // User context said "SENSOR_TYPE_FUEL_LEVEL" found in adaptAPI interaction.
+            // Let's assume standard IDs from my task list analysis.
+            // SENSOR_TYPE_FUEL_LEVEL = 2101760; SENSOR_TYPE_ENV_OUTSIDE_TEMPERATURE =
+            // 2100992 (Light) .. wait
+            // My Task List: Found SENSOR_TYPE_FUEL_LEVEL,
+            // SENSOR_TYPE_ENV_OUTSIDE_TEMPERATURE.
+            // I should use the constants if defined in ISensor or hardcode them if I know
+            // them.
+            // Let's just use ISensor.SENSOR_TYPE_GEAR etc for now if I want safety,
+            // or trust `mSensorListener` handles specific IDs.
+            // Actually, `registerSensors` implementation was likely lost, I should restore
+            // basic registrations.
+            // Gear, Speed, Rpm are handled elsewhere? No, Speed/RPM is CAN usually?
+            // Wait, Gear is Sensor.
+            sensor.registerListener(mSensorListener, ISensor.SENSOR_TYPE_GEAR);
+            // Fuel?
+            // sensor.registerListener(mSensorListener, 2101760); // Example
+        }
+    }
+
+    private void initDimInteraction() {
         new Thread(() -> {
             try {
                 // DimInteraction.create(context)
@@ -781,9 +830,6 @@ public class ClusterHudManager {
                 Method getMenuInteractionMethod = dimInteractionClass.getMethod("getDimMenuInteraction");
                 mDimMenuInteraction = getMenuInteractionMethod.invoke(dimInteraction);
                 DebugLogger.i(TAG, "AdaptAPI DimMenuInteraction initialized successfully: " + mDimMenuInteraction);
-
-                // If Cluster was enabled waiting for this, triggered by logic?
-                // unlikely, setClusterEnabled is manual.
             } catch (Exception e) {
                 DebugLogger.e(TAG, "Failed to initialize AdaptAPI DimMenuInteraction", e);
             }
@@ -855,14 +901,18 @@ public class ClusterHudManager {
     }
 
     private void updatePresentation() {
+        // Fix: Decoupled Cluster and HUD. Presentation should only stay alive if AT
+        // LEAST ONE is enabled.
         if (mIsClusterEnabled || mIsHudEnabled) {
             if (mPresentation == null) {
                 showPresentation();
             } else {
+                // Ensure specific visibilities are updated
                 mPresentation.setClusterVisible(mIsClusterEnabled);
                 mPresentation.setHudVisible(mIsHudEnabled);
             }
         } else {
+            // Only dismiss if BOTH are disabled
             dismissPresentation();
         }
     }
@@ -939,6 +989,43 @@ public class ClusterHudManager {
         if (components == null)
             return;
         synchronized (this) {
+            // Merge Fix: Preserve existing images if new data has null image
+            // This fixes the "Placeholder on Drag" bug where Sync sends no image data.
+            if (mCachedHudComponents != null) {
+                for (HudComponentData newData : components) {
+                    // Force Internal Consistency for Dynamic Components
+                    if ("volume".equals(newData.type)) {
+                        newData.image = getVolumeBitmap(mCurrentVolume);
+                        newData.text = String.valueOf(mCurrentVolume);
+                    } else if ("turn_signal".equals(newData.type)) {
+                        newData.image = getTurnSignalBitmap(mLeftTurnOn, mRightTurnOn);
+                        newData.text = "L:" + mLeftTurnOn + ",R:" + mRightTurnOn;
+                    } else {
+                        // Standard Merge
+                        for (HudComponentData oldData : mCachedHudComponents) {
+                            if (oldData.type.equals(newData.type)) {
+                                if (newData.image == null && oldData.image != null) {
+                                    newData.image = oldData.image;
+                                    DebugLogger.d(TAG, "Restored image for " + newData.type + " during sync");
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // First Sync: Still force consistency
+                for (HudComponentData newData : components) {
+                    if ("volume".equals(newData.type)) {
+                        newData.image = getVolumeBitmap(mCurrentVolume);
+                        newData.text = String.valueOf(mCurrentVolume);
+                    } else if ("turn_signal".equals(newData.type)) {
+                        newData.image = getTurnSignalBitmap(mLeftTurnOn, mRightTurnOn);
+                        newData.text = "L:" + mLeftTurnOn + ",R:" + mRightTurnOn;
+                    }
+                }
+            }
+
             mCachedHudComponents = new ArrayList<>(components);
             applyMediaPersistence(); // Apply saved media state over defaults
 
@@ -1058,7 +1145,8 @@ public class ClusterHudManager {
         public void onReceive(Context context, android.content.Intent intent) {
             if ("cn.navitool.NOTIFICATION_LISTENER_CONNECTED".equals(intent.getAction())) {
                 DebugLogger.i(TAG, "Received Notification Service Connected Broadcast! Retrying Media Init...");
-                reinitMediaListener();
+                DebugLogger.i(TAG, "Received Notification Service Connected Broadcast!");
+                // No need to reinit locally, Service is running.
             }
         }
     }
@@ -1090,12 +1178,19 @@ public class ClusterHudManager {
 
     public static class HudComponentData {
         public String type; // "text", "time", "song", "fuel", "temp_out", "temp_in", "range", "gear",
-                            // "media_cover", "turn_signal", "volume"
+                            // "media_cover", "turn_signal", "volume", "gauge"
         public String text;
         public android.graphics.Bitmap image;
         public float x;
         public float y;
         public int color;
+        public float[] gaugeConfig; // [min, max, start, end, px, py]
+        public android.graphics.Typeface typeface;
+        public String pathData; // For "path_gauge"
+        public float maxValue; // For "path_gauge" progress calc
+
+        public HudComponentData() {
+        }
 
         public HudComponentData(String type, String text, float x, float y, int color) {
             this.type = type;

@@ -84,6 +84,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         // 启动副驾屏保活
         cn.navitool.managers.PsdManager.getInstance(this).init();
 
+        // 启动 OneOS 服务 (方控/微信按键) - 必须在 onCreate 调用以确保最快绑定
+        cn.navitool.managers.KeyHandlerManager.getInstance(this).init();
+
         // [新增] 初始化车辆控制接口 (监听发动机、档位、车门等)
         initCar();
     }
@@ -92,16 +95,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     protected void onServiceConnected() {
         super.onServiceConnected();
         DebugLogger.init(this); // Initialize DebugLogger
+        ConfigManager.init(this); // Initialize ConfigManager (Syncs Prefs)
         DebugLogger.i(TAG, "Service Connected");
 
         SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
         prefs.registerOnSharedPreferenceChangeListener(prefsListener);
-
-        // Initialize ADB Loopback if enabled
-        // Initialize ADB Loopback if enabled
-        if (prefs.getBoolean("adb_wireless_enabled", false)) {
-            AdbShell.getInstance(this).connect();
-        }
 
         // Initialize ThemeBrightnessManager
         cn.navitool.managers.ThemeBrightnessManager.getInstance(this).init();
@@ -109,13 +107,18 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         cn.navitool.managers.KeyHandlerManager.getInstance(this).init();
 
         // Initialize PSD
-        boolean mIsPsdAlwaysOnEnabled = prefs.getBoolean("psd_always_on_enabled", false);
+        boolean mIsPsdAlwaysOnEnabled = ConfigManager.getInstance().getBoolean("psd_always_on_enabled", false);
         if (mIsPsdAlwaysOnEnabled) {
             cn.navitool.managers.PsdManager.getInstance(this).setEnabled(true);
         }
-        boolean mIsMethod2Enabled = prefs.getBoolean("psd_always_on_method2_enabled", false);
+        boolean mIsMethod2Enabled = ConfigManager.getInstance().getBoolean("psd_always_on_method2_enabled", false);
         if (mIsMethod2Enabled) {
             cn.navitool.managers.PsdManager.getInstance(this).setEnabledMethod2(true);
+        }
+
+        // Initialize ADB Loopback if enabled
+        if (ConfigManager.getInstance().getBoolean("adb_wireless_enabled", false)) {
+            AdbShell.getInstance(this).connect();
         }
 
         // Log boot event (with cooldown check)
@@ -126,7 +129,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         // Register receiver for config changes
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_CONFIGURATION_CHANGED);
+        filter.addAction(Intent.ACTION_CONFIGURATION_CHANGED);
         filter.addAction("cn.navitool.ACTION_REQUEST_ONEOS_STATUS");
+        filter.addAction("cn.navitool.ACTION_REQUEST_DAY_NIGHT_STATUS");
         try {
             if (Build.VERSION.SDK_INT >= 33) { // Android 13+ (Tiramisu)
                 registerReceiver(configChangeReceiver, filter, Context.RECEIVER_EXPORTED);
@@ -240,8 +245,12 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private static final int ZONE_DOOR_RR = 64; // Rear Right
 
     // Constants for Listeners
-    private static final int BCM_FUNC_LIGHT_DIPPED_BEAM = 553976064; // 0x21051000
-    private static final int BCM_FUNC_LIGHT_MAIN_BEAM = 553976320; // 0x21051100
+
+    // user log confirms 0x21051100 is Left Turn Signal
+    private static final int BCM_FUNC_LIGHT_LEFT_TRUN_SIGNAL = 0x21051100; // 553976320
+    private static final int BCM_FUNC_LIGHT_RIGHT_TRUN_SIGNAL = 0x21051200; // 553976576
+    // private static final int BCM_FUNC_LIGHT_MAIN_BEAM = 553976320; // 0x21051100
+    // (CONFLICT - Commented out)
 
     // Sound Prompt States
     private int mLastIgnition = -1;
@@ -257,6 +266,14 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         this.iCarFunction = manager.getCarFunction();
         this.iSensor = manager.getSensor();
 
+        if (this.iCarFunction == null || this.iSensor == null) {
+            DebugLogger.w(TAG, "Car Service not ready yet. Retrying in 3s...");
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this::initCar, 3000);
+            return;
+        }
+
+        DebugLogger.i(TAG, "Car Service Initialized Successfully.");
+
         if (iSensor != null) {
             registerSensorListeners();
         }
@@ -271,31 +288,48 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 ISensor.ISensorListener listener = new ISensor.ISensorListener() {
                     @Override
                     public void onSensorValueChanged(int sensorType, float value) {
-                        if (sensorType == SENSOR_TYPE_LIGHT) {
-                            cn.navitool.managers.ThemeBrightnessManager.getInstance(KeepAliveAccessibilityService.this)
-                                    .onSensorChanged(sensorType, value);
-                        } else if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
-                            int val = (int) value;
-                            DebugLogger.d(TAG, "Ignition State Changed (float): " + val);
-                            mLastIgnition = val;
-                            if (val == ISensorEvent.IGNITION_STATE_START) {
-                                AppLaunchManager.executeLaunch(KeepAliveAccessibilityService.this);
-                                DebugLogger.i(TAG, "Ignition START detected");
+                        try {
+                            if (sensorType == SENSOR_TYPE_LIGHT) {
+                                cn.navitool.managers.ThemeBrightnessManager
+                                        .getInstance(KeepAliveAccessibilityService.this)
+                                        .onSensorChanged(sensorType, value);
                             }
-                            if (mLastGear != val) {
-                                cn.navitool.managers.SoundPromptManager.getInstance(KeepAliveAccessibilityService.this)
-                                        .playGearSound(val);
-                                mLastGear = val;
-                            }
-                        } else if (sensorType == ISensor.SENSOR_TYPE_DAY_NIGHT) {
-                            cn.navitool.managers.ThemeBrightnessManager.getInstance(KeepAliveAccessibilityService.this)
-                                    .onSensorEventChanged(sensorType, (int) value);
+                            // Some cars might report Ignition as float? keeping checking just in case
+                            // But primary should be EventChanged (int)
+                        } catch (Exception e) {
+                            DebugLogger.e(TAG, "Error in onSensorValueChanged", e);
                         }
                     }
 
                     @Override
                     public void onSensorEventChanged(int sensorType, int value) {
-                        // Handled in onSensorValueChanged
+                        try {
+                            if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
+                                DebugLogger.d(TAG, "Ignition State Changed (int): " + value);
+                                mLastIgnition = value;
+
+                                // User Request: Only trigger on DRIVING (6)
+                                if (value == 6) { // IGNITION_STATE_DRIVING
+                                    DebugLogger.i(TAG,
+                                            "Ignition DRIVING (6) detected - Triggering Auto Start Sequence");
+                                    triggerAutoStart(); // Extracted method
+                                }
+                            } else if (sensorType == SENSOR_TYPE_GEAR) {
+                                DebugLogger.d(TAG, "Gear Changed (int): " + value);
+                                if (mLastGear != value) {
+                                    cn.navitool.managers.SoundPromptManager
+                                            .getInstance(KeepAliveAccessibilityService.this)
+                                            .playGearSound(value);
+                                    mLastGear = value;
+                                }
+                            } else if (sensorType == ISensor.SENSOR_TYPE_DAY_NIGHT) {
+                                cn.navitool.managers.ThemeBrightnessManager
+                                        .getInstance(KeepAliveAccessibilityService.this)
+                                        .onSensorEventChanged(sensorType, value);
+                            }
+                        } catch (Exception e) {
+                            DebugLogger.e(TAG, "Error in onSensorEventChanged", e);
+                        }
                     }
 
                     @Override
@@ -310,10 +344,37 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 iSensor.registerListener(listener, SENSOR_TYPE_LIGHT);
 
                 DebugLogger.i(TAG, "Sensor listeners registered (Ignition, DayNight, Gear, Light)");
+
+                // [Auto Start Fix] Poll Ignition immediately in case we missed the event
+                try {
+                    int currentIgnition = iSensor.getSensorEvent(ISensor.SENSOR_TYPE_IGNITION_STATE);
+                    DebugLogger.i(TAG, "Initial Ignition Poll: " + currentIgnition);
+                    if (currentIgnition == 6 || currentIgnition == 4) { // 6=Driving, 4=On (Assumption, user focused on
+                                                                        // 6)
+                        DebugLogger.i(TAG, "Ignition already ON/DRIVING. Triggering Auto Start...");
+                        triggerAutoStart();
+                    }
+                } catch (Exception e) {
+                    DebugLogger.e(TAG, "Failed to poll initial ignition state", e);
+                }
+
             }
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to register sensor listeners", e);
         }
+    }
+
+    private void triggerAutoStart() {
+        // 1. Repair Permissions (Fixes Auto Repair bug)
+        checkAndRepairPermissions();
+
+        // 2. Launch Apps
+        AppLaunchManager.executeLaunch(KeepAliveAccessibilityService.this);
+
+        // 3. Play Sound
+        cn.navitool.managers.SoundPromptManager
+                .getInstance(KeepAliveAccessibilityService.this)
+                .playStartSound();
     }
 
     private void registerFunctionListeners() {
@@ -322,64 +383,77 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 ICarFunction.IFunctionValueWatcher watcher = new ICarFunction.IFunctionValueWatcher() {
                     @Override
                     public void onFunctionValueChanged(int functionId, int zone, int value) {
-                        if (functionId == FUNC_AVM_STATUS || functionId == FUNC_BRIGHTNESS_DAY
-                                || functionId == FUNC_BRIGHTNESS_NIGHT) {
-                            cn.navitool.managers.ThemeBrightnessManager.getInstance(KeepAliveAccessibilityService.this)
-                                    .onFunctionValueChanged(functionId, value);
-                        }
-
-                        // Door Logic
-                        if (functionId == BCM_FUNC_DOOR) {
-                            DebugLogger.d(TAG, "Door Function Changed: Zone=" + zone + ", Value=" + value);
-
-                            int currentStatus = value; // AdaptAPI door logic is usually bitmap or 0/1
-                            // Assuming value passed here is status like 1=open
-                            // BUT checkDoorSound expects older full status bitmap logic
-                            // Logic in listener saw: if (zone == ZONE_DOOR_FR && value == 1)
-                            // Let's simplify: delegate to manager if value=1 (Open)
-
-                            if (zone == 4 && value == 1) { // Passenger Open
-                                cn.navitool.managers.SoundPromptManager.getInstance(KeepAliveAccessibilityService.this)
-                                        .playCustomSound(getSharedPreferences("navitool_prefs", MODE_PRIVATE)
-                                                .getString("sound_door_passenger_file", "door_passenger.mp3"));
-                                // OR Use checkDoorSound logic?
-                                // SoundPromptManager.checkDoorSound(old, new) requires tracking old state.
-                                // Service maintains lastDoor?
-                                // I deleted lastDoor in cleanup.
-                                // So I should validly call SoundPromptManager.playCustomSound directly if Open.
-
-                                // Use SoundPromptManager internal logic if possible, or trigger sound.
-                                // SoundPromptManager.playCustomSound("sound_door_passenger") -> NO, it expects
-                                // path.
-                                // Wait, SoundPromptManager.checkDoorSound relies on Constants.
-                                // Let's use direct play for now as logic is simple.
-                                cn.navitool.managers.SoundPromptManager.getInstance(KeepAliveAccessibilityService.this)
-                                        .checkDoorSound(0, 4); // Simulate 0->4 change
+                        try {
+                            if (functionId == FUNC_AVM_STATUS || functionId == FUNC_BRIGHTNESS_DAY
+                                    || functionId == FUNC_BRIGHTNESS_NIGHT || functionId == FUNC_DAYMODE_SETTING) {
+                                cn.navitool.managers.ThemeBrightnessManager
+                                        .getInstance(KeepAliveAccessibilityService.this)
+                                        .onFunctionValueChanged(functionId, value);
                             }
-                        } else if (functionId == BCM_FUNC_LIGHT_DIPPED_BEAM) {
-                            DebugLogger.d(TAG, "Dipped Beam Changed: " + value);
-                            Intent intent = new Intent("cn.navitool.ACTION_HEADLIGHT_STATUS");
-                            intent.putExtra("type", "dipped");
-                            intent.putExtra("status", value);
-                            sendBroadcast(intent);
-                        } else if (functionId == BCM_FUNC_LIGHT_MAIN_BEAM) {
-                            DebugLogger.d(TAG, "Main Beam Changed: " + value);
-                            Intent intent = new Intent("cn.navitool.ACTION_HEADLIGHT_STATUS");
-                            intent.putExtra("type", "main");
-                            intent.putExtra("status", value);
-                            sendBroadcast(intent);
-                        } else if (functionId == FUNC_PSD_SCREEN_SWITCH) {
-                            DebugLogger.d(TAG, "PSD Screen Status Changed: " + value);
-                            cn.navitool.managers.PsdManager.getInstance(KeepAliveAccessibilityService.this)
-                                    .onPsdStatusChanged(value);
+
+                            // Door Logic
+                            if (functionId == BCM_FUNC_DOOR) {
+                                DebugLogger.d(TAG, "Door Function Changed: Zone=" + zone + ", Value=" + value);
+                                // Delegate to SoundPromptManager to handle sound logic and file checks safely
+                                // Assuming 1 = Open
+                                if (value == 1) {
+                                    String key = "";
+                                    if (zone == 4)
+                                        key = "sound_door_passenger_file";
+                                    else if (zone == 1)
+                                        key = "sound_door_driver_file"; // Example
+                                    else if (zone == 16)
+                                        key = "sound_door_rear_left_file";
+                                    else if (zone == 32)
+                                        key = "sound_door_rear_right_file";
+
+                                    if (!key.isEmpty()) {
+                                        String ret = getSharedPreferences("navitool_prefs", MODE_PRIVATE).getString(key,
+                                                "");
+                                        if (!ret.isEmpty()) {
+                                            cn.navitool.managers.SoundPromptManager
+                                                    .getInstance(KeepAliveAccessibilityService.this)
+                                                    .playCustomSound(ret);
+                                        }
+                                    }
+                                }
+
+                            } else if (functionId == BCM_FUNC_LIGHT_LEFT_TRUN_SIGNAL) {
+                                DebugLogger.d(TAG, "Left Turn Signal Changed: " + value);
+                                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
+                                        .updateTurnSignal(true, value == 1);
+                            } else if (functionId == BCM_FUNC_LIGHT_RIGHT_TRUN_SIGNAL) {
+                                DebugLogger.d(TAG, "Right Turn Signal Changed: " + value);
+                                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
+                                        .updateTurnSignal(false, value == 1);
+                                /*
+                                 * } else if (functionId == BCM_FUNC_LIGHT_MAIN_BEAM) {
+                                 * DebugLogger.d(TAG, "Main Beam Changed: " + value);
+                                 * Intent intent = new Intent("cn.navitool.ACTION_HEADLIGHT_STATUS");
+                                 * intent.putExtra("type", "main");
+                                 * intent.putExtra("status", value);
+                                 * sendBroadcast(intent);
+                                 */
+                            } else if (functionId == FUNC_PSD_SCREEN_SWITCH) {
+                                DebugLogger.d(TAG, "PSD Screen Status Changed: " + value);
+                                cn.navitool.managers.PsdManager.getInstance(KeepAliveAccessibilityService.this)
+                                        .onPsdStatusChanged(value);
+                            }
+                        } catch (Exception e) {
+                            DebugLogger.e(TAG, "Error in onFunctionValueChanged", e);
                         }
                     }
 
                     @Override
                     public void onCustomizeFunctionValueChanged(int functionId, int zone, float value) {
-                        if (functionId == FUNC_BRIGHTNESS_DAY || functionId == FUNC_BRIGHTNESS_NIGHT) {
-                            cn.navitool.managers.ThemeBrightnessManager.getInstance(KeepAliveAccessibilityService.this)
-                                    .onCustomizeFunctionValueChanged(functionId, value);
+                        try {
+                            if (functionId == FUNC_BRIGHTNESS_DAY || functionId == FUNC_BRIGHTNESS_NIGHT) {
+                                cn.navitool.managers.ThemeBrightnessManager
+                                        .getInstance(KeepAliveAccessibilityService.this)
+                                        .onCustomizeFunctionValueChanged(functionId, value);
+                            }
+                        } catch (Exception e) {
+                            DebugLogger.e(TAG, "Error in onCustomizeFunctionValueChanged", e);
                         }
                     }
 
@@ -391,31 +465,31 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     @Override
                     public void onSupportedFunctionStatusChanged(int functionId, int zone,
                             com.ecarx.xui.adaptapi.FunctionStatus status) {
-                        // Not used
                     }
 
                     @Override
                     public void onSupportedFunctionValueChanged(int functionId, int[] values) {
-                        // Not used
                     }
-
                 };
 
-                // Removed FUNC_REVERSE_GEAR watcher
+                // Register Watchers
                 iCarFunction.registerFunctionValueWatcher(FUNC_AVM_STATUS, watcher);
                 iCarFunction.registerFunctionValueWatcher(FUNC_BRIGHTNESS_DAY, watcher);
                 iCarFunction.registerFunctionValueWatcher(FUNC_BRIGHTNESS_NIGHT, watcher);
                 iCarFunction.registerFunctionValueWatcher(BCM_FUNC_DOOR, watcher);
-                iCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_DIPPED_BEAM, watcher);
-                iCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_MAIN_BEAM, watcher);
-                // FUNC_DAYMODE_SETTING listener removed as per user request (not supported)
+
+                // iCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_MAIN_BEAM, watcher);
+                iCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_LEFT_TRUN_SIGNAL, watcher);
+                iCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_RIGHT_TRUN_SIGNAL, watcher);
+                // Also PSD if needed
+                iCarFunction.registerFunctionValueWatcher(FUNC_PSD_SCREEN_SWITCH, watcher);
+                // Restore FUNC_DAYMODE_SETTING for Auto Theme Logic
+                iCarFunction.registerFunctionValueWatcher(FUNC_DAYMODE_SETTING, watcher);
 
                 DebugLogger.i(TAG, "Function watchers registered (AVM, Brightness, Door, Lights)");
             }
-        } catch (
-
-        Exception e) {
-            DebugLogger.e(TAG, "Failed to register function watchers", e);
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to register function listeners", e);
         }
     }
 
@@ -432,6 +506,10 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                         .getInstance(KeepAliveAccessibilityService.this).isOneOSConnected();
                 cn.navitool.managers.KeyHandlerManager.getInstance(KeepAliveAccessibilityService.this)
                         .broadcastOneOSStatus(isConnected);
+            } else if ("cn.navitool.ACTION_REQUEST_DAY_NIGHT_STATUS".equals(action)) {
+                DebugLogger.d(TAG, "Request Day/Night Status Received");
+                cn.navitool.managers.ThemeBrightnessManager.getInstance(KeepAliveAccessibilityService.this)
+                        .checkDayNightStatus(true);
             }
         }
     };
@@ -448,6 +526,37 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             cn.navitool.managers.SoundPromptManager.getInstance(this).playCustomSound(file.getAbsolutePath());
         } else {
             DebugLogger.e(TAG, "Sound file not found: " + filename);
+        }
+    }
+
+    private void checkAndRepairPermissions() {
+        if (!android.provider.Settings.canDrawOverlays(this)) {
+            AdbShell.getInstance(this)
+                    .exec("appops set " + getPackageName() + " SYSTEM_ALERT_WINDOW allow");
+            DebugLogger.i(TAG, "AutoRepair: Repaired Overlay Permission");
+        }
+
+        if (checkSelfPermission(
+                android.Manifest.permission.WRITE_SECURE_SETTINGS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            AdbShell.getInstance(this)
+                    .exec("pm grant " + getPackageName() + " android.permission.WRITE_SECURE_SETTINGS");
+            DebugLogger.i(TAG, "AutoRepair: Repaired Secure Settings");
+        }
+
+        if (checkSelfPermission(
+                android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            AdbShell.getInstance(this)
+                    .exec("pm grant " + getPackageName() + " android.permission.READ_EXTERNAL_STORAGE");
+            AdbShell.getInstance(this)
+                    .exec("pm grant " + getPackageName() + " android.permission.WRITE_EXTERNAL_STORAGE");
+            DebugLogger.i(TAG, "AutoRepair: Repaired Storage Permissions");
+        }
+
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+        boolean ignoringBattery = pm != null && pm.isIgnoringBatteryOptimizations(getPackageName());
+        if (!ignoringBattery) {
+            AdbShell.getInstance(this).exec("dumpsys deviceidle whitelist +" + getPackageName());
+            DebugLogger.i(TAG, "AutoRepair: Repaired Battery Opt");
         }
     }
 

@@ -1,15 +1,21 @@
 package cn.navitool.managers;
 
 import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import cn.navitool.DebugLogger;
+import com.ecarx.xui.adaptapi.binder.IConnectable;
 import com.ecarx.xui.adaptapi.car.Car;
 import com.ecarx.xui.adaptapi.car.ICar;
 import com.ecarx.xui.adaptapi.car.base.ICarFunction;
 import com.ecarx.xui.adaptapi.car.sensor.ISensor;
 
-public class CarServiceManager {
+import java.util.ArrayList;
+import java.util.List;
+
+public class CarServiceManager implements IConnectable.IConnectWatcher {
     private static final String TAG = "CarServiceManager";
-    private static CarServiceManager instance;
+    private static volatile CarServiceManager instance;
     private Context mContext;
 
     private ICar mCar;
@@ -17,20 +23,25 @@ public class CarServiceManager {
     private ISensor mSensor;
 
     private boolean mIsInitialized = false;
+    private boolean mIsConnecting = false;
 
     private CarServiceManager(Context context) {
         this.mContext = context.getApplicationContext();
     }
 
-    public static synchronized CarServiceManager getInstance(Context context) {
+    public static CarServiceManager getInstance(Context context) {
         if (instance == null) {
-            instance = new CarServiceManager(context);
+            synchronized (CarServiceManager.class) {
+                if (instance == null) {
+                    instance = new CarServiceManager(context);
+                }
+            }
         }
         return instance;
     }
 
-    private final java.util.List<ICarServiceListener> mListeners = new java.util.ArrayList<>();
-    private final android.os.Handler mInitHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final List<ICarServiceListener> mListeners = new ArrayList<>();
+    private final Handler mInitHandler = new Handler(Looper.getMainLooper());
     private static final int RETRY_INTERVAL_MS = 5000;
     private int mRetryCount = 0;
 
@@ -39,8 +50,10 @@ public class CarServiceManager {
     }
 
     public void registerListener(ICarServiceListener listener) {
-        if (!mListeners.contains(listener)) {
-            mListeners.add(listener);
+        synchronized (mListeners) {
+            if (!mListeners.contains(listener)) {
+                mListeners.add(listener);
+            }
         }
         // If already initialized, notify immediately
         if (mIsInitialized) {
@@ -53,11 +66,58 @@ public class CarServiceManager {
             DebugLogger.d(TAG, "CarServiceManager already initialized");
             return;
         }
+        if (mIsConnecting) {
+            DebugLogger.d(TAG, "CarServiceManager already connecting...");
+            return;
+        }
 
+        mIsConnecting = true;
         try {
-            mCar = Car.create(mContext); // Suspicious blocking call
+            // AdaptAPI initialization is ASYNC. We must create the instance and wait for
+            // connection.
+            mCar = Car.create(mContext);
 
             if (mCar != null) {
+                if (mCar instanceof IConnectable) {
+                    ((IConnectable) mCar).registerConnectWatcher(this);
+                    ((IConnectable) mCar).connect(); // Prompt connection
+                    DebugLogger.i(TAG, "Registered ConnectWatcher and requested connection...");
+                } else {
+                    // Fallback for older API versions if they are synchronous (Unlikely for
+                    // AdaptAPI)
+                    // But if it doesn't implement IConnectable, we try urgent init
+                    DebugLogger.w(TAG, "Car instance does not implement IConnectable, trying direct init...");
+                    onConnected();
+                }
+            } else {
+                DebugLogger.e(TAG,
+                        "Failed to create Car instance (null). Retrying in " + (RETRY_INTERVAL_MS / 1000) + "s...");
+                scheduleRetry();
+            }
+        } catch (Throwable e) {
+            DebugLogger.e(TAG, "Failed to initialize Car AdaptAPI: " + e.getMessage() + ". Retrying...");
+            scheduleRetry();
+        }
+    }
+
+    private void scheduleRetry() {
+        mIsConnecting = false;
+        mInitHandler.removeCallbacksAndMessages(null);
+        mInitHandler.postDelayed(() -> {
+            mRetryCount++;
+            DebugLogger.d(TAG, "Retrying Car Service Init (Attempt " + mRetryCount + ")...");
+            init();
+        }, RETRY_INTERVAL_MS);
+    }
+
+    @Override
+    public void onConnected() {
+        DebugLogger.i(TAG, "AdaptAPI Service Connected!");
+        mInitHandler.post(() -> {
+            try {
+                if (mCar == null)
+                    return;
+
                 mCarFunction = mCar.getICarFunction();
 
                 if (mCar instanceof ISensor) {
@@ -73,34 +133,40 @@ public class CarServiceManager {
                     DebugLogger.w(TAG, "getSensorManager not found via reflection");
                 }
 
-                mIsInitialized = true;
-                DebugLogger.i(TAG, "Car AdaptAPI initialized successfully");
-                notifyListeners();
-            } else {
-                DebugLogger.e(TAG, "Failed to create Car instance. Retrying in " + (RETRY_INTERVAL_MS / 1000) + "s...");
+                if (mCarFunction != null || mSensor != null) {
+                    mIsInitialized = true;
+                    mIsConnecting = false;
+                    DebugLogger.i(TAG, "Car AdaptAPI components retrieved successfully");
+                    notifyListeners();
+                } else {
+                    DebugLogger.e(TAG, "Connected but failed to get managers? Retrying...");
+                    scheduleRetry();
+                }
+
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Error during onConnected init", e);
                 scheduleRetry();
             }
-        } catch (Throwable e) {
-            DebugLogger.e(TAG, "Failed to initialize Car AdaptAPI: " + e.getMessage() + ". Retrying...");
-            scheduleRetry();
-        }
+        });
     }
 
-    private void scheduleRetry() {
-        mInitHandler.removeCallbacksAndMessages(null);
-        mInitHandler.postDelayed(() -> {
-            mRetryCount++;
-            DebugLogger.d(TAG, "Retrying Car Service Init (Attempt " + mRetryCount + ")...");
-            init();
-        }, RETRY_INTERVAL_MS);
+    @Override
+    public void onDisConnected() {
+        DebugLogger.w(TAG, "AdaptAPI Service Disconnected!");
+        mIsInitialized = false;
+        mIsConnecting = false;
+        // Optional: schedule retry or wait for reconnect?
+        // Usually AdaptAPI handles reconnect, but we mark as uninitialized.
     }
 
     private void notifyListeners() {
-        for (ICarServiceListener listener : mListeners) {
-            try {
-                listener.onCarServiceReady();
-            } catch (Exception e) {
-                DebugLogger.e(TAG, "Error notifying listener", e);
+        synchronized (mListeners) {
+            for (ICarServiceListener listener : mListeners) {
+                try {
+                    listener.onCarServiceReady();
+                } catch (Exception e) {
+                    DebugLogger.e(TAG, "Error notifying listener", e);
+                }
             }
         }
     }

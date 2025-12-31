@@ -44,15 +44,15 @@
             <ScrollView
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
-                android:paddingEnd="16dp">
+                android:paddingEnd="20dp">
                 
                 <LinearLayout
                     android:id="@+id/layoutHudEditorControls"
-                    android:layout_width="160dp"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
                     android:visibility="gone">
-                    <!-- Fixed width 160dp for consistency, or wrap_content if preferred -->
+                    <!-- Changed to wrap_content to minimize width per user request -->
                     
                     <Button
                         android:id="@+id/btnHudSwitchMode"
@@ -98,7 +98,6 @@
                         android:text="雪地模式开关"
                         android:layout_marginBottom="8dp"/>
                     
-
                 </LinearLayout>
             </ScrollView>
 
@@ -108,14 +107,14 @@
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:paddingStart="8dp">
+                android:paddingStart="0dp">
 
                 <!-- Preview Container (Legacy Logic: No Scaling, No Clip) -->
                 <FrameLayout
                     android:id="@+id/layoutHudPreviewContainer"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_gravity="top|center_horizontal"
+                    android:layout_gravity="center_vertical|start"
                     android:visibility="gone"
                     android:padding="4dp"
                     android:background="@drawable/border_hud_preview">

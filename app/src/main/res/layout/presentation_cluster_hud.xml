@@ -11,7 +11,7 @@
         android:layout_width="1920px"
         android:layout_height="720px"
         android:layout_gravity="top|start"
-        android:background="#ADD8E6"
+
         android:visibility="gone">
         
         <TextView
