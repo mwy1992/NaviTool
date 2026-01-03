@@ -62,6 +62,13 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="10dp"
                 android:text="Test 0-8000 RPM"/>
+            
+            <Button
+                android:id="@+id/btnClusterTestGear"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="换档 PRND"/>
         </LinearLayout>
 
         <!-- 2. Body: Theme Selector -->
@@ -110,6 +117,43 @@
                         android:layout_gravity="top|end"
                         android:layout_margin="8dp"
                         android:tint="#4CAF50"/>
+                </FrameLayout>
+                
+                <!-- Item 2: Audi RS Theme -->
+                <FrameLayout
+                    android:id="@+id/layoutClusterThemeAudiRs"
+                    android:layout_width="480px"
+                    android:layout_height="180px"
+                    android:background="@drawable/bg_cluster_normal"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:layout_marginEnd="16dp">
+                    
+                    <ImageView
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:src="@drawable/audi_rs_dial"
+                        android:scaleType="centerCrop"
+                        android:alpha="0.7"/>
+                    
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="奥迪RS"
+                        android:layout_gravity="center"
+                        android:textColor="#FF0000"
+                        android:textStyle="bold"
+                        android:textSize="16sp"/>
+
+                    <ImageView
+                        android:id="@+id/ivClusterCheckAudiRs"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_check"
+                        android:layout_gravity="top|end"
+                        android:layout_margin="8dp"
+                        android:tint="#4CAF50"
+                        android:visibility="gone"/>
                 </FrameLayout>
                 
                 <!-- Dynamic Items will be added here -->

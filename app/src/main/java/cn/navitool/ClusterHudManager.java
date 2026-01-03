@@ -27,6 +27,7 @@ public class ClusterHudManager {
     private boolean mIsClusterEnabled = false;
     private boolean mIsHudEnabled = false;
     private boolean mIsDashboardMode = false;
+    private int mPendingTheme = ClusterHudPresentation.THEME_DEFAULT; // 保存待应用的主题
 
     // ECarX Car API
     private ICar mCar;
@@ -69,6 +70,10 @@ public class ClusterHudManager {
     private ClusterHudManager(Context context) {
         this.mContext = context.getApplicationContext();
 
+        // [HUD FIX] 初始化缓存列表，避免 "Cache not ready" 错误
+        this.mCachedHudComponents = new ArrayList<>();
+        this.mCachedClusterComponents = new ArrayList<>();
+
         initAdaptApi();
         initDimInteraction(); // Restore missing call for Real HUD Mode Switch
 
@@ -86,18 +91,11 @@ public class ClusterHudManager {
         initVolumeListener();
         initNotificationReceiver();
 
-        // 2. Initialize Car Service (Backgroundable, takes ~500ms)
+        // Initialize Car Service (Backgroundable, takes ~500ms)
         initCarService();
 
         registerDisplayListener();
-
-        initNotificationReceiver(); // Listen for Service Connection
-
-        registerDisplayListener();
     }
-
-    // ... (Lines 60-120 unchanged via copy/paste or keeping surrounding context if
-    // I could... but here I replace the block mostly)
 
     public static synchronized ClusterHudManager getInstance(Context context) {
         if (instance == null) {
@@ -164,9 +162,11 @@ public class ClusterHudManager {
             // mSensorManager.registerListener(mSensorListener,
             // ISensor.SENSOR_TYPE_ENDURANCE_MILEAGE_FUEL, ISensor.RATE_NORMAL);
 
-            // Register Speed
+            // Register Speed (RPM only - CAR_SPEED is handled by
+            // KeepAliveAccessibilityService with ×3.72 conversion)
             mSensorManager.registerListener(mSensorListener, ISensor.SENSOR_TYPE_RPM, ISensor.RATE_UI);
-            mSensorManager.registerListener(mSensorListener, ISensor.SENSOR_TYPE_CAR_SPEED, ISensor.RATE_UI);
+            // [FIX] Removed ISensor.SENSOR_TYPE_CAR_SPEED - was causing oscillation due to
+            // duplicate registration
 
             // Register Additional Sensors for Future Use (Odometer, Fuel, Tire)
             mSensorManager.registerListener(mSensorListener, SENSOR_TYPE_ODOMETER, ISensor.RATE_NORMAL);
@@ -233,9 +233,10 @@ public class ClusterHudManager {
                     updateComponentText("range", String.format("续航: %.0fkm", value));
                 } else if (sensorType == ISensor.SENSOR_TYPE_RPM) {
                     updateRpm(value);
-                } else if (sensorType == ISensor.SENSOR_TYPE_CAR_SPEED) {
-                    updateSpeed(value);
-                } else if (sensorType == SENSOR_TYPE_ODOMETER) {
+                }
+                // [FIX] Removed ISensor.SENSOR_TYPE_CAR_SPEED handler - handled by
+                // KeepAliveAccessibilityService
+                else if (sensorType == SENSOR_TYPE_ODOMETER) {
                     updateComponentText("odometer", String.format("%.0fkm", value));
                 } else if (sensorType == TYPE_INS_FUEL_CONSUMPTION) {
                     updateComponentText("fuel_inst", String.format("%.1fL/100km", value));
@@ -639,17 +640,19 @@ public class ClusterHudManager {
     private android.graphics.Bitmap mPendingCoverArt = null;
 
     private void updateComponent(String type, String newText, android.graphics.Bitmap newImage) {
-        if (mCachedHudComponents == null) {
-            // Logic Fix: Store pending updates if cache isn't ready (Startup Optimization
-            // Race Condition)
+        // [HUD FIX] 改用 isEmpty() 检查，因为缓存已初始化为空列表
+        if (mCachedHudComponents.isEmpty() && mCachedClusterComponents.isEmpty()) {
+            // Store pending updates if no layout is synced yet
             synchronized (this) {
                 if ("song".equals(type) || "test_media".equals(type)) {
                     mPendingSongText = newText;
-                    DebugLogger.d(TAG, "Cache not ready, stored pending text: " + newText);
+                    // 减少日志输出，只在首次存储时记录
+                    if (mPendingSongText == null || !mPendingSongText.equals(newText)) {
+                        DebugLogger.d(TAG, "Pending song text: " + newText);
+                    }
                 } else if ("media_cover".equals(type) || "test_media_cover".equals(type)) {
                     if (newImage != null) {
                         mPendingCoverArt = newImage;
-                        DebugLogger.d(TAG, "Cache not ready, stored pending cover art");
                     }
                 }
             }
@@ -727,6 +730,17 @@ public class ClusterHudManager {
             DebugLogger.i(TAG, "Sent Media Sync Request");
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to init Media Broadcast Receiver", e);
+        }
+
+        // [FIX] Request initial media state re-broadcast (Sync State)
+        try {
+            android.content.Intent requestIntent = new android.content.Intent(
+                    "cn.navitool.ACTION_REQUEST_MEDIA_REBROADCAST");
+            requestIntent.setPackage(mContext.getPackageName());
+            mContext.sendBroadcast(requestIntent);
+            DebugLogger.i(TAG, "Requested Media Re-Broadcast for initial state sync");
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to request re-broadcast", e);
         }
     }
 
@@ -870,6 +884,7 @@ public class ClusterHudManager {
         mIsClusterEnabled = enabled;
         DebugLogger.d(TAG, "setClusterEnabled: " + enabled);
 
+        DebugLogger.action(TAG, "Cluster状态变更: " + enabled);
         updatePresentation();
 
         if (mDimMenuInteraction != null) {
@@ -890,6 +905,7 @@ public class ClusterHudManager {
         if (mIsHudEnabled == enabled)
             return;
         mIsHudEnabled = enabled;
+        DebugLogger.action(TAG, "HUD状态变更: " + enabled);
         DebugLogger.d(TAG, "setHudEnabled: " + enabled);
         updatePresentation();
     }
@@ -956,6 +972,10 @@ public class ClusterHudManager {
                         mPresentation.syncHudLayout(mCachedHudComponents);
                         DebugLogger.d(TAG, "Applied cached HUD components on show");
                     }
+
+                    // 应用保存的主题（始终应用，确保正确的布局被加载）
+                    mPresentation.setClusterTheme(mPendingTheme);
+                    DebugLogger.d(TAG, "Applied pending theme on show: " + mPendingTheme);
                 });
 
                 mPresentation.show();
@@ -1051,17 +1071,16 @@ public class ClusterHudManager {
 
         // Notify Listener (MainActivity Preview) of the full sync (Logic Fix for
         // Preview Persistence)
+        // [BUG 5 FIX] 批量更新，避免为每个组件创建新 Handler 导致卡顿
         if (mListener != null) {
-            synchronized (this) {
-                for (HudComponentData data : mCachedHudComponents) {
-                    final HudComponentData finalData = data;
-                    new Handler(Looper.getMainLooper()).post(() -> {
-                        if (mListener != null) {
-                            mListener.onHudDataChanged(finalData.type, finalData.text, finalData.image);
-                        }
-                    });
+            final java.util.List<HudComponentData> snapshot = new java.util.ArrayList<>(mCachedHudComponents);
+            mBlinkHandler.post(() -> {
+                if (mListener != null) {
+                    for (HudComponentData data : snapshot) {
+                        mListener.onHudDataChanged(data.type, data.text, data.image);
+                    }
                 }
-            }
+            });
         }
     }
 
@@ -1112,16 +1131,101 @@ public class ClusterHudManager {
         }
     }
 
-    public void updateSpeed(float speed) {
+    /**
+     * 设置仪表盘主题
+     * 
+     * @param theme ClusterHudPresentation.THEME_DEFAULT 或
+     *              ClusterHudPresentation.THEME_AUDI_RS
+     */
+    public void setClusterTheme(int theme) {
+        // 始终保存主题，以便后续presentation创建时使用
+        mPendingTheme = theme;
+        DebugLogger.d(TAG, "setClusterTheme: theme=" + theme + ", mPresentation=" + (mPresentation != null));
+
         if (mPresentation != null) {
-            mPresentation.updateSpeed(speed);
+            mMainHandler.post(() -> {
+                if (mPresentation != null) {
+                    mPresentation.setClusterTheme(theme);
+                }
+            });
         }
     }
 
+    public int getCurrentClusterTheme() {
+        if (mPresentation != null) {
+            return mPresentation.getCurrentTheme();
+        }
+        return ClusterHudPresentation.THEME_DEFAULT;
+    }
+
+    private final Handler mMainHandler = new Handler(Looper.getMainLooper());
+
     public void updateRpm(float rpm) {
         if (mPresentation != null) {
-            mPresentation.updateRpm(rpm);
+            mMainHandler.post(() -> {
+                if (mPresentation != null) {
+                    mPresentation.updateRpm(rpm);
+                }
+            });
         }
+    }
+
+    public void cycleGear() {
+        if (mPresentation != null) {
+            mMainHandler.post(() -> {
+                if (mPresentation != null) {
+                    mPresentation.cycleGear();
+                }
+            });
+        }
+    }
+
+    public void updateGear(int gearValue) {
+        if (mPresentation != null) {
+            mMainHandler.post(() -> {
+                if (mPresentation != null) {
+                    mPresentation.updateGear(gearValue);
+                }
+            });
+        }
+    }
+
+    // 实际车速（用于状态页面对比显示）
+    private int mActualSpeed = 0;
+
+    public void updateActualSpeed(int speed) {
+        mActualSpeed = speed;
+        // 可以通过广播或回调通知状态页面更新
+        android.content.Intent intent = new android.content.Intent("cn.navitool.ACTUAL_SPEED_UPDATE");
+        intent.putExtra("speed", speed);
+        mContext.sendBroadcast(intent);
+    }
+
+    public int getActualSpeed() {
+        return mActualSpeed;
+    }
+
+    // DIM仪表速度（用于状态页面对比显示）
+    private int mDIMSpeed = 0;
+
+    public int getDIMSpeed() {
+        return mDIMSpeed;
+    }
+
+    // 存储DIM速度供查询
+    public void updateSpeed(int speed) {
+        mDIMSpeed = speed;
+        if (mPresentation != null) {
+            mMainHandler.post(() -> {
+                if (mPresentation != null) {
+                    mPresentation.updateSpeed(speed);
+                }
+            });
+        }
+        // 广播DIM速度更新
+        android.content.Intent intent = new android.content.Intent("cn.navitool.DIM_SPEED_UPDATE");
+        intent.putExtra("speed", speed);
+        mContext.sendBroadcast(intent);
     }
 
     // --- Notification Service Connection Listener ---
@@ -1188,6 +1292,7 @@ public class ClusterHudManager {
         public android.graphics.Typeface typeface;
         public String pathData; // For "path_gauge"
         public float maxValue; // For "path_gauge" progress calc
+        public float scale = 1.0f; // 组件缩放比例，默认1.0（不缩放）
 
         public HudComponentData() {
         }
@@ -1203,5 +1308,34 @@ public class ClusterHudManager {
         public HudComponentData(String type, String text, float x, float y) {
             this(type, text, x, y, android.graphics.Color.WHITE);
         }
+    }
+
+    // --- [Merged from HudManager.java] ---
+    public void setSnowMode(boolean enabled) {
+        ConfigManager.getInstance().setBoolean("hud_snow_mode", enabled);
+    }
+
+    public boolean isSnowModeEnabled() {
+        return ConfigManager.getInstance().getBoolean("hud_snow_mode", false);
+    }
+
+    // --- [Merged from ClusterManager.java] ---
+    public void applyClusterTheme(String themeId) {
+        if ("1".equals(themeId)) {
+            enableClusterDashboard();
+        } else {
+            java.util.List<HudComponentData> customData = cn.navitool.managers.CustomThemeManager.getInstance(mContext)
+                    .loadTheme(themeId);
+            if (!customData.isEmpty()) {
+                syncClusterLayout(customData);
+            } else {
+                clearHudComponents();
+                syncClusterLayout(new java.util.ArrayList<>());
+            }
+        }
+    }
+
+    public void applyClusterTheme(int themeId) {
+        applyClusterTheme(String.valueOf(themeId));
     }
 }

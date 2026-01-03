@@ -46,18 +46,85 @@ public class ClusterHudPresentation extends Presentation {
     }
 
     public void updateDebugMode(boolean isDebug) {
+        // [REMOVED] Debug green background - always transparent now
         if (mLayoutHud != null) {
-            if (isDebug) {
-                // Light Green #3300FF00
-                mLayoutHud.setBackgroundColor(0x3300FF00);
-            } else {
-                mLayoutHud.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-            }
+            mLayoutHud.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         }
     }
 
-    private java.util.List<View> mRealHudComponents = new java.util.ArrayList<>();
-    private java.util.List<View> mRealClusterComponents = new java.util.ArrayList<>();
+    /**
+     * 设置仪表盘主题
+     * 
+     * @param theme THEME_DEFAULT 或 THEME_AUDI_RS
+     */
+    public void setClusterTheme(int theme) {
+        // 不再检查主题是否相同，始终执行切换逻辑
+        // 这样确保从任何状态都能正确切换
+        mCurrentTheme = theme;
+        DebugLogger.d("ClusterHudPresentation", "setClusterTheme: " + theme);
+
+        if (theme == THEME_AUDI_RS) {
+            // 初始化奥迪RS主题
+            if (mAudiRsLayout == null && mLayoutCluster != null) {
+                android.view.LayoutInflater inflater = android.view.LayoutInflater.from(getContext());
+                mAudiRsLayout = inflater.inflate(R.layout.layout_cluster_audi_rs, null);
+                if (mLayoutCluster instanceof android.view.ViewGroup) {
+                    ((android.view.ViewGroup) mLayoutCluster).addView(mAudiRsLayout,
+                            new android.view.ViewGroup.LayoutParams(
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+                }
+            }
+            if (mAudiRsController == null) {
+                mAudiRsController = new AudiRsThemeController();
+            }
+            if (mAudiRsLayout != null) {
+                mAudiRsController.bindViews(mAudiRsLayout);
+                mAudiRsLayout.setVisibility(View.VISIBLE);
+            }
+            // 隐藏默认元素
+            hideDefaultClusterElements();
+        } else {
+            // 切回默认主题
+            if (mAudiRsLayout != null) {
+                mAudiRsLayout.setVisibility(View.GONE);
+            }
+            if (mAudiRsController != null) {
+                mAudiRsController.release();
+            }
+            // 重新加载默认仪表布局
+            enableClusterDashboard();
+            DebugLogger.d("ClusterHudPresentation", "Switched to default theme, enableClusterDashboard called");
+        }
+    }
+
+    private void hideDefaultClusterElements() {
+        if (mClusterSpeedPointer != null)
+            mClusterSpeedPointer.setVisibility(View.GONE);
+        if (mClusterRpmPointer != null)
+            mClusterRpmPointer.setVisibility(View.GONE);
+    }
+
+    private void showDefaultClusterElements() {
+        if (mClusterSpeedPointer != null)
+            mClusterSpeedPointer.setVisibility(View.VISIBLE);
+        if (mClusterRpmPointer != null)
+            mClusterRpmPointer.setVisibility(View.VISIBLE);
+    }
+
+    public int getCurrentTheme() {
+        return mCurrentTheme;
+    }
+
+    private java.util.List<View> mRealHudComponents = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private java.util.List<View> mRealClusterComponents = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    // Theme Support
+    public static final int THEME_DEFAULT = 0;
+    public static final int THEME_AUDI_RS = 1;
+    private int mCurrentTheme = THEME_DEFAULT;
+    private AudiRsThemeController mAudiRsController;
+    private View mAudiRsLayout;
 
     public void syncHudLayout(java.util.List<ClusterHudManager.HudComponentData> components) {
         syncLayoutGeneric(mLayoutHud, mRealHudComponents, components, 728, 190);
@@ -109,12 +176,11 @@ public class ClusterHudPresentation extends Presentation {
                     // Title View
                     android.widget.TextView tvTitle = new android.widget.TextView(getContext());
                     tvTitle.setText(title);
-                    tvTitle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
+                    tvTitle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 9);
                     tvTitle.setTextColor(data.color);
                     tvTitle.setSingleLine(true);
-                    tvTitle.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
-                    tvTitle.setMarqueeRepeatLimit(-1);
-                    tvTitle.setSelected(true); // Trigger Marquee
+                    tvTitle.setMaxLines(1);
+                    tvTitle.setEllipsize(android.text.TextUtils.TruncateAt.END); // 使用...省略，不滚动
                     tvTitle.setIncludeFontPadding(false);
                     ll.addView(tvTitle);
 
@@ -122,12 +188,11 @@ public class ClusterHudPresentation extends Presentation {
                     if (!artist.isEmpty()) {
                         android.widget.TextView tvArtist = new android.widget.TextView(getContext());
                         tvArtist.setText(artist);
-                        tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
+                        tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 9);
                         tvArtist.setTextColor(data.color);
                         tvArtist.setSingleLine(true);
-                        tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
-                        tvArtist.setMarqueeRepeatLimit(-1);
-                        tvArtist.setSelected(true); // Trigger Marquee
+                        tvArtist.setMaxLines(1);
+                        tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.END); // 使用...省略，不滚动
                         tvArtist.setIncludeFontPadding(false);
                         ll.addView(tvArtist);
                     }
@@ -151,18 +216,17 @@ public class ClusterHudPresentation extends Presentation {
                     }
                     iv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
 
+                    // 将dp转为px的辅助计算
+                    float density = getContext().getResources().getDisplayMetrics().density;
+
                     if (isMediaCover) {
-                        // Fixed size for cover
+                        // 媒体封面: 100px (预览中为200px, 保持1:2比例)
                         params.width = 100;
                         params.height = 100;
                     } else {
-                        // Turn Signal & Volume: Explicitly constrain height to prevent upscaling
-                        // User Request: Real HUD size should be ~1/4 of Media Cover (100px), i.e.,
-                        // ~25px.
-                        if (isTurnSignal) {
-                            params.height = 36; // User Request: 36px
-                        } else if (isVolume) {
-                            params.height = 36; // User Request: 36px
+                        // 转向灯 & 音量: 36px (预览中为72px, 保持1:2比例)
+                        if (isTurnSignal || isVolume) {
+                            params.height = 36;
                         } else {
                             params.height = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
                         }
@@ -180,7 +244,7 @@ public class ClusterHudPresentation extends Presentation {
                     tc.setTextColor(data.color);
                     tc.setPadding(0, 0, 0, 0);
                     tc.setIncludeFontPadding(false); // Minimized vertical spacing
-                    tc.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24); // User Request: 24px
+                    tc.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 9); // 9dp
                     if (data.typeface != null) {
                         tc.setTypeface(data.typeface);
                     }
@@ -292,18 +356,8 @@ public class ClusterHudPresentation extends Presentation {
                         tv.setTypeface(data.typeface);
                     }
 
-                    // Rule 2: Font size logic
-                    if ("gear".equals(data.type)) {
-                        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 48); // User Request: 48px (2x Standard)
-                    } else if ("speed".equals(data.type)) {
-                        // Also larger for speed text?
-                        if (data.text != null && data.text.length() < 5) // Simple heuristic
-                            tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 48);
-                        else
-                            tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
-                    } else {
-                        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24); // User Request: 24px
-                    }
+                    // Rule 2: Font size logic - all use 9dp
+                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 9); // 9dp
 
                     // Rule 3: Song Component Layout (Handled by LinearLayout block above)
                     view = tv;
@@ -312,6 +366,12 @@ public class ClusterHudPresentation extends Presentation {
                 view.setTag(data); // CRITICAL: Tag with Data for updateSpeed loop!
                 params.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
                 container.addView(view, params);
+
+                // 应用组件缩放 - 设置缩放中心点为左上角 (与预览一致)
+                view.setPivotX(0);
+                view.setPivotY(0);
+                view.setScaleX(data.scale);
+                view.setScaleY(data.scale);
 
                 // Measure
                 int widthSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
@@ -336,9 +396,11 @@ public class ClusterHudPresentation extends Presentation {
                 measuredWidth = view.getMeasuredWidth();
                 measuredHeight = view.getMeasuredHeight();
 
-                // Bounds Clamp, using dynamic maxWidth/maxHeight
-                float clampedX = Math.max(0, Math.min(data.x, maxWidth - measuredWidth));
-                float clampedY = Math.max(0, Math.min(data.y, maxHeight - measuredHeight));
+                // Bounds Clamp, using dynamic maxWidth/maxHeight - 使用缩放后的尺寸
+                float scaledWidth = measuredWidth * data.scale;
+                float scaledHeight = measuredHeight * data.scale;
+                float clampedX = Math.max(0, Math.min(data.x, maxWidth - scaledWidth));
+                float clampedY = Math.max(0, Math.min(data.y, maxHeight - scaledHeight));
 
                 view.setX(clampedX);
                 view.setY(clampedY);
@@ -404,14 +466,22 @@ public class ClusterHudPresentation extends Presentation {
     private void updateVisibilityGeneric(java.util.List<View> viewList, boolean visible, String group) {
         for (View v : viewList) {
             Object tag = v.getTag();
-            if (tag != null) {
+            // [FIX] Tag can be HudComponentData or String
+            String viewType = null;
+            if (tag instanceof ClusterHudManager.HudComponentData) {
+                viewType = ((ClusterHudManager.HudComponentData) tag).type;
+            } else if (tag instanceof String) {
+                viewType = (String) tag;
+            }
+
+            if (viewType != null) {
                 if ("media".equals(group)) {
-                    if (tag.equals("song") || tag.equals("media_cover") || tag.equals("test_media")
-                            || tag.equals("test_media_cover")) {
+                    if (viewType.equals("song") || viewType.equals("media_cover") || viewType.equals("test_media")
+                            || viewType.equals("test_media_cover")) {
                         v.setVisibility(visible ? View.VISIBLE : View.GONE);
                     }
                 } else if ("volume".equals(group)) {
-                    if ("volume".equals(tag)) {
+                    if ("volume".equals(viewType)) {
                         v.setVisibility(visible ? View.VISIBLE : View.GONE);
                     }
                 }
@@ -430,7 +500,15 @@ public class ClusterHudPresentation extends Presentation {
             android.graphics.Bitmap image) {
         for (View v : viewList) {
             Object tag = v.getTag();
-            if (tag != null && tag.equals(type)) {
+            // [FIX] Tag can be HudComponentData or String, handle both
+            String viewType = null;
+            if (tag instanceof ClusterHudManager.HudComponentData) {
+                viewType = ((ClusterHudManager.HudComponentData) tag).type;
+            } else if (tag instanceof String) {
+                viewType = (String) tag;
+            }
+
+            if (viewType != null && viewType.equals(type)) {
                 if (v instanceof android.widget.TextView && text != null) {
                     ((android.widget.TextView) v).setText(text);
                 } else if (v instanceof android.widget.LinearLayout && text != null) {
@@ -453,7 +531,7 @@ public class ClusterHudPresentation extends Presentation {
                             // Add text view
                             android.widget.TextView tvArtist = new android.widget.TextView(v.getContext());
                             tvArtist.setText(artist);
-                            tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
+                            tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 9);
                             // Reuse color from Title
                             if (ll.getChildCount() > 0) {
                                 tvArtist.setTextColor(
@@ -462,9 +540,8 @@ public class ClusterHudPresentation extends Presentation {
                                 tvArtist.setTextColor(android.graphics.Color.WHITE);
                             }
                             tvArtist.setSingleLine(true);
-                            tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
-                            tvArtist.setMarqueeRepeatLimit(-1);
-                            tvArtist.setSelected(true);
+                            tvArtist.setMaxLines(1);
+                            tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.END); // 使用...省略
                             tvArtist.setIncludeFontPadding(false);
                             ll.addView(tvArtist);
                         }
@@ -517,12 +594,20 @@ public class ClusterHudPresentation extends Presentation {
         }
     }
 
-    public void updateSpeed(float speed) {
+    public void updateSpeed(int speed) {
+        // 如果是奥迪RS主题，使用专用控制器
+        if (mCurrentTheme == THEME_AUDI_RS && mAudiRsController != null) {
+            mAudiRsController.updateSpeed(speed);
+            return;
+        }
+
         if (mClusterSpeedPointer != null) {
             // Speed 0 -> 0 km/h (Bottom/South) = 180 degrees.
-            // Speed 270 -> 270 km/h (Right/East) = 180 + 270 = 450 (90) degrees.
+            // Speed 230 -> 230 km/h max = 180 + 270 = 450 (90) degrees.
+            // Formula: 180 + (speed / 230) * 270
             // Direction: Clockwise (Positive addition).
-            mClusterSpeedPointer.setRotation(180 + speed);
+            float angle = 180 + (speed / 230f) * 270f;
+            mClusterSpeedPointer.setRotation(angle);
         }
 
         // Dynamic Gauge Update
@@ -558,7 +643,7 @@ public class ClusterHudPresentation extends Presentation {
                     } else if ("speed".equals(data.type)) {
                         // Also update Text Speed if type matches (text/speed)
                         if (v instanceof android.widget.TextView) {
-                            ((android.widget.TextView) v).setText(String.valueOf((int) speed));
+                            ((android.widget.TextView) v).setText(String.valueOf(speed));
                         }
                     } else if ("path_gauge".equals(data.type) && "speed".equals(data.text)) {
                         if (v instanceof PathGaugeView) {
@@ -584,6 +669,12 @@ public class ClusterHudPresentation extends Presentation {
     }
 
     public void updateRpm(float rpm) {
+        // 如果是奥迪RS主题，使用专用控制器
+        if (mCurrentTheme == THEME_AUDI_RS && mAudiRsController != null) {
+            mAudiRsController.updateRpm((int) rpm);
+            return;
+        }
+
         if (mClusterRpmPointer != null) {
             // RPM 0 -> Left (West) = 270 degrees.
             // RPM 8000 -> Bottom (South) = 180 + 360 = 540 degrees.
@@ -591,45 +682,23 @@ public class ClusterHudPresentation extends Presentation {
             // Factor: 270 / 8000 = 0.03375
             mClusterRpmPointer.setRotation(270 + (rpm * 0.03375f));
         }
+    }
 
-        // Dynamic Gauge Update
-        if (!mRealClusterComponents.isEmpty()) {
-            for (View v : mRealClusterComponents) {
-                Object tag = v.getTag();
-                if (tag instanceof ClusterHudManager.HudComponentData) {
-                    ClusterHudManager.HudComponentData data = (ClusterHudManager.HudComponentData) tag;
-                    if ("gauge".equals(data.type) && "rpm".equals(data.text)) { // text field used as ID for RPM
-                        if (data.gaugeConfig != null && data.gaugeConfig.length >= 4) {
-                            float min = data.gaugeConfig[0];
-                            float max = data.gaugeConfig[1];
-                            float start = data.gaugeConfig[2];
-                            float end = data.gaugeConfig[3];
+    public void cycleGear() {
+        if (mCurrentTheme == THEME_AUDI_RS && mAudiRsController != null) {
+            mAudiRsController.cycleGear();
+        }
+    }
 
-                            if (max > min) {
-                                float ratio = (rpm - min) / (max - min);
-                                float angle = start + (ratio * (end - start));
-                                v.setRotation(angle);
-                            }
-                        }
-                    } else if ("rpm".equals(data.type)) {
-                        if (v instanceof android.widget.TextView) {
-                            ((android.widget.TextView) v).setText(String.valueOf((int) rpm));
-                        }
-                        if (v instanceof android.widget.TextView) {
-                            ((android.widget.TextView) v).setText(String.valueOf((int) rpm));
-                        }
-                    } else if ("path_gauge".equals(data.type) && "rpm".equals(data.text)) {
-                        if (v instanceof PathGaugeView) {
-                            ((PathGaugeView) v).setProgress(rpm);
-                        }
-                    } else if ("path_gauge".equals(data.type) && "speed".equals(data.text)) { // Handle speed path gauge
-                                                                                              // also in this loop just
-                                                                                              // in case, but usually
-                                                                                              // seperated
-                        // logic belongs in updateSpeed, but safely ignored here.
-                    }
-                }
-            }
+    public void updateAudiRsSpeed(int speed) {
+        if (mCurrentTheme == THEME_AUDI_RS && mAudiRsController != null) {
+            mAudiRsController.updateSpeed(speed);
+        }
+    }
+
+    public void updateGear(int gearValue) {
+        if (mCurrentTheme == THEME_AUDI_RS && mAudiRsController != null) {
+            mAudiRsController.setGear(gearValue);
         }
     }
 

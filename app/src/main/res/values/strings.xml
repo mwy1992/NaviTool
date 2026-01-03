@@ -119,4 +119,19 @@
     <string name="status_adb_unknown">未知状态</string>
     <string name="perm_notification_listener">通知使用权 (读取歌词)</string>
     <string name="btn_enable_wireless_adb">开启无线调试</string>
+    <string name="btn_delete_logs">删除日志</string>
+    <string name="toast_logs_deleted">日志已删除</string>
+    <string name="festival_wallpaper">节日壁纸</string>
+    <string-array name="festival_options">
+        <item>关</item>
+        <item>元旦</item>
+        <item>春节</item>
+        <item>情人节</item>
+        <item>劳动节</item>
+        <item>端午节</item>
+        <item>七夕</item>
+        <item>中秋节</item>
+        <item>国庆节</item>
+        <item>圣诞节</item>
+    </string-array>
 </resources>

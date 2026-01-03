@@ -136,27 +136,32 @@ public class MainActivity extends AppCompatActivity {
             ClusterHudManager manager = ClusterHudManager.getInstance(getApplicationContext());
 
             // Optimize: Parse JSON in background
-            List<ClusterHudManager.HudComponentData> hudData = null;
+            // [FIX] Parse HUD config and use it directly (not from empty cache!)
+            final List<ClusterHudManager.HudComponentData> hudData;
             if (isHudEnabled) {
                 hudData = parseHudConfig(currentMode);
+            } else {
+                hudData = null;
             }
 
             final java.util.List<cn.navitool.ClusterHudManager.HudComponentData> finalClusterData = ClusterHudManager
                     .getInstance(this).getLayoutData("cluster");
-            final java.util.List<cn.navitool.ClusterHudManager.HudComponentData> finalHudData = ClusterHudManager
-                    .getInstance(this).getLayoutData("hud");
+            // [FIX] Use hudData directly instead of getLayoutData("hud") which returns
+            // empty cache
+            final java.util.List<cn.navitool.ClusterHudManager.HudComponentData> finalHudData = hudData;
 
-            // Load Saved Theme
-            final String savedThemeId = ConfigManager.getInstance().getString("cluster_theme_id", "1");
+            // Load Saved Theme (use new theme system)
+            final int savedThemeId = ConfigManager.getInstance().getInt("cluster_theme_builtin",
+                    ClusterHudPresentation.THEME_DEFAULT);
             DebugLogger.e("MainActivity", "Booting... Saved Theme ID: " + savedThemeId);
             DebugLogger.e("MainActivity",
                     "Booting... isClusterEnabled=" + isClusterEnabled + ", isHudEnabled=" + isHudEnabled);
 
             // Apply to UI/Manager on Main Thread
             runOnUiThread(() -> {
-                // Restore Theme First
+                // Restore Theme First using new system
                 DebugLogger.e("MainActivity", "Applying Theme on Startup: " + savedThemeId);
-                cn.navitool.managers.ClusterManager.getInstance(this).applyClusterTheme(savedThemeId);
+                ClusterHudManager.getInstance(this).setClusterTheme(savedThemeId);
 
                 DebugLogger.e("MainActivity", "Startup: About to check isClusterEnabled=" + isClusterEnabled);
                 if (isClusterEnabled) {
@@ -171,11 +176,15 @@ public class MainActivity extends AppCompatActivity {
                     DebugLogger.e("MainActivity", "Startup: Cluster NOT enabled, skipping display");
                 }
                 if (isHudEnabled) {
-
-                    manager.setHudEnabled(true);
+                    // [FIX] Load HUD data FIRST so cache has data when onShowListener runs
+                    DebugLogger.e("MainActivity", "Startup: Loading HUD config first");
                     if (finalHudData != null) {
                         applyHudConfigToManager(finalHudData);
                     }
+                    // THEN enable HUD (triggers showPresentation which reads cache)
+                    DebugLogger.e("MainActivity", "Startup: Calling setHudEnabled toggle");
+                    manager.setHudEnabled(false);
+                    manager.setHudEnabled(true);
                 }
             });
         }).start();
@@ -324,6 +333,14 @@ public class MainActivity extends AppCompatActivity {
         android.content.IntentFilter mediaFilter = new android.content.IntentFilter(
                 cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE);
         registerReceiver(mMediaInfoReceiver, mediaFilter);
+
+        // [FIX] Register mDayNightStatusReceiver for theme mode updates
+        android.content.IntentFilter dayNightFilter = new android.content.IntentFilter(
+                "cn.navitool.ACTION_DAY_NIGHT_STATUS");
+        registerReceiver(mDayNightStatusReceiver, dayNightFilter);
+
+        // [FIX] Request initial status after registering receiver
+        ThemeBrightnessManager.getInstance(this).broadcastStatus();
     }
 
     private void unregisterReceivers() {
@@ -332,6 +349,7 @@ public class MainActivity extends AppCompatActivity {
 
             unregisterReceiver(mPsdStatusReceiver);
             unregisterReceiver(mOneOSStatusReceiver);
+            unregisterReceiver(mDayNightStatusReceiver); // [FIX] Added
         } catch (IllegalArgumentException e) {
             // Receiver not registered
         }
@@ -520,12 +538,17 @@ public class MainActivity extends AppCompatActivity {
         setupPermissionStatuses();
         setupAdbWireless();
 
+        // Speed comparison display receivers (for status page)
+        registerSpeedDisplayReceivers();
+
         updateAutoModeStatus(0, -1);
 
         // --- Auto-Initialize Cluster ---
         // Ensure Cluster Service starts even if tab is not visited
-        int savedTheme = ConfigManager.getInstance().getInt("cluster_theme", 1);
-        cn.navitool.managers.ClusterManager.getInstance(this).applyClusterTheme(savedTheme);
+        // Use new theme system (THEME_DEFAULT or THEME_AUDI_RS)
+        int savedTheme = ConfigManager.getInstance().getInt("cluster_theme_builtin",
+                ClusterHudPresentation.THEME_DEFAULT);
+        ClusterHudManager.getInstance(this).setClusterTheme(savedTheme);
         // Note: Other tabs setup is deferred to ensureXInflated methods
     }
 
@@ -549,10 +572,115 @@ public class MainActivity extends AppCompatActivity {
             ClusterHudManager.getInstance(this).setClusterEnabled(isClusterEnabled);
 
             switchCluster.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                DebugLogger.action("MainActivity", "Cluster开关切换: " + isChecked);
                 ClusterHudManager.getInstance(this).setClusterEnabled(isChecked);
                 ConfigManager.getInstance().setBoolean("switch_cluster", isChecked);
             });
         }
+
+        // Theme Selection - Audi RS handler is in the main setupClusterThemeSelector
+        // setupClusterThemeSelector() is called from there
+    }
+
+    private android.content.BroadcastReceiver mActualSpeedReceiver;
+    private android.content.BroadcastReceiver mDIMSpeedReceiver;
+
+    private void registerSpeedDisplayReceivers() {
+        TextView txtActualSpeed = findViewById(R.id.txtActualSpeed);
+        TextView txtDIMSpeed = findViewById(R.id.txtDIMSpeed);
+
+        // Actual speed receiver
+        mActualSpeedReceiver = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(android.content.Context context, android.content.Intent intent) {
+                int speed = intent.getIntExtra("speed", 0);
+                if (txtActualSpeed != null) {
+                    txtActualSpeed.setText(String.valueOf(speed));
+                }
+            }
+        };
+
+        // DIM speed receiver
+        mDIMSpeedReceiver = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(android.content.Context context, android.content.Intent intent) {
+                int speed = intent.getIntExtra("speed", 0);
+                if (txtDIMSpeed != null) {
+                    txtDIMSpeed.setText(String.valueOf(speed));
+                }
+            }
+        };
+
+        // Register receivers
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(mActualSpeedReceiver,
+                    new android.content.IntentFilter("cn.navitool.ACTUAL_SPEED_UPDATE"),
+                    android.content.Context.RECEIVER_NOT_EXPORTED);
+            registerReceiver(mDIMSpeedReceiver,
+                    new android.content.IntentFilter("cn.navitool.DIM_SPEED_UPDATE"),
+                    android.content.Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(mActualSpeedReceiver,
+                    new android.content.IntentFilter("cn.navitool.ACTUAL_SPEED_UPDATE"));
+            registerReceiver(mDIMSpeedReceiver,
+                    new android.content.IntentFilter("cn.navitool.DIM_SPEED_UPDATE"));
+        }
+    }
+
+    // Called from setupClusterThemeSelector() to setup Audi RS specific handlers
+    private void setupAudiRsThemeHandlers() {
+        View themeDefault = findViewById(R.id.layoutClusterTheme1);
+        View themeAudiRs = findViewById(R.id.layoutClusterThemeAudiRs);
+        View checkDefault = findViewById(R.id.ivClusterCheck1);
+        View checkAudiRs = findViewById(R.id.ivClusterCheckAudiRs);
+
+        // Load saved Audi RS theme state
+        int savedTheme = ConfigManager.getInstance().getInt("cluster_theme_builtin",
+                ClusterHudPresentation.THEME_DEFAULT);
+        updateAudiRsThemeCheckmarks(savedTheme, checkDefault, checkAudiRs, themeDefault, themeAudiRs);
+
+        // Apply saved theme on startup
+        ClusterHudManager.getInstance(this).setClusterTheme(savedTheme);
+
+        // Audi RS theme click handler
+        if (themeAudiRs != null) {
+            themeAudiRs.setOnClickListener(v -> {
+                DebugLogger.action("MainActivity", "切换仪表主题: 奥迪RS");
+                ClusterHudManager.getInstance(this).setClusterTheme(ClusterHudPresentation.THEME_AUDI_RS);
+                ConfigManager.getInstance().setInt("cluster_theme_builtin", ClusterHudPresentation.THEME_AUDI_RS);
+                updateAudiRsThemeCheckmarks(ClusterHudPresentation.THEME_AUDI_RS, checkDefault, checkAudiRs,
+                        themeDefault, themeAudiRs);
+            });
+        }
+
+        // Default theme click handler (to switch back from Audi RS)
+        if (themeDefault != null) {
+            final View.OnClickListener existingListener = null; // May need to chain
+            themeDefault.setOnClickListener(v -> {
+                DebugLogger.action("MainActivity", "切换仪表主题: 默认");
+                ClusterHudManager.getInstance(this).setClusterTheme(ClusterHudPresentation.THEME_DEFAULT);
+                ConfigManager.getInstance().setInt("cluster_theme_builtin", ClusterHudPresentation.THEME_DEFAULT);
+                updateAudiRsThemeCheckmarks(ClusterHudPresentation.THEME_DEFAULT, checkDefault, checkAudiRs,
+                        themeDefault, themeAudiRs);
+            });
+        }
+    }
+
+    private void updateAudiRsThemeCheckmarks(int selectedTheme, View checkDefault, View checkAudiRs,
+            View themeDefault, View themeAudiRs) {
+        boolean isDefault = (selectedTheme == ClusterHudPresentation.THEME_DEFAULT);
+        if (checkDefault != null)
+            checkDefault.setVisibility(isDefault ? View.VISIBLE : View.GONE);
+        if (checkAudiRs != null)
+            checkAudiRs.setVisibility(!isDefault ? View.VISIBLE : View.GONE);
+
+        // Update backgrounds
+        if (themeDefault != null)
+            themeDefault
+                    .setBackgroundResource(isDefault ? R.drawable.bg_cluster_selected : R.drawable.bg_cluster_normal);
+        if (themeAudiRs != null)
+            themeAudiRs
+                    .setBackgroundResource(!isDefault ? R.drawable.bg_cluster_selected : R.drawable.bg_cluster_normal);
     }
 
     private void setupHud() {
@@ -575,6 +703,7 @@ public class MainActivity extends AppCompatActivity {
                 controls.setVisibility(isHudEnabled ? View.VISIBLE : View.GONE);
 
             switchHud.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                DebugLogger.action("MainActivity", "HUD开关切换: " + isChecked);
                 ClusterHudManager.getInstance(this).setHudEnabled(isChecked);
                 ConfigManager.getInstance().setBoolean("switch_hud", isChecked);
 
@@ -611,6 +740,7 @@ public class MainActivity extends AppCompatActivity {
 
     // --- HUD Editor Logic ---
     private View mHudTestComponent;
+    private View mResizeHandle; // 右下角缩放手柄
     private boolean mIsHudComponentLocked = false;
     private boolean mIsSnowModeEnabled = false;
     private float dX, dY;
@@ -1040,13 +1170,12 @@ public class MainActivity extends AppCompatActivity {
                         float newX = event.getRawX() + dX;
                         float newY = event.getRawY() + dY;
 
-                        // Bounds Check
+                        // Bounds Check - 使用缩放后的尺寸
                         View parent = (View) view.getParent();
                         int parentWidth = parent.getWidth();
                         int parentHeight = parent.getHeight();
-                        // Boundary Fix: LayoutParams sizing means getWidth() is already the visual size
-                        int viewWidth = view.getWidth();
-                        int viewHeight = view.getHeight();
+                        int viewWidth = (int) (view.getWidth() * view.getScaleX());
+                        int viewHeight = (int) (view.getHeight() * view.getScaleY());
 
                         if (newX < 0)
                             newX = 0;
@@ -1057,8 +1186,19 @@ public class MainActivity extends AppCompatActivity {
                         if (newY + viewHeight > parentHeight)
                             newY = parentHeight - viewHeight;
 
+                        // [NEW] Collision Detection - Prevent overlapping with other components
+                        if (wouldOverlap(view, newX, newY, viewWidth, viewHeight)) {
+                            // Don't move if would overlap
+                            return true;
+                        }
+
                         view.setX(newX);
                         view.setY(newY);
+
+                        // 更新缩放手柄位置
+                        if (mResizeHandle != null && view == mHudTestComponent) {
+                            updateResizeHandlePosition(mResizeHandle, view, 24);
+                        }
 
                         // Real-time Sync
                         syncAllHudComponents();
@@ -1071,6 +1211,40 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    // [NEW] Check if moving view to newX,newY would overlap with any other
+    // component
+    private boolean wouldOverlap(View movingView, float newX, float newY, int width, int height) {
+        android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
+        if (preview == null)
+            return false;
+
+        android.graphics.RectF movingRect = new android.graphics.RectF(
+                newX, newY, newX + width, newY + height);
+
+        for (int i = 0; i < preview.getChildCount(); i++) {
+            View child = preview.getChildAt(i);
+            if (child == movingView)
+                continue; // Skip self
+            if (child == mResizeHandle)
+                continue; // 跳过缩放手柄
+            if (child.getTag() == null)
+                continue; // Skip non-components
+
+            // 使用缩放后的尺寸
+            float childW = child.getWidth() * child.getScaleX();
+            float childH = child.getHeight() * child.getScaleY();
+            android.graphics.RectF childRect = new android.graphics.RectF(
+                    child.getX(), child.getY(),
+                    child.getX() + childW,
+                    child.getY() + childH);
+
+            if (android.graphics.RectF.intersects(movingRect, childRect)) {
+                return true; // Would overlap
+            }
+        }
+        return false;
+    }
+
     private void syncAllHudComponents() {
         android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
         if (preview == null)
@@ -1078,6 +1252,11 @@ public class MainActivity extends AppCompatActivity {
         List<ClusterHudManager.HudComponentData> list = new ArrayList<>();
         for (int i = 0; i < preview.getChildCount(); i++) {
             View child = preview.getChildAt(i);
+
+            // 跳过缩放手柄
+            if (child == mResizeHandle)
+                continue;
+
             String tag = (String) child.getTag();
             if (tag == null || !tag.startsWith("type_"))
                 continue;
@@ -1114,12 +1293,15 @@ public class MainActivity extends AppCompatActivity {
             }
 
             int color = mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF;
-            list.add(new ClusterHudManager.HudComponentData(
+            ClusterHudManager.HudComponentData data = new ClusterHudManager.HudComponentData(
                     type,
                     text,
                     child.getX() * 0.5f,
                     child.getY() * 0.5f,
-                    color));
+                    color);
+            // 同步缩放值
+            data.scale = child.getScaleX();
+            list.add(data);
         }
         ClusterHudManager.getInstance(this).syncHudLayout(list);
     }
@@ -1308,10 +1490,147 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         selected.setAlpha(0.6f); // Highlight
+
+        // 显示缩放手柄
+        showResizeHandle(selected);
+    }
+
+    private void showResizeHandle(View target) {
+        // 移除旧的缩放手柄
+        removeResizeHandle();
+
+        android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
+        if (preview == null || target == null)
+            return;
+
+        // 创建带斜线的缩放手柄
+        View handle = new View(this) {
+            @Override
+            protected void onDraw(android.graphics.Canvas canvas) {
+                super.onDraw(canvas);
+                android.graphics.Paint paint = new android.graphics.Paint();
+                paint.setColor(android.graphics.Color.WHITE);
+                paint.setStrokeWidth(2);
+                paint.setAntiAlias(true);
+
+                int w = getWidth();
+                int h = getHeight();
+                // 绘制两条斜线
+                canvas.drawLine(w * 0.3f, h, w, h * 0.3f, paint);
+                canvas.drawLine(w * 0.6f, h, w, h * 0.6f, paint);
+            }
+        };
+
+        int handleSize = 24;
+        android.widget.FrameLayout.LayoutParams handleParams = new android.widget.FrameLayout.LayoutParams(handleSize,
+                handleSize);
+        handleParams.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
+
+        // 透明背景
+        handle.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+
+        // 定位到目标组件的右下角
+        updateResizeHandlePosition(handle, target, handleSize);
+
+        // 设置缩放手势
+        setupResizeHandleTouch(handle, target);
+
+        preview.addView(handle, handleParams);
+        mResizeHandle = handle;
+    }
+
+    // 更新缩放手柄位置到目标组件右下角
+    private void updateResizeHandlePosition(View handle, View target, int handleSize) {
+        if (handle == null || target == null)
+            return;
+
+        // 设置缩放中心点为左上角 (0, 0)，这样缩放时组件位置不变
+        target.setPivotX(0);
+        target.setPivotY(0);
+
+        // 计算组件右下角位置
+        float handleX = target.getX() + (target.getWidth() * target.getScaleX()) - handleSize / 2f;
+        float handleY = target.getY() + (target.getHeight() * target.getScaleY()) - handleSize / 2f;
+        handle.setX(handleX);
+        handle.setY(handleY);
+    }
+
+    private void removeResizeHandle() {
+        if (mResizeHandle != null) {
+            android.view.ViewGroup parent = (android.view.ViewGroup) mResizeHandle.getParent();
+            if (parent != null) {
+                parent.removeView(mResizeHandle);
+            }
+            mResizeHandle = null;
+        }
+    }
+
+    private void setupResizeHandleTouch(View handle, View target) {
+        handle.setOnTouchListener(new View.OnTouchListener() {
+            float startX, startY;
+            float startScale;
+
+            @Override
+            public boolean onTouch(View v, android.view.MotionEvent event) {
+                if (mIsHudComponentLocked)
+                    return false;
+
+                switch (event.getAction()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        startX = event.getRawX();
+                        startY = event.getRawY();
+                        startScale = target.getScaleX();
+                        return true;
+
+                    case android.view.MotionEvent.ACTION_MOVE:
+                        float deltaX = event.getRawX() - startX;
+                        float deltaY = event.getRawY() - startY;
+                        // 使用对角线距离变化计算缩放比例，保持宽高比
+                        float delta = (deltaX + deltaY) / 2f;
+                        float newScale = startScale + (delta / 100f);
+
+                        // 限制缩放范围 0.3x - 3.0x
+                        newScale = Math.max(0.3f, Math.min(3.0f, newScale));
+
+                        // 检查边界限制 - X轴或Y轴超出则停止缩放
+                        View parent = (View) target.getParent();
+                        if (parent != null) {
+                            float scaledWidth = target.getWidth() * newScale;
+                            float scaledHeight = target.getHeight() * newScale;
+                            float rightEdge = target.getX() + scaledWidth;
+                            float bottomEdge = target.getY() + scaledHeight;
+
+                            // 如果超出右边界或下边界，限制缩放
+                            if (rightEdge > parent.getWidth() || bottomEdge > parent.getHeight()) {
+                                // 计算最大允许的缩放值
+                                float maxScaleX = (parent.getWidth() - target.getX()) / target.getWidth();
+                                float maxScaleY = (parent.getHeight() - target.getY()) / target.getHeight();
+                                float maxScale = Math.min(maxScaleX, maxScaleY);
+                                newScale = Math.min(newScale, maxScale);
+                            }
+                        }
+
+                        target.setScaleX(newScale);
+                        target.setScaleY(newScale);
+
+                        // 更新手柄位置 - 使用统一方法
+                        updateResizeHandlePosition(v, target, v.getWidth());
+
+                        // 实时同步
+                        syncAllHudComponents();
+                        return true;
+
+                    case android.view.MotionEvent.ACTION_UP:
+                        return true;
+                }
+                return false;
+            }
+        });
     }
 
     private void clearHudSelection() {
         mHudTestComponent = null;
+        removeResizeHandle(); // 清除缩放手柄
         android.widget.FrameLayout preview = findViewById(R.id.layoutHudPreview);
         if (preview != null) {
             for (int i = 0; i < preview.getChildCount(); i++) {
@@ -1340,9 +1659,12 @@ public class MainActivity extends AppCompatActivity {
         // Initial Theme List Refresh
         refreshClusterThemeList();
 
-        // Apply theme and enable cluster display when tab is first shown
-        // This is the reliable trigger point for cluster initialization
-        cn.navitool.managers.ClusterManager.getInstance(this).applyClusterTheme(mSelectedClusterTheme);
+        // Setup Audi RS built-in theme handlers
+        // This also applies the saved theme on startup
+        setupAudiRsThemeHandlers();
+
+        // Note: applyClusterTheme removed - now using setClusterTheme in
+        // setupAudiRsThemeHandlers
 
         // Ensure cluster is shown if previously enabled
         boolean isClusterEnabled = ConfigManager.getInstance().getBoolean("is_cluster_enabled", false);
@@ -1357,17 +1679,17 @@ public class MainActivity extends AppCompatActivity {
                 DebugLogger.toast(this, "Simulating Speed...");
                 new Thread(() -> {
                     DebugLogger.d("MN_Tag", "Starting Speed Simulation");
-                    for (int i = 0; i <= 270; i += 2) {
+                    for (int i = 0; i <= 230; i += 1) {
                         try {
-                            Thread.sleep(10);
+                            Thread.sleep(30); // 慢速动画
                         } catch (InterruptedException e) {
                         }
                         final int speed = i;
                         runOnUiThread(() -> cn.navitool.ClusterHudManager.getInstance(this).updateSpeed(speed));
                     }
-                    for (int i = 270; i >= 0; i -= 2) {
+                    for (int i = 230; i >= 0; i -= 1) {
                         try {
-                            Thread.sleep(10);
+                            Thread.sleep(30); // 慢速动画
                         } catch (InterruptedException e) {
                         }
                         final int speed = i;
@@ -1381,23 +1703,30 @@ public class MainActivity extends AppCompatActivity {
         if (findViewById(R.id.btnClusterTestRpm) != null) {
             findViewById(R.id.btnClusterTestRpm).setOnClickListener(v -> {
                 new Thread(() -> {
-                    for (int i = 0; i <= 8000; i += 100) {
+                    for (int i = 0; i <= 8000; i += 50) {
                         final int rpm = i;
                         runOnUiThread(() -> cn.navitool.ClusterHudManager.getInstance(this).updateRpm(rpm));
                         try {
-                            Thread.sleep(10);
+                            Thread.sleep(30); // 慢速动画
                         } catch (InterruptedException e) {
                         }
                     }
-                    for (int i = 8000; i >= 0; i -= 100) {
+                    for (int i = 8000; i >= 0; i -= 50) {
                         final int rpm = i;
                         runOnUiThread(() -> cn.navitool.ClusterHudManager.getInstance(this).updateRpm(rpm));
                         try {
-                            Thread.sleep(10);
+                            Thread.sleep(30); // 慢速动画
                         } catch (InterruptedException e) {
                         }
                     }
                 }).start();
+            });
+        }
+
+        // 档位切换按钮
+        if (findViewById(R.id.btnClusterTestGear) != null) {
+            findViewById(R.id.btnClusterTestGear).setOnClickListener(v -> {
+                cn.navitool.ClusterHudManager.getInstance(this).cycleGear();
             });
         }
     }
@@ -1407,24 +1736,29 @@ public class MainActivity extends AppCompatActivity {
         if (container == null)
             return;
 
-        // Keep the first child (Default Style 1)
+        // Keep the first 2 children (Default Style 1 and Audi RS)
         int childCount = container.getChildCount();
-        if (childCount > 1) {
-            container.removeViews(1, childCount - 1);
+        if (childCount > 2) {
+            container.removeViews(2, childCount - 2);
         }
 
-        // Setup Default Item
+        // Setup Default Item (index 0)
         View defaultItem = container.getChildAt(0);
         if (defaultItem != null) {
             defaultItem.setTag("1"); // Tag with ID
             defaultItem.setOnClickListener(v -> selectClusterTheme("1"));
         }
 
-        // Add Style 2 (Built-in)
-        View style2Item = createThemeItemView("Style 2");
-        container.addView(style2Item);
+        // Audi RS Item (index 1) - click handler is set in setupAudiRsThemeHandlers()
+        // Tag it for identification
+        View audiRsItem = container.getChildAt(1);
+        if (audiRsItem != null) {
+            audiRsItem.setTag("audi_rs");
+        }
 
-        // Add Imported Themes
+        // Style 2 removed - replaced by Audi RS theme
+
+        // Add Imported Themes only
         List<String> importedThemes = CustomThemeManager.getInstance(this).getImportedThemes();
         for (String themeName : importedThemes) {
             View itemView = createThemeItemView(themeName);
@@ -1495,7 +1829,7 @@ public class MainActivity extends AppCompatActivity {
         updateClusterThemeUI();
 
         // Notify Manager
-        cn.navitool.managers.ClusterManager.getInstance(this).applyClusterTheme(themeId);
+        ClusterHudManager.getInstance(this).applyClusterTheme(themeId);
         DebugLogger.toast(this, "已切换至: " + themeId);
     }
 
@@ -1506,18 +1840,33 @@ public class MainActivity extends AppCompatActivity {
 
         for (int i = 0; i < container.getChildCount(); i++) {
             View child = container.getChildAt(i);
+
+            // Skip Audi RS theme (index 1) - it has separate checkmark handling
+            if (i == 1) {
+                continue;
+            }
+
             Object tag = child.getTag();
             String id = tag != null ? tag.toString() : "";
 
-            // Find checkmark (2nd child in our programmatic view, and in XML)
+            // Find checkmark (last child ImageView in our views)
             ImageView checkmark = null;
             if (child instanceof FrameLayout) {
-                // In XML: TextView is 0, ImageView is 1
-                // In Programmatic: TextView is 0, ImageView is 1
-                // Safe to assume index 1 if count > 1
-                if (((FrameLayout) child).getChildCount() > 1
-                        && ((FrameLayout) child).getChildAt(1) instanceof ImageView) {
-                    checkmark = (ImageView) ((FrameLayout) child).getChildAt(1);
+                FrameLayout frame = (FrameLayout) child;
+                // Try to find the checkmark by checking all children
+                for (int j = 0; j < frame.getChildCount(); j++) {
+                    View v = frame.getChildAt(j);
+                    if (v instanceof ImageView && v.getId() == R.id.ivClusterCheck1) {
+                        checkmark = (ImageView) v;
+                        break;
+                    }
+                }
+                // Fallback for programmatic views (checkmark is usually last)
+                if (checkmark == null && frame.getChildCount() > 1) {
+                    View lastChild = frame.getChildAt(frame.getChildCount() - 1);
+                    if (lastChild instanceof ImageView) {
+                        checkmark = (ImageView) lastChild;
+                    }
                 }
             }
 
@@ -1872,6 +2221,64 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
         }
+
+        // 节日壁纸 Spinner
+        setupFestivalWallpaper();
+    }
+
+    // --- 节日壁纸设置 ---
+    private static final int SETTING_FUNC_WALLPAPER_FESTIVAL_TYPE = 539496192;
+    private static final int[] FESTIVAL_VALUES = {
+            539496192, // 关 (NULL)
+            539496193, // 元旦
+            539496194, // 春节
+            539496195, // 情人节
+            539496196, // 劳动节
+            539496197, // 端午节
+            539496198, // 七夕
+            539496199, // 中秋节
+            539496200, // 国庆节
+            539496201 // 圣诞节
+    };
+
+    private void setupFestivalWallpaper() {
+        android.widget.Spinner spinner = findViewById(R.id.spinnerFestivalWallpaper);
+        if (spinner == null)
+            return;
+
+        android.widget.ArrayAdapter<CharSequence> adapter = android.widget.ArrayAdapter.createFromResource(
+                this, R.array.festival_options, android.R.layout.simple_spinner_item);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+
+        // 读取保存的选项
+        int savedIndex = ConfigManager.getInstance().getInt("festival_wallpaper_index", 0);
+        spinner.setSelection(savedIndex);
+
+        spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
+                int festivalType = FESTIVAL_VALUES[position];
+                ConfigManager.getInstance().setInt("festival_wallpaper_index", position);
+                DebugLogger.action("MainActivity", "节日壁纸选择: " + position);
+
+                // 调用车机 API 设置节日壁纸
+                com.ecarx.xui.adaptapi.car.base.ICarFunction carFunction = cn.navitool.managers.CarServiceManager
+                        .getInstance(MainActivity.this).getCarFunction();
+                if (carFunction != null) {
+                    try {
+                        carFunction.setFunctionValue(SETTING_FUNC_WALLPAPER_FESTIVAL_TYPE, -2147483648, festivalType);
+                        DebugLogger.i("MainActivity", "设置节日壁纸: " + festivalType);
+                    } catch (Exception e) {
+                        DebugLogger.e("MainActivity", "设置节日壁纸失败", e);
+                    }
+                }
+            }
+
+            @Override
+            public void onNothingSelected(android.widget.AdapterView<?> parent) {
+            }
+        });
     }
 
     // --- Brightness Tab Logic ---
@@ -3035,6 +3442,19 @@ public class MainActivity extends AppCompatActivity {
             long bootTime = System.currentTimeMillis() - android.os.SystemClock.elapsedRealtime();
             SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault());
             tvBootTime.setText("Boot Time: " + sdf.format(new java.util.Date(bootTime)));
+        }
+
+        // Setup delete logs button
+        setupDeleteLogsButton();
+    }
+
+    private void setupDeleteLogsButton() {
+        View btnDeleteLogs = findViewById(R.id.btnDeleteLogs);
+        if (btnDeleteLogs != null) {
+            btnDeleteLogs.setOnClickListener(v -> {
+                DebugLogger.deleteAllLogs();
+                DebugLogger.toastAlways(this, getString(R.string.toast_logs_deleted));
+            });
         }
     }
 

@@ -17,7 +17,28 @@ public class DebugLogger {
 
     private static final String PREF_NAME = "navitool_prefs";
     private static final String KEY_DEBUG_MODE = "debug_mode";
-    private static final String LOG_FILE_NAME = "navitool.debug.txt";
+    private static final String DEBUG_FILE_PREFIX = "navitool.debug."; // 用户动作日志
+    private static final String LOGCAT_FILE_PREFIX = "navitool.logcat."; // Logcat输出
+    private static final String FILE_SUFFIX = ".txt";
+    private static String sCurrentDate = null;
+
+    private static String getDebugFileName() {
+        updateCurrentDate();
+        return DEBUG_FILE_PREFIX + sCurrentDate + FILE_SUFFIX;
+    }
+
+    private static String getLogcatFileName() {
+        updateCurrentDate();
+        return LOGCAT_FILE_PREFIX + sCurrentDate + FILE_SUFFIX;
+    }
+
+    private static void updateCurrentDate() {
+        String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
+        if (!today.equals(sCurrentDate)) {
+            sCurrentDate = today;
+        }
+    }
+
     private static final long LOG_COOLDOWN_MS = 60000; // 60 seconds cooldown
 
     private static boolean sIsDebugEnabled = false;
@@ -25,13 +46,22 @@ public class DebugLogger {
     public static void init(Context context) {
         if (context == null)
             return;
-        sIsDebugEnabled = ConfigManager.getInstance().getBoolean(KEY_DEBUG_MODE, false);
+        // Debug 版本默认开启所有 debug 功能，无需手动开关
+        if (BuildConfig.DEBUG) {
+            sIsDebugEnabled = true;
+        } else {
+            sIsDebugEnabled = ConfigManager.getInstance().getBoolean(KEY_DEBUG_MODE, false);
+        }
         if (sIsDebugEnabled) {
             new Thread(DebugLogger::createDirectories).start();
         }
     }
 
     public static boolean isDebugEnabled(Context context) {
+        // Debug 版本始终返回 true
+        if (BuildConfig.DEBUG) {
+            return true;
+        }
         return sIsDebugEnabled;
     }
 
@@ -41,19 +71,22 @@ public class DebugLogger {
         if (enabled) {
             createDirectories();
         } else {
-            deleteLogFile();
+            deleteAllLogs();
         }
     }
 
-    private static void deleteLogFile() {
+    public static void deleteAllLogs() {
         try {
             File dir = new File(Environment.getExternalStorageDirectory(), "NaviTool");
-            File file = new File(dir, LOG_FILE_NAME);
-            if (file.exists()) {
-                file.delete();
+            // Delete all navitool log files
+            File[] logFiles = dir.listFiles((d, name) -> name.startsWith("navitool.") && name.endsWith(".txt"));
+            if (logFiles != null) {
+                for (File f : logFiles) {
+                    f.delete();
+                }
             }
         } catch (Exception e) {
-            Log.e("DebugLogger", "Failed to delete log file", e);
+            Log.e("DebugLogger", "Failed to delete log files", e);
         }
     }
 
@@ -72,33 +105,40 @@ public class DebugLogger {
         }
     }
 
-    // --- Standard Log Wrappers ---
+    // --- Action Log (写入 debug.txt，不输出 Logcat) ---
+    public static void action(String tag, String message) {
+        if (sIsDebugEnabled) {
+            writeToFile(getDebugFileName(), "ACTION: " + tag + ": " + message);
+        }
+    }
+
+    // --- Standard Log Wrappers (写入 logcat.txt) ---
 
     public static void d(String tag, String message) {
         Log.d(tag, message);
         if (sIsDebugEnabled) {
-            writeToFile("DEBUG: " + tag + ": " + message);
+            writeToFile(getLogcatFileName(), "DEBUG: " + tag + ": " + message);
         }
     }
 
     public static void i(String tag, String message) {
         Log.i(tag, message);
         if (sIsDebugEnabled) {
-            writeToFile("INFO: " + tag + ": " + message);
+            writeToFile(getLogcatFileName(), "INFO: " + tag + ": " + message);
         }
     }
 
     public static void w(String tag, String message) {
         Log.w(tag, message);
         if (sIsDebugEnabled) {
-            writeToFile("WARN: " + tag + ": " + message);
+            writeToFile(getLogcatFileName(), "WARN: " + tag + ": " + message);
         }
     }
 
     public static void w(String tag, String message, Throwable tr) {
         Log.w(tag, message, tr);
         if (sIsDebugEnabled) {
-            writeToFile(
+            writeToFile(getLogcatFileName(),
                     "WARN: " + tag + ": " + message + "\nSTACK TRACE:\n" + android.util.Log.getStackTraceString(tr));
         }
     }
@@ -106,14 +146,14 @@ public class DebugLogger {
     public static void e(String tag, String message) {
         Log.e(tag, message);
         if (sIsDebugEnabled) {
-            writeToFile("ERROR: " + tag + ": " + message);
+            writeToFile(getLogcatFileName(), "ERROR: " + tag + ": " + message);
         }
     }
 
     public static void e(String tag, String message, Throwable tr) {
         Log.e(tag, message, tr);
         if (sIsDebugEnabled) {
-            writeToFile(
+            writeToFile(getLogcatFileName(),
                     "ERROR: " + tag + ": " + message + "\nSTACK TRACE:\n" + android.util.Log.getStackTraceString(tr));
         }
     }
@@ -131,7 +171,7 @@ public class DebugLogger {
         if (sIsDebugEnabled) {
             new android.os.Handler(android.os.Looper.getMainLooper())
                     .post(() -> Toast.makeText(context, message, Toast.LENGTH_SHORT).show());
-            writeToFile("TOAST: " + message);
+            writeToFile(getDebugFileName(), "TOAST: " + message);
         }
     }
 
@@ -139,26 +179,23 @@ public class DebugLogger {
         new android.os.Handler(android.os.Looper.getMainLooper())
                 .post(() -> Toast.makeText(context, message, Toast.LENGTH_SHORT).show());
         if (sIsDebugEnabled) {
-            writeToFile("TOAST: " + message);
+            writeToFile(getDebugFileName(), "TOAST: " + message);
         }
     }
 
-    private static void writeToFile(String message) {
+    private static void writeToFile(String fileName, String message) {
         File dir = new File(Environment.getExternalStorageDirectory(), "NaviTool");
         if (!dir.exists()) {
             dir.mkdirs();
         }
-        File file = new File(dir, LOG_FILE_NAME);
-        // Add timestamp if not already present?
-        // Existing logic adds timestamp
-        String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(new Date()); // Added
-                                                                                                                    // ms
+        File file = new File(dir, fileName);
+        String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(new Date());
         String logMessage = timestamp + " " + message + "\n";
 
         try (FileOutputStream fos = new FileOutputStream(file, true)) {
             fos.write(logMessage.getBytes());
         } catch (IOException e) {
-            Log.e("DebugLogger", "Failed to write to log file", e);
+            Log.e("DebugLogger", "Failed to write to log file: " + fileName, e);
         }
     }
 

@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/layoutAudiRsCluster"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent">
+
+    <!-- Layer 1: Background -->
+    <ImageView
+        android:id="@+id/audiRsBg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter"
+        android:src="@drawable/audi_rs_bg" />
+
+    <!-- Layer 2: Dial (表盘) -->
+    <ImageView
+        android:id="@+id/audiRsDial"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter"
+        android:src="@drawable/audi_rs_dial" />
+
+    <!-- Layer 3: Color Lights (彩灯1-5, 默认隐藏) -->
+    <ImageView
+        android:id="@+id/audiRsLight1"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter"
+        android:src="@drawable/audi_rs_light1"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/audiRsLight2"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter"
+        android:src="@drawable/audi_rs_light2"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/audiRsLight3"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter"
+        android:src="@drawable/audi_rs_light3"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/audiRsLight4"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter"
+        android:src="@drawable/audi_rs_light4"
+        android:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/audiRsLight5"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter"
+        android:src="@drawable/audi_rs_light5"
+        android:visibility="gone" />
+
+    <!-- Layer 4: Red Flash Bar (红色闪烁条, 默认隐藏) -->
+    <ImageView
+        android:id="@+id/audiRsFlashBar"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter"
+        android:src="@drawable/audi_rs_flash_bar"
+        android:visibility="gone" />
+
+    <!-- Layer 5: Pointer (白色指针进度条, 支持斜向裁剪) -->
+    <cn.navitool.ClippedImageView
+        android:id="@+id/audiRsPointer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitCenter"
+        android:src="@drawable/audi_rs_pointer"
+        android:visibility="invisible" />
+
+    <!-- Speed Text Display (位于右侧 km/h 标记上方) -->
+    <TextView
+        android:id="@+id/audiRsSpeedText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginStart="15dp"
+        android:layout_marginTop="10dp"
+        android:text="0"
+        android:textColor="#FFFFFF"
+        android:textSize="48sp"
+        android:textStyle="bold" />
+
+    <!-- Gear Display (位于 AUTO 标记上方) -->
+    <TextView
+        android:id="@+id/audiRsGearText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginStart="15dp"
+        android:layout_marginTop="80dp"
+        android:text="P"
+        android:textColor="#00FF00"
+        android:textSize="32sp"
+        android:textStyle="bold" />
+
+</FrameLayout>

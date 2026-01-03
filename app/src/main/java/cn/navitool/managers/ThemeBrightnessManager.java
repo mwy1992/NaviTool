@@ -98,7 +98,7 @@ public class ThemeBrightnessManager {
 
         boolean forceAuto = config.getBoolean("force_auto_day_night", false);
         boolean sensor2425 = config.getBoolean("enable_24_25_light_sensor", false);
-        
+
         // ... Logic continues
 
         CarServiceManager.getInstance(mContext).registerListener(() -> {
@@ -406,14 +406,11 @@ public class ThemeBrightnessManager {
                         mLastLightSensorValue = lightVal;
                 }
 
-                if (currentMode != -1 && currentMode != 0) {
+                // [BUG 1 FIX] 只在值变化时记录日志
+                if (mLastThemeMode != currentMode) {
+                    DebugLogger.d(TAG, "Theme Mode Updated: " + currentMode);
                     mLastThemeMode = currentMode;
-                } else {
-                    DebugLogger.w(TAG, "Theme Mode invalid or 0: " + currentMode);
-                    // Force broadcast even if invalid to update UI state (e.g. to "Unknown")
                 }
-                
-                DebugLogger.d(TAG, "Polled Theme Mode: " + currentMode + " (Last: " + mLastThemeMode + ")");
 
                 broadcastSensorValues(mLastDayNightSensorValue, mLastAvmValue, mLastBrightnessDayValue,
                         mLastBrightnessNightValue);
@@ -589,6 +586,13 @@ public class ThemeBrightnessManager {
         intent.putExtra("prop_brightness_day", bDay);
         intent.putExtra("prop_brightness_night", bNight);
         mContext.sendBroadcast(intent);
+    }
+
+    // [NEW] Public method for MainActivity to request current status after
+    // registering receiver
+    public void broadcastStatus() {
+        broadcastSensorValues(mLastDayNightSensorValue, mLastAvmValue, mLastBrightnessDayValue,
+                mLastBrightnessNightValue);
     }
 
     public void syncAutoNaviTheme() {

@@ -1,0 +1,352 @@
+package cn.navitool;
+
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.View;
+import android.view.animation.LinearInterpolator;
+import android.widget.ImageView;
+import android.widget.TextView;
+
+/**
+ * 奥迪RS转速表主题控制器
+ * 控制彩灯显示和红色闪烁条效果
+ */
+public class AudiRsThemeController {
+    private static final String TAG = "AudiRsThemeController";
+
+    // RPM阈值
+    private static final int RPM_LIGHT1 = 2000; // 彩灯1显示阈值
+    private static final int RPM_LIGHT2 = 2200; // 彩灯2显示阈值
+    private static final int RPM_LIGHT3 = 2400; // 彩灯3显示阈值
+    private static final int RPM_LIGHT4 = 2600; // 彩灯4显示阈值
+    private static final int RPM_LIGHT5 = 2800; // 彩灯5显示阈值
+    private static final int RPM_FLASH = 3000; // 红色闪烁条显示阈值
+
+    // 闪烁频率范围 (毫秒)
+    private static final int FLASH_INTERVAL_MAX = 250; // 最慢闪烁间隔 (3000转) - 加快初始频率
+    private static final int FLASH_INTERVAL_MIN = 80; // 最快闪烁间隔 (8000转)
+    private static final int RPM_MAX = 8000;
+
+    // 指针旋转参数
+    private static final float POINTER_MIN_ANGLE = 0f; // 0转时的角度
+    private static final float POINTER_MAX_ANGLE = 270f; // 8000转时的角度
+
+    // Views
+    private ClippedImageView mPointer;
+    private ImageView mLight1, mLight2, mLight3, mLight4, mLight5;
+    private ImageView mFlashBar;
+    private TextView mSpeedText;
+    private TextView mGearText;
+
+    // 档位状态
+    private static final String[] GEARS = { "P", "R", "N", "D" };
+    private int mCurrentGearIndex = 0;
+
+    // 闪烁动画
+    private Handler mHandler = new Handler(Looper.getMainLooper());
+    private boolean mIsFlashing = false;
+    private boolean mFlashVisible = false;
+    private int mCurrentRpm = 0;
+
+    private Runnable mFlashRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!mIsFlashing || mFlashBar == null)
+                return;
+
+            // 切换可见性
+            mFlashVisible = !mFlashVisible;
+            mFlashBar.setVisibility(mFlashVisible ? View.VISIBLE : View.INVISIBLE);
+
+            // 根据转速计算下次闪烁间隔
+            int interval = calculateFlashInterval(mCurrentRpm);
+            mHandler.postDelayed(this, interval);
+        }
+    };
+
+    // 第一次闪烁延迟后才开始切换
+    private void scheduleFirstFlash() {
+        int interval = calculateFlashInterval(mCurrentRpm);
+        mHandler.postDelayed(mFlashRunnable, interval);
+    }
+
+    public AudiRsThemeController() {
+    }
+
+    /**
+     * 绑定Views
+     */
+    public void bindViews(View rootView) {
+        if (rootView == null)
+            return;
+
+        mPointer = rootView.findViewById(R.id.audiRsPointer);
+        mLight1 = rootView.findViewById(R.id.audiRsLight1);
+        mLight2 = rootView.findViewById(R.id.audiRsLight2);
+        mLight3 = rootView.findViewById(R.id.audiRsLight3);
+        mLight4 = rootView.findViewById(R.id.audiRsLight4);
+        mLight5 = rootView.findViewById(R.id.audiRsLight5);
+        mFlashBar = rootView.findViewById(R.id.audiRsFlashBar);
+        mSpeedText = rootView.findViewById(R.id.audiRsSpeedText);
+        mGearText = rootView.findViewById(R.id.audiRsGearText);
+
+        DebugLogger.d(TAG, "Views bound successfully");
+    }
+
+    /**
+     * 更新转速显示
+     * 
+     * @param rpm 当前转速
+     */
+    public void updateRpm(int rpm) {
+        mCurrentRpm = rpm;
+
+        // 1. 更新进度条（从0转开始显示）
+        updatePointer(rpm);
+
+        // 2. 更新红色闪烁条（3000转以上）- 先于彩灯，避免空白
+        updateFlashBar(rpm);
+
+        // 3. 更新彩灯显示（2000转以上，闪烁条出现时隐藏）
+        updateLights(rpm);
+    }
+
+    /**
+     * 更新车速显示
+     */
+    public void updateSpeed(int speed) {
+        if (mSpeedText != null) {
+            mSpeedText.setText(String.valueOf(speed));
+        }
+    }
+
+    /**
+     * 循环切换档位 P -> R -> N -> D -> P
+     */
+    public void cycleGear() {
+        mCurrentGearIndex = (mCurrentGearIndex + 1) % GEARS.length;
+        updateGearDisplay();
+    }
+
+    // 档位传感器常量 (来自 SoundPromptManager)
+    private static final int GEAR_PARK = 2097712;
+    private static final int GEAR_REVERSE = 2097728;
+    private static final int GEAR_NEUTRAL = 2097680;
+    private static final int GEAR_DRIVE = 2097696;
+    private static final int TRSM_GEAR_PARK = 15;
+    private static final int TRSM_GEAR_DRIVE = 13;
+    private static final int TRSM_GEAR_NEUT = 14;
+    private static final int TRSM_GEAR_RVS = 11;
+
+    /**
+     * 根据传感器档位值设置显示
+     */
+    public void setGear(int gearValue) {
+        String gearStr = "P"; // 默认P档
+
+        if (gearValue == GEAR_DRIVE || gearValue == TRSM_GEAR_DRIVE) {
+            gearStr = "D";
+            mCurrentGearIndex = 3; // D在数组中的索引
+        } else if (gearValue == GEAR_REVERSE || gearValue == TRSM_GEAR_RVS) {
+            gearStr = "R";
+            mCurrentGearIndex = 1;
+        } else if (gearValue == GEAR_NEUTRAL || gearValue == TRSM_GEAR_NEUT) {
+            gearStr = "N";
+            mCurrentGearIndex = 2;
+        } else if (gearValue == GEAR_PARK || gearValue == TRSM_GEAR_PARK) {
+            gearStr = "P";
+            mCurrentGearIndex = 0;
+        }
+
+        updateGearDisplay();
+    }
+
+    /**
+     * 更新档位显示
+     */
+    private void updateGearDisplay() {
+        if (mGearText != null) {
+            String gear = GEARS[mCurrentGearIndex];
+            mGearText.setText(gear);
+
+            // 根据档位设置颜色
+            int color;
+            switch (gear) {
+                case "R":
+                    color = android.graphics.Color.RED;
+                    break;
+                case "N":
+                    color = android.graphics.Color.YELLOW;
+                    break;
+                case "D":
+                    color = android.graphics.Color.GREEN;
+                    break;
+                default: // P
+                    color = android.graphics.Color.WHITE;
+                    break;
+            }
+            mGearText.setTextColor(color);
+        }
+    }
+
+    /**
+     * 更新进度条显示（斜向裁剪）
+     * 进度条内容区域：X轴 556px - 1363px（原始图片尺寸）
+     * 裁剪角度：15°（与Y轴夹角，向左倾斜）
+     */
+    private void updatePointer(int rpm) {
+        if (mPointer == null)
+            return;
+
+        // 限制范围
+        int clampedRpm = Math.max(0, Math.min(rpm, RPM_MAX));
+
+        // 计算进度比例: 0-8000转 映射到 0-1
+        float progress = (float) clampedRpm / RPM_MAX;
+
+        int viewWidth = mPointer.getWidth();
+        int viewHeight = mPointer.getHeight();
+
+        if (viewWidth <= 0 || viewHeight <= 0) {
+            // View还没测量完成，先设置可见
+            mPointer.setVisibility(View.VISIBLE);
+            mPointer.disableClip();
+            return;
+        }
+
+        // 原始图片参数（像素值）
+        final int ORIGINAL_WIDTH = 1920; // 原始图片宽度
+        final int CONTENT_START_X = 686; // 进度条内容起始X坐标（右移120px）
+        final int CONTENT_END_X = 1660; // 进度条内容结束X坐标（右移120px）
+
+        // 计算缩放比例（View尺寸 / 原始图片尺寸）
+        float scaleX = (float) viewWidth / ORIGINAL_WIDTH;
+
+        // 转换为View坐标
+        int scaledStartX = (int) (CONTENT_START_X * scaleX);
+        int scaledEndX = (int) (CONTENT_END_X * scaleX);
+
+        if (progress <= 0) {
+            // 0转时不显示
+            mPointer.setVisibility(View.INVISIBLE);
+        } else {
+            mPointer.setVisibility(View.VISIBLE);
+            mPointer.setAlpha(1.0f);
+
+            // 设置裁剪角度（25°向左倾斜）
+            mPointer.setClipAngle(32f);
+
+            // 设置裁剪进度
+            mPointer.setClipProgress(progress, scaledStartX, scaledEndX);
+
+            android.util.Log.d("AudiRS", "RPM=" + clampedRpm + " progress=" + progress +
+                    " viewWidth=" + viewWidth + " scaledStartX=" + scaledStartX +
+                    " scaledEndX=" + scaledEndX);
+        }
+    }
+
+    /**
+     * 更新彩灯显示
+     * 当红色闪烁条正在闪烁时隐藏彩灯
+     */
+    private void updateLights(int rpm) {
+        if (mIsFlashing) {
+            // 闪烁条正在闪烁，隐藏所有彩灯
+            setLightVisibility(mLight1, false);
+            setLightVisibility(mLight2, false);
+            setLightVisibility(mLight3, false);
+            setLightVisibility(mLight4, false);
+            setLightVisibility(mLight5, false);
+        } else {
+            // 正常显示彩灯（根据转速阈值）
+            setLightVisibility(mLight1, rpm >= RPM_LIGHT1);
+            setLightVisibility(mLight2, rpm >= RPM_LIGHT2);
+            setLightVisibility(mLight3, rpm >= RPM_LIGHT3);
+            setLightVisibility(mLight4, rpm >= RPM_LIGHT4);
+            setLightVisibility(mLight5, rpm >= RPM_LIGHT5);
+        }
+    }
+
+    private void setLightVisibility(ImageView light, boolean visible) {
+        if (light != null) {
+            light.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    /**
+     * 更新红色闪烁条
+     */
+    private void updateFlashBar(int rpm) {
+        if (mFlashBar == null)
+            return;
+
+        if (rpm >= RPM_FLASH) {
+            // 开始闪烁
+            if (!mIsFlashing) {
+                startFlashing();
+            }
+        } else {
+            // 停止闪烁
+            if (mIsFlashing) {
+                stopFlashing();
+            }
+        }
+    }
+
+    /**
+     * 开始闪烁动画
+     */
+    private void startFlashing() {
+        mIsFlashing = true;
+        mFlashVisible = true;
+        mFlashBar.setVisibility(View.VISIBLE);
+        // 使用延迟调度，确保闪烁条先保持可见一段时间再开始切换
+        scheduleFirstFlash();
+        DebugLogger.d(TAG, "Flash bar started");
+    }
+
+    /**
+     * 停止闪烁动画
+     */
+    private void stopFlashing() {
+        mIsFlashing = false;
+        mHandler.removeCallbacks(mFlashRunnable);
+        if (mFlashBar != null) {
+            mFlashBar.setVisibility(View.GONE);
+        }
+        DebugLogger.d(TAG, "Flash bar stopped");
+    }
+
+    /**
+     * 根据转速计算闪烁间隔
+     * 
+     * @param rpm 当前转速
+     * @return 闪烁间隔 (毫秒)
+     */
+    private int calculateFlashInterval(int rpm) {
+        // 线性插值: 3000转=500ms, 8000转=100ms
+        if (rpm <= RPM_FLASH)
+            return FLASH_INTERVAL_MAX;
+        if (rpm >= RPM_MAX)
+            return FLASH_INTERVAL_MIN;
+
+        float ratio = (float) (rpm - RPM_FLASH) / (RPM_MAX - RPM_FLASH);
+        int interval = (int) (FLASH_INTERVAL_MAX - (ratio * (FLASH_INTERVAL_MAX - FLASH_INTERVAL_MIN)));
+        return interval;
+    }
+
+    /**
+     * 释放资源
+     */
+    public void release() {
+        stopFlashing();
+        mHandler.removeCallbacksAndMessages(null);
+        mPointer = null;
+        mLight1 = mLight2 = mLight3 = mLight4 = mLight5 = null;
+        mFlashBar = null;
+        mSpeedText = null;
+        mGearText = null;
+    }
+}

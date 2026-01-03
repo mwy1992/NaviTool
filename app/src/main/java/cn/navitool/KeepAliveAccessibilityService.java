@@ -84,8 +84,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         // 启动副驾屏保活
         cn.navitool.managers.PsdManager.getInstance(this).init();
 
-        // 启动 OneOS 服务 (方控/微信按键) - 必须在 onCreate 调用以确保最快绑定
-        cn.navitool.managers.KeyHandlerManager.getInstance(this).init();
+        // [BUG 3 FIX] KeyHandlerManager 移到 onServiceConnected 中初始化
+        // 避免在 Service 完全连接前调用
 
         // [新增] 初始化车辆控制接口 (监听发动机、档位、车门等)
         initCar();
@@ -96,6 +96,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         super.onServiceConnected();
         DebugLogger.init(this); // Initialize DebugLogger
         ConfigManager.init(this); // Initialize ConfigManager (Syncs Prefs)
+        DebugLogger.action(TAG, "无障碍服务已连接");
         DebugLogger.i(TAG, "Service Connected");
 
         SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
@@ -105,6 +106,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         cn.navitool.managers.ThemeBrightnessManager.getInstance(this).init();
         cn.navitool.managers.SoundPromptManager.getInstance(this).init();
         cn.navitool.managers.KeyHandlerManager.getInstance(this).init();
+        cn.navitool.managers.VehicleSensorManager.getInstance(this).init();
 
         // Initialize PSD
         boolean mIsPsdAlwaysOnEnabled = ConfigManager.getInstance().getBoolean("psd_always_on_enabled", false);
@@ -236,6 +238,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
     // Sound Prompt Sensors
     private static final int SENSOR_TYPE_GEAR = 2097664; // 0x200200
+    // [BUG 4 FIX] 车速传感器 (from ecarx.adaptapi.jar.src -> ISensor.java)
+    private static final int SENSOR_TYPE_CAR_SPEED = 1048832; // 0x100100 - 实际车速
+    private static final int SENSOR_TYPE_DIM_CAR_SPEED = 1055232; // 仪表盘显示速度 (与原车仪表一致)
     private static final int BCM_FUNC_DOOR = 553779456; // 0x21020000
 
     // Door Zones
@@ -261,18 +266,19 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
     private void initCar() {
         cn.navitool.managers.CarServiceManager manager = cn.navitool.managers.CarServiceManager.getInstance(this);
-        manager.init();
 
+        // [FIX] Use callback pattern to wait for async connection
+        manager.registerListener(() -> onCarServiceReady());
+        manager.init();
+    }
+
+    private void onCarServiceReady() {
+        cn.navitool.managers.CarServiceManager manager = cn.navitool.managers.CarServiceManager.getInstance(this);
         this.iCarFunction = manager.getCarFunction();
         this.iSensor = manager.getSensor();
 
-        if (this.iCarFunction == null || this.iSensor == null) {
-            DebugLogger.w(TAG, "Car Service not ready yet. Retrying in 3s...");
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this::initCar, 3000);
-            return;
-        }
-
-        DebugLogger.i(TAG, "Car Service Initialized Successfully.");
+        DebugLogger.i(TAG, "Car Service Ready! iCarFunction=" + (iCarFunction != null) +
+                ", iSensor=" + (iSensor != null));
 
         if (iSensor != null) {
             registerSensorListeners();
@@ -294,8 +300,29 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                         .getInstance(KeepAliveAccessibilityService.this)
                                         .onSensorChanged(sensorType, value);
                             }
-                            // Some cars might report Ignition as float? keeping checking just in case
-                            // But primary should be EventChanged (int)
+                            // [BUG 2 FIX] 有些车型通过 float 回调报告点火状态
+                            else if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
+                                int val = (int) value;
+                                DebugLogger.d(TAG, "Ignition State Changed (float): " + val);
+                                if (val == ISensorEvent.IGNITION_STATE_DRIVING) {
+                                    DebugLogger.i(TAG, "Ignition DRIVING (float) - Triggering Auto Start");
+                                    triggerAutoStart();
+                                }
+                            }
+                            // [BUG 4 FIX] 实际车速传感器 - 用于状态页面对比显示
+                            else if (sensorType == SENSOR_TYPE_CAR_SPEED) {
+                                // 转换因子 3.6 (1 m/s = 3.6 km/h)
+                                int speedKmh = (int) (value * 3.6f);
+                                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
+                                        .updateActualSpeed(speedKmh);
+                            }
+                            // DIM车速传感器 - 用于仪表盘显示（与原车仪表一致）
+                            else if (sensorType == SENSOR_TYPE_DIM_CAR_SPEED) {
+                                // DIM速度原始值需要乘以 0.2778 转换为 km/h (参考 adaptapi Sensor.getDIMSpd)
+                                int speedKmh = (int) (value * 0.2778f);
+                                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
+                                        .updateSpeed(speedKmh);
+                            }
                         } catch (Exception e) {
                             DebugLogger.e(TAG, "Error in onSensorValueChanged", e);
                         }
@@ -308,10 +335,10 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                 DebugLogger.d(TAG, "Ignition State Changed (int): " + value);
                                 mLastIgnition = value;
 
-                                // User Request: Only trigger on DRIVING (6)
-                                if (value == 6) { // IGNITION_STATE_DRIVING
+                                // User Request: Only trigger on DRIVING (2097415)
+                                if (value == ISensorEvent.IGNITION_STATE_DRIVING) {
                                     DebugLogger.i(TAG,
-                                            "Ignition DRIVING (6) detected - Triggering Auto Start Sequence");
+                                            "Ignition DRIVING detected - Triggering Auto Start Sequence");
                                     triggerAutoStart(); // Extracted method
                                 }
                             } else if (sensorType == SENSOR_TYPE_GEAR) {
@@ -320,6 +347,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                     cn.navitool.managers.SoundPromptManager
                                             .getInstance(KeepAliveAccessibilityService.this)
                                             .playGearSound(value);
+                                    // 更新仪表盘显示的档位
+                                    ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
+                                            .updateGear(value);
                                     mLastGear = value;
                                 }
                             } else if (sensorType == ISensor.SENSOR_TYPE_DAY_NIGHT) {
@@ -342,15 +372,18 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 iSensor.registerListener(listener, ISensor.SENSOR_TYPE_DAY_NIGHT);
                 iSensor.registerListener(listener, SENSOR_TYPE_GEAR);
                 iSensor.registerListener(listener, SENSOR_TYPE_LIGHT);
+                // 注册车速传感器（实际车速和DIM仪表速度）
+                iSensor.registerListener(listener, SENSOR_TYPE_CAR_SPEED);
+                iSensor.registerListener(listener, SENSOR_TYPE_DIM_CAR_SPEED);
 
-                DebugLogger.i(TAG, "Sensor listeners registered (Ignition, DayNight, Gear, Light)");
+                DebugLogger.i(TAG, "Sensor listeners registered (Ignition, DayNight, Gear, Light, Speed, DIMSpeed)");
 
                 // [Auto Start Fix] Poll Ignition immediately in case we missed the event
                 try {
                     int currentIgnition = iSensor.getSensorEvent(ISensor.SENSOR_TYPE_IGNITION_STATE);
                     DebugLogger.i(TAG, "Initial Ignition Poll: " + currentIgnition);
-                    if (currentIgnition == 6 || currentIgnition == 4) { // 6=Driving, 4=On (Assumption, user focused on
-                                                                        // 6)
+                    if (currentIgnition == ISensorEvent.IGNITION_STATE_DRIVING ||
+                            currentIgnition == ISensorEvent.IGNITION_STATE_ON) {
                         DebugLogger.i(TAG, "Ignition already ON/DRIVING. Triggering Auto Start...");
                         triggerAutoStart();
                     }
