@@ -48,7 +48,7 @@ public class ClusterHudPresentation extends Presentation {
     public void updateDebugMode(boolean isDebug) {
         // [REMOVED] Debug green background - always transparent now
         if (mLayoutHud != null) {
-            mLayoutHud.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            mLayoutHud.setBackgroundColor(0x4400FF00); // Debug: Semi-transparent green
         }
     }
 
@@ -65,25 +65,66 @@ public class ClusterHudPresentation extends Presentation {
 
         if (theme == THEME_AUDI_RS) {
             // 初始化奥迪RS主题
+            DebugLogger.d("ClusterHudPresentation",
+                    "[AUDI] mAudiRsLayout is " + (mAudiRsLayout == null ? "NULL" : "NOT NULL"));
+            DebugLogger.d("ClusterHudPresentation", "[AUDI] mLayoutCluster is "
+                    + (mLayoutCluster == null ? "NULL" : mLayoutCluster.getClass().getSimpleName()));
+
             if (mAudiRsLayout == null && mLayoutCluster != null) {
                 android.view.LayoutInflater inflater = android.view.LayoutInflater.from(getContext());
                 mAudiRsLayout = inflater.inflate(R.layout.layout_cluster_audi_rs, null);
-                if (mLayoutCluster instanceof android.view.ViewGroup) {
-                    ((android.view.ViewGroup) mLayoutCluster).addView(mAudiRsLayout,
+                DebugLogger.d("ClusterHudPresentation", "[AUDI] Inflated mAudiRsLayout: " + mAudiRsLayout);
+            }
+
+            // Ensure added to parent (fix for switching back from default which clears
+            // views)
+            if (mAudiRsLayout != null && mLayoutCluster instanceof android.view.ViewGroup) {
+                android.view.ViewGroup container = (android.view.ViewGroup) mLayoutCluster;
+                DebugLogger.d("ClusterHudPresentation",
+                        "[AUDI] Container child count BEFORE: " + container.getChildCount());
+                DebugLogger.d("ClusterHudPresentation", "[AUDI] mAudiRsLayout.getParent() is "
+                        + (mAudiRsLayout.getParent() == null ? "NULL" : "NOT NULL"));
+
+                if (mAudiRsLayout.getParent() == null) {
+                    container.addView(mAudiRsLayout,
                             new android.view.ViewGroup.LayoutParams(
                                     android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                                     android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+                    DebugLogger.d("ClusterHudPresentation", "[AUDI] Added mAudiRsLayout to container");
+                } else {
+                    DebugLogger.d("ClusterHudPresentation",
+                            "[AUDI] mAudiRsLayout already has parent, skipping addView");
                 }
+                DebugLogger.d("ClusterHudPresentation",
+                        "[AUDI] Container child count AFTER: " + container.getChildCount());
             }
+
             if (mAudiRsController == null) {
                 mAudiRsController = new AudiRsThemeController();
+                DebugLogger.d("ClusterHudPresentation", "[AUDI] Created new AudiRsThemeController");
             }
+
             if (mAudiRsLayout != null) {
-                mAudiRsController.bindViews(mAudiRsLayout);
-                mAudiRsLayout.setVisibility(View.VISIBLE);
+                // 使用 View.post() 确保布局完全渲染后再绑定视图
+                DebugLogger.d("ClusterHudPresentation", "[AUDI] Scheduling post() callback for bindViews");
+                mAudiRsLayout.post(() -> {
+                    DebugLogger.d("ClusterHudPresentation", "[AUDI-POST] Executing post() callback");
+                    DebugLogger.d("ClusterHudPresentation",
+                            "[AUDI-POST] mAudiRsLayout visibility: " + mAudiRsLayout.getVisibility());
+                    DebugLogger.d("ClusterHudPresentation", "[AUDI-POST] mAudiRsLayout.getParent(): "
+                            + (mAudiRsLayout.getParent() == null ? "NULL" : "NOT NULL"));
+
+                    if (mAudiRsController != null && mAudiRsLayout != null) {
+                        mAudiRsController.bindViews(mAudiRsLayout);
+                        mAudiRsLayout.setVisibility(View.VISIBLE);
+                        DebugLogger.d("ClusterHudPresentation", "[AUDI-POST] Set mAudiRsLayout VISIBLE");
+
+                        // 隐藏默认元素
+                        hideDefaultClusterElements();
+                        DebugLogger.d("ClusterHudPresentation", "[AUDI-POST] Called hideDefaultClusterElements()");
+                    }
+                });
             }
-            // 隐藏默认元素
-            hideDefaultClusterElements();
         } else {
             // 切回默认主题
             if (mAudiRsLayout != null) {
@@ -99,6 +140,9 @@ public class ClusterHudPresentation extends Presentation {
     }
 
     private void hideDefaultClusterElements() {
+        if (mDefaultDashboardRoot != null) {
+            mDefaultDashboardRoot.setVisibility(View.GONE);
+        }
         if (mClusterSpeedPointer != null)
             mClusterSpeedPointer.setVisibility(View.GONE);
         if (mClusterRpmPointer != null)
@@ -106,6 +150,9 @@ public class ClusterHudPresentation extends Presentation {
     }
 
     private void showDefaultClusterElements() {
+        if (mDefaultDashboardRoot != null) {
+            mDefaultDashboardRoot.setVisibility(View.VISIBLE);
+        }
         if (mClusterSpeedPointer != null)
             mClusterSpeedPointer.setVisibility(View.VISIBLE);
         if (mClusterRpmPointer != null)
@@ -176,24 +223,28 @@ public class ClusterHudPresentation extends Presentation {
                     // Title View
                     android.widget.TextView tvTitle = new android.widget.TextView(getContext());
                     tvTitle.setText(title);
-                    tvTitle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 9);
+                    tvTitle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
                     tvTitle.setTextColor(data.color);
                     tvTitle.setSingleLine(true);
                     tvTitle.setMaxLines(1);
                     tvTitle.setEllipsize(android.text.TextUtils.TruncateAt.END); // 使用...省略，不滚动
                     tvTitle.setIncludeFontPadding(false);
+                    tvTitle.setPadding(0, 0, 0, 0);
+                    tvTitle.setLineSpacing(0, 1f);
                     ll.addView(tvTitle);
 
                     // Artist View (Only if exists)
                     if (!artist.isEmpty()) {
                         android.widget.TextView tvArtist = new android.widget.TextView(getContext());
                         tvArtist.setText(artist);
-                        tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 9);
+                        tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
                         tvArtist.setTextColor(data.color);
                         tvArtist.setSingleLine(true);
                         tvArtist.setMaxLines(1);
                         tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.END); // 使用...省略，不滚动
                         tvArtist.setIncludeFontPadding(false);
+                        tvArtist.setPadding(0, 0, 0, 0);
+                        tvArtist.setLineSpacing(0, 1f);
                         ll.addView(tvArtist);
                     }
 
@@ -244,7 +295,8 @@ public class ClusterHudPresentation extends Presentation {
                     tc.setTextColor(data.color);
                     tc.setPadding(0, 0, 0, 0);
                     tc.setIncludeFontPadding(false); // Minimized vertical spacing
-                    tc.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 9); // 9dp
+                    tc.setLineSpacing(0, 1f); // Remove line spacing
+                    tc.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
                     if (data.typeface != null) {
                         tc.setTypeface(data.typeface);
                     }
@@ -351,13 +403,19 @@ public class ClusterHudPresentation extends Presentation {
                     tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
                     tv.setPadding(0, 0, 0, 0);
                     tv.setIncludeFontPadding(false); // Minimized vertical spacing
+                    tv.setLineSpacing(0, 1f); // Remove line spacing
                     tv.setTextColor(data.color);
                     if (data.typeface != null) {
                         tv.setTypeface(data.typeface);
                     }
 
-                    // Rule 2: Font size logic - all use 9dp
-                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 9); // 9dp
+                    // Rule 2: Font size logic - gear uses 48px, others use 24px
+                    // Preview: gear=96px, others=48px -> HUD: gear=48px, others=24px
+                    if ("gear".equals(data.type)) {
+                        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 48);
+                    } else {
+                        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
+                    }
 
                     // Rule 3: Song Component Layout (Handled by LinearLayout block above)
                     view = tv;
@@ -531,7 +589,7 @@ public class ClusterHudPresentation extends Presentation {
                             // Add text view
                             android.widget.TextView tvArtist = new android.widget.TextView(v.getContext());
                             tvArtist.setText(artist);
-                            tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 9);
+                            tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
                             // Reuse color from Title
                             if (ll.getChildCount() > 0) {
                                 tvArtist.setTextColor(
@@ -580,17 +638,22 @@ public class ClusterHudPresentation extends Presentation {
     private View mClusterSpeedPointer;
     private View mClusterRpmPointer;
 
+    private View mDefaultDashboardRoot;
+
     public void enableClusterDashboard() {
         if (mLayoutCluster instanceof android.view.ViewGroup) {
             android.view.ViewGroup container = (android.view.ViewGroup) mLayoutCluster;
             container.removeAllViews();
             mRealClusterComponents.clear(); // Clear tracked components
 
-            android.view.LayoutInflater.from(getContext()).inflate(R.layout.layout_cluster_dashboard, container, true);
+            // Capture root view for visibility toggling
+            mDefaultDashboardRoot = android.view.LayoutInflater.from(getContext())
+                    .inflate(R.layout.layout_cluster_dashboard, container, false);
+            container.addView(mDefaultDashboardRoot);
 
-            // Find Components
-            mClusterSpeedPointer = container.findViewById(R.id.ivClusterSpeedPointer);
-            mClusterRpmPointer = container.findViewById(R.id.ivClusterRpmPointer);
+            // Find Components inside the root
+            mClusterSpeedPointer = mDefaultDashboardRoot.findViewById(R.id.ivClusterSpeedPointer);
+            mClusterRpmPointer = mDefaultDashboardRoot.findViewById(R.id.ivClusterRpmPointer);
         }
     }
 
@@ -697,9 +760,42 @@ public class ClusterHudPresentation extends Presentation {
     }
 
     public void updateGear(int gearValue) {
+        // Update Audi RS theme gear
         if (mCurrentTheme == THEME_AUDI_RS && mAudiRsController != null) {
             mAudiRsController.setGear(gearValue);
         }
+
+        // [FIX] Also update HUD gear components
+        String gearStr = convertGearValueToString(gearValue);
+        if (gearStr != null) {
+            updateComponentGeneric(mRealHudComponents, "gear", gearStr, null);
+        }
+    }
+
+    /**
+     * Convert raw gear int value to display string (P, R, N, D)
+     */
+    private String convertGearValueToString(int gearValue) {
+        // Gear constants from SoundPromptManager
+        final int GEAR_PARK = 2097712;
+        final int GEAR_REVERSE = 2097728;
+        final int GEAR_NEUTRAL = 2097680;
+        final int GEAR_DRIVE = 2097696;
+        final int TRSM_GEAR_PARK = 15;
+        final int TRSM_GEAR_DRIVE = 13;
+        final int TRSM_GEAR_NEUT = 14;
+        final int TRSM_GEAR_RVS = 11;
+
+        if (gearValue == GEAR_DRIVE || gearValue == TRSM_GEAR_DRIVE) {
+            return "D";
+        } else if (gearValue == GEAR_REVERSE || gearValue == TRSM_GEAR_RVS) {
+            return "R";
+        } else if (gearValue == GEAR_NEUTRAL || gearValue == TRSM_GEAR_NEUT) {
+            return "N";
+        } else if (gearValue == GEAR_PARK || gearValue == TRSM_GEAR_PARK) {
+            return "P";
+        }
+        return null;
     }
 
     // --- Path Gauge View ---

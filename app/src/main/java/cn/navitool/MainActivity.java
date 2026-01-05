@@ -115,6 +115,10 @@ public class MainActivity extends AppCompatActivity {
         // Init Logger AFTER Config is ready
         DebugLogger.init(this);
 
+        // Start Amap Managers (ensure they are running even if boot event missed)
+        cn.navitool.managers.AmapMonitorManager.getInstance(this).startMonitoring();
+        cn.navitool.managers.AmapAidlManager.getInstance(this).connect();
+
         setContentView(R.layout.activity_main);
 
         initUI(); // View lookups & value setting (UI bottleneck?)
@@ -159,32 +163,19 @@ public class MainActivity extends AppCompatActivity {
 
             // Apply to UI/Manager on Main Thread
             runOnUiThread(() -> {
-                // Restore Theme First using new system
+                // Restore Theme First using new system (预加载主题，以便延迟激活时使用)
                 DebugLogger.e("MainActivity", "Applying Theme on Startup: " + savedThemeId);
                 ClusterHudManager.getInstance(this).setClusterTheme(savedThemeId);
 
-                DebugLogger.e("MainActivity", "Startup: About to check isClusterEnabled=" + isClusterEnabled);
-                if (isClusterEnabled) {
-                    // CRITICAL: Force presentation update even if mIsClusterEnabled was already
-                    // true
-                    // (from a previous app run). Toggle off first to ensure updatePresentation
-                    // runs.
-                    DebugLogger.e("MainActivity", "Startup: Calling setClusterEnabled toggle");
-                    manager.setClusterEnabled(false);
-                    manager.setClusterEnabled(true);
-                } else {
-                    DebugLogger.e("MainActivity", "Startup: Cluster NOT enabled, skipping display");
-                }
-                if (isHudEnabled) {
-                    // [FIX] Load HUD data FIRST so cache has data when onShowListener runs
-                    DebugLogger.e("MainActivity", "Startup: Loading HUD config first");
-                    if (finalHudData != null) {
-                        applyHudConfigToManager(finalHudData);
-                    }
-                    // THEN enable HUD (triggers showPresentation which reads cache)
-                    DebugLogger.e("MainActivity", "Startup: Calling setHudEnabled toggle");
-                    manager.setHudEnabled(false);
-                    manager.setHudEnabled(true);
+                // [MODIFIED] 不再在启动时立即激活仪表/HUD
+                // 改为等待 KeepAliveService 检测到 IGNITION_STATE_DRIVING 后，延迟3秒发送广播激活
+                DebugLogger.i("MainActivity",
+                        "Startup: Cluster/HUD activation deferred (waiting for DRIVING broadcast)");
+
+                // 预加载 HUD 配置到缓存，以便延迟激活时使用
+                if (isHudEnabled && finalHudData != null) {
+                    DebugLogger.e("MainActivity", "Startup: Preloading HUD config to cache");
+                    applyHudConfigToManager(finalHudData);
                 }
             });
         }).start();
@@ -216,6 +207,11 @@ public class MainActivity extends AppCompatActivity {
                 // image);
             });
         });
+
+        // Check Notification Permission
+        if (!isNotificationListenerEnabled()) {
+            DebugLogger.toastAlways(this, "⚠️ 通知权限未开启，无法获取路名！请点击自动修复。");
+        }
     }
 
     private void updatePreviewContainer(android.widget.FrameLayout preview, String type, String text,
@@ -339,6 +335,11 @@ public class MainActivity extends AppCompatActivity {
                 "cn.navitool.ACTION_DAY_NIGHT_STATUS");
         registerReceiver(mDayNightStatusReceiver, dayNightFilter);
 
+        // [NEW] 注册仪表/HUD激活广播接收器 (延迟3秒后由KeepAliveService发送)
+        android.content.IntentFilter clusterHudFilter = new android.content.IntentFilter(
+                "cn.navitool.ACTION_ACTIVATE_CLUSTER_HUD");
+        registerReceiver(mClusterHudActivationReceiver, clusterHudFilter);
+
         // [FIX] Request initial status after registering receiver
         ThemeBrightnessManager.getInstance(this).broadcastStatus();
     }
@@ -350,6 +351,7 @@ public class MainActivity extends AppCompatActivity {
             unregisterReceiver(mPsdStatusReceiver);
             unregisterReceiver(mOneOSStatusReceiver);
             unregisterReceiver(mDayNightStatusReceiver); // [FIX] Added
+            unregisterReceiver(mClusterHudActivationReceiver); // [NEW] 取消注册仪表/HUD激活接收器
         } catch (IllegalArgumentException e) {
             // Receiver not registered
         }
@@ -821,6 +823,8 @@ public class MainActivity extends AppCompatActivity {
 
                     obj.put("x", child.getX());
                     obj.put("y", child.getY());
+                    // [FIX Bug 5] Save scale
+                    obj.put("scale", child.getScaleX());
                     jsonArray.put(obj);
                 } catch (JSONException e) {
                     DebugLogger.e("HUD", "Failed to serialize component", e);
@@ -879,7 +883,12 @@ public class MainActivity extends AppCompatActivity {
                     float x = (float) obj.optDouble("x", 0);
                     float y = (float) obj.optDouble("y", 0);
 
-                    syncList.add(new ClusterHudManager.HudComponentData(type, text, x * 0.5f, y * 0.5f, color));
+                    float scale = (float) obj.optDouble("scale", 1.0f);
+
+                    ClusterHudManager.HudComponentData data = new ClusterHudManager.HudComponentData(type, text,
+                            x * 0.5f, y * 0.5f, color);
+                    data.scale = scale;
+                    syncList.add(data);
                 }
             } catch (JSONException e) {
                 DebugLogger.e("HUD", "Failed to parse layout config for sync", e);
@@ -914,10 +923,23 @@ public class MainActivity extends AppCompatActivity {
                     String text = obj.optString("text", "Text");
                     float x = (float) obj.optDouble("x", 0);
                     float y = (float) obj.optDouble("y", 0);
+                    float scale = (float) obj.optDouble("scale", 1.0f);
 
                     createAndAddHudComponent(type, text, x, y);
+
+                    // Apply scale to the newly created view (last child)
+                    // Apply scale to the newly created view (last child)
+                    if (preview != null && preview.getChildCount() > 0) {
+                        View lastChild = preview.getChildAt(preview.getChildCount() - 1);
+                        lastChild.setScaleX(scale);
+                        lastChild.setScaleY(scale);
+                    }
+
                     int color = mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF;
-                    syncList.add(new ClusterHudManager.HudComponentData(type, text, x * 0.5f, y * 0.5f, color));
+                    ClusterHudManager.HudComponentData data = new ClusterHudManager.HudComponentData(type, text,
+                            x * 0.5f, y * 0.5f, color);
+                    data.scale = scale;
+                    syncList.add(data);
                 }
             } catch (JSONException e) {
                 DebugLogger.e("HUD", "Failed to parse layout config", e);
@@ -1095,6 +1117,11 @@ public class MainActivity extends AppCompatActivity {
 
         view.setBackgroundColor(android.graphics.Color.TRANSPARENT); // Ensure transparent
 
+        // [FIX Bug 5] Force Pivot to Top-Left (0,0) to match editing logic and prevent
+        // drift
+        view.setPivotX(0f);
+        view.setPivotY(0f);
+
         // Font scaling for Text Views
         if (view instanceof TextView) {
             TextView tv = (TextView) view;
@@ -1186,11 +1213,10 @@ public class MainActivity extends AppCompatActivity {
                         if (newY + viewHeight > parentHeight)
                             newY = parentHeight - viewHeight;
 
-                        // [NEW] Collision Detection - Prevent overlapping with other components
-                        if (wouldOverlap(view, newX, newY, viewWidth, viewHeight)) {
-                            // Don't move if would overlap
-                            return true;
-                        }
+                        // [REMOVED] Collision Detection - Now allowing overlapping
+                        // if (wouldOverlap(view, newX, newY, viewWidth, viewHeight)) {
+                        // return true;
+                        // }
 
                         view.setX(newX);
                         view.setY(newY);
@@ -1358,11 +1384,13 @@ public class MainActivity extends AppCompatActivity {
                 else if ("fuel".equals(type))
                     createAndAddHudComponent("fuel", "油量: --L", 0, 0);
                 else if ("temp_in".equals(type))
-                    createAndAddHudComponent("temp_in", "内: --°C", 0, 0);
+                    createAndAddHudComponent("temp_in", "--°C", 0, 0);
                 else if ("temp_out".equals(type))
-                    createAndAddHudComponent("temp_out", "外: --°C", 0, 0);
+                    createAndAddHudComponent("temp_out", "--°C", 0, 0);
                 else if ("range".equals(type))
-                    createAndAddHudComponent("range", "续航: --km", 0, 0);
+                    createAndAddHudComponent("range", "--km", 0, 0);
+                else if ("fuel_range".equals(type))
+                    createAndAddHudComponent("fuel_range", "--L|--km", 0, 0);
                 else if ("gear".equals(type))
                     createAndAddHudComponent("gear", "D", 0, 0);
                 else if ("turn_signal".equals(type))
@@ -1395,6 +1423,7 @@ public class MainActivity extends AppCompatActivity {
         addButtonWithType.accept("车内温度", "temp_in");
         addButtonWithType.accept("车外温度", "temp_out");
         addButtonWithType.accept("续航里程", "range");
+        addButtonWithType.accept("油量续航", "fuel_range");
         addButtonWithType.accept("档位信息", "gear");
         addButtonWithType.accept("转向信号", "turn_signal");
         addButtonWithType.accept("系统音量", "volume");
@@ -1978,6 +2007,43 @@ public class MainActivity extends AppCompatActivity {
             switchMaster.setChecked(isMaster);
             switchMaster.setOnCheckedChangeListener(
                     (v, isChecked) -> ConfigManager.getInstance().setBoolean("sound_master_enabled", isChecked));
+        }
+
+        // Playback Mode Selection
+        android.widget.RadioGroup rgMode = findViewById(R.id.rgSoundPlaybackMode);
+        if (rgMode != null) {
+            boolean isDirect = ConfigManager.getInstance().getBoolean("sound_playback_mode_direct", false);
+            rgMode.check(isDirect ? R.id.rbSoundModeDirect : R.id.rbSoundModeMix);
+
+            // Sync initial state to Manager
+            cn.navitool.managers.SoundPromptManager.getInstance(this).setPlaybackMode(isDirect);
+
+            rgMode.setOnCheckedChangeListener((group, checkedId) -> {
+                boolean direct = (checkedId == R.id.rbSoundModeDirect);
+                ConfigManager.getInstance().setBoolean("sound_playback_mode_direct", direct);
+                cn.navitool.managers.SoundPromptManager.getInstance(this).setPlaybackMode(direct);
+            });
+        }
+
+        // Sound Channel Selection
+        android.widget.RadioGroup rgChannel = findViewById(R.id.rgSoundChannel);
+        if (rgChannel != null) {
+            int savedStream = ConfigManager.getInstance().getInt("sound_stream_type",
+                    android.media.AudioManager.STREAM_NOTIFICATION);
+            rgChannel.check(savedStream == android.media.AudioManager.STREAM_MUSIC
+                    ? R.id.rbSoundChannelMedia
+                    : R.id.rbSoundChannelNavi);
+
+            // Sync initial state
+            cn.navitool.managers.SoundPromptManager.getInstance(this).setAudioStreamType(savedStream);
+
+            rgChannel.setOnCheckedChangeListener((group, checkedId) -> {
+                int streamType = (checkedId == R.id.rbSoundChannelMedia)
+                        ? android.media.AudioManager.STREAM_MUSIC
+                        : android.media.AudioManager.STREAM_NOTIFICATION;
+                ConfigManager.getInstance().setInt("sound_stream_type", streamType);
+                cn.navitool.managers.SoundPromptManager.getInstance(this).setAudioStreamType(streamType);
+            });
         }
 
         setupSoundItem(R.id.switchSoundStart, R.id.btnSelectSoundStart, R.id.btnTestSoundStart,
@@ -3289,6 +3355,42 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
+    // [NEW] 仪表/HUD 延迟激活广播接收器
+    private final android.content.BroadcastReceiver mClusterHudActivationReceiver = new android.content.BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if ("cn.navitool.ACTION_ACTIVATE_CLUSTER_HUD".equals(intent.getAction())) {
+                DebugLogger.i("MainActivity", "Received Cluster/HUD activation broadcast (3s after DRIVING)");
+
+                // 使用与 setupCluster() 相同的键名: switch_cluster, switch_hud
+                boolean isClusterEnabled = ConfigManager.getInstance().getBoolean("switch_cluster", false);
+                boolean isHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", false);
+
+                ClusterHudManager manager = ClusterHudManager.getInstance(MainActivity.this);
+
+                // 先设置状态
+                if (isClusterEnabled) {
+                    DebugLogger.i("MainActivity", "Delayed Activation: Setting Cluster enabled");
+                    // 强制设置内部状态（绕过状态检查）
+                    manager.setClusterEnabled(false);
+                    manager.setClusterEnabled(true);
+                }
+
+                if (isHudEnabled) {
+                    DebugLogger.i("MainActivity", "Delayed Activation: Setting HUD enabled");
+                    manager.setHudEnabled(false);
+                    manager.setHudEnabled(true);
+                }
+
+                // 强制刷新 Presentation 确保显示
+                if (isClusterEnabled || isHudEnabled) {
+                    DebugLogger.i("MainActivity", "Delayed Activation: Forcing presentation refresh");
+                    manager.forceRefreshPresentation();
+                }
+            }
+        }
+    };
+
     private final android.content.BroadcastReceiver mOneOSStatusReceiver = new android.content.BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -3446,6 +3548,9 @@ public class MainActivity extends AppCompatActivity {
 
         // Setup delete logs button
         setupDeleteLogsButton();
+
+        // Setup engine start simulation button
+        setupSimulateEngineStartButton();
     }
 
     private void setupDeleteLogsButton() {
@@ -3454,6 +3559,22 @@ public class MainActivity extends AppCompatActivity {
             btnDeleteLogs.setOnClickListener(v -> {
                 DebugLogger.deleteAllLogs();
                 DebugLogger.toastAlways(this, getString(R.string.toast_logs_deleted));
+            });
+        }
+    }
+
+    private void setupSimulateEngineStartButton() {
+        View btnSimulate = findViewById(R.id.btnSimulateEngineStart);
+        if (btnSimulate != null) {
+            btnSimulate.setOnClickListener(v -> {
+                DebugLogger.i("MainActivity", "Simulating Engine Start - Sending broadcast to service");
+                DebugLogger.toast(this, "模拟发动机启动");
+
+                // 发送广播让 KeepAliveAccessibilityService 执行完整的 triggerAutoStart 流程
+                // 包括: 自启动应用、播放声音、延迟3秒激活仪表/HUD
+                android.content.Intent intent = new android.content.Intent(
+                        "cn.navitool.ACTION_SIMULATE_ENGINE_START");
+                sendBroadcast(intent);
             });
         }
     }

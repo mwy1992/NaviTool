@@ -23,6 +23,14 @@ public class BootReceiver extends BroadcastReceiver {
             // Log boot event via DebugLogger
             DebugLogger.logBootEvent(context);
 
+            // Start Traffic Light Monitoring (Broadcast)
+            DebugLogger.log(context, TAG, "Starting Amap Broadcast Monitor...");
+            cn.navitool.managers.AmapMonitorManager.getInstance(context).startMonitoring();
+
+            // Start Amap AIDL Connection
+            DebugLogger.log(context, TAG, "Connecting to Amap AIDL Service...");
+            cn.navitool.managers.AmapAidlManager.getInstance(context).connect();
+
         }
     }
 }

@@ -39,6 +39,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <meta-data
+            android:name="com.autonavi.amapauto.protocol.apikey"
+            android:value="AlSimulate" />
         
         <receiver
             android:name=".BootReceiver"

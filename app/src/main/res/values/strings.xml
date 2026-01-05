@@ -13,7 +13,7 @@
     <string name="force_light">强制日间模式</string>
     <string name="force_dark">强制夜间模式</string>
     <string name="force_auto_mode">强制开启车机光感自动主题模式</string>
-    <string name="switch_24_25_light_sensor">启用24/25款光感切换主题功能（测试）</string>
+    <string name="switch_24_25_light_sensor">启用24/25款光感切换主题功能（不可用）</string>
     <string name="activate_steering_wheel">激活第三方播放器方控功能</string>
     <string name="media_prev">上一曲</string>
     <string name="media_play_pause">播放/暂停</string>
@@ -48,8 +48,8 @@
     <string name="status_on">开启</string>
     <string name="status_off">关闭</string>
     <string name="title_psd_always_on">副驾屏(PSD)常亮</string>
-    <string name="label_psd_always_on">副驾屏常亮 (方法1)</string>
-    <string name="label_psd_always_on_method2">副驾屏常亮 (方法2)</string>
+    <string name="label_psd_always_on">副驾屏常亮 (方法1、待反馈)</string>
+    <string name="label_psd_always_on_method2">副驾屏常亮 (方法2、待反馈)</string>
     <string name="warn_psd_burn_in">警 告：可能导致屏幕烧屏</string>
     <string name="sound_prompt_title">提示音效</string>
     <string name="sound_prompt_desc">自定义提示音</string>
@@ -61,6 +61,16 @@
     <string name="switch_sound_door_passenger">副驾门音效</string>
     <string name="btn_select_file">选择</string>
     <string name="btn_test_sound">测试</string>
+    <string name="sound_playback_mode_title">播放模式</string>
+    <string name="sound_mode_mix">混音播放</string>
+    <string name="sound_mode_direct">直接播放</string>
+    <string name="sound_mode_mix_hint">与音乐同时播放，音量较小</string>
+    <string name="sound_mode_direct_hint">暂停音乐后播放，音量最大</string>
+    <string name="sound_channel_title">播放声道</string>
+    <string name="sound_channel_media">媒体声道</string>
+    <string name="sound_channel_navi">导航声道</string>
+    <string name="sound_channel_media_hint">使用媒体音量，适合“直接播放”</string>
+    <string name="sound_channel_navi_hint">使用导航音量，适合“混音播放”</string>
 
     <!-- Permissions Dialog -->
     <string name="app_necessary_permissions">应用必要权限</string>
@@ -121,7 +131,7 @@
     <string name="btn_enable_wireless_adb">开启无线调试</string>
     <string name="btn_delete_logs">删除日志</string>
     <string name="toast_logs_deleted">日志已删除</string>
-    <string name="festival_wallpaper">节日壁纸</string>
+    <string name="festival_wallpaper">节日壁纸（不可用）</string>
     <string-array name="festival_options">
         <item>关</item>
         <item>元旦</item>

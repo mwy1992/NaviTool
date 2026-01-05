@@ -10,6 +10,12 @@ public class SoundPromptManager {
     private static volatile SoundPromptManager instance;
     private Context mContext;
     private MediaPlayer mMediaPlayer;
+    private boolean mIsDirectPlaybackMode = false; // Default: Mix (false)
+
+    public void setPlaybackMode(boolean isDirect) {
+        mIsDirectPlaybackMode = isDirect;
+        DebugLogger.d(TAG, "Playback Mode Changed: " + (isDirect ? "DIRECT (Pause Music)" : "MIX (Duck Music)"));
+    }
 
     // Gear Constants (Matched to KeepAliveAccessibilityService)
     public static final int GEAR_PARK = 2097712;
@@ -88,6 +94,10 @@ public class SoundPromptManager {
         }
     }
 
+    public void playDoorPassengerSound() {
+        playSound("sound_door_passenger");
+    }
+
     public void playCustomSound(String absolutePath) {
         if (absolutePath == null || absolutePath.isEmpty())
             return;
@@ -125,6 +135,17 @@ public class SoundPromptManager {
         }
     }
 
+    private int mAudioStreamType = android.media.AudioManager.STREAM_NOTIFICATION; // Default to old behavior
+                                                                                   // (Navi-like)
+    // Actually, traditionally we used USAGE_NAVIGATION. Let's make the "Navigation"
+    // option default.
+
+    public void setAudioStreamType(int streamType) {
+        mAudioStreamType = streamType;
+        DebugLogger.d(TAG, "Audio Stream Type Changed: " +
+                (streamType == android.media.AudioManager.STREAM_MUSIC ? "MUSIC (Media)" : "NOTIFICATION (Navi)"));
+    }
+
     private void playFile(String filePath) {
         try {
             // Request Audio Focus
@@ -132,25 +153,69 @@ public class SoundPromptManager {
                     .getSystemService(Context.AUDIO_SERVICE);
             android.media.AudioFocusRequest focusRequest = null;
             android.media.AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
+                // 添加日志以调试焦点变化
+                DebugLogger.d(TAG, "Audio Focus Changed: " + focusChange);
             };
             final android.media.AudioManager.OnAudioFocusChangeListener finalFocusListener = focusChangeListener;
 
             if (am != null) {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                    android.media.AudioAttributes playbackAttributes = new android.media.AudioAttributes.Builder()
-                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build();
-                    focusRequest = new android.media.AudioFocusRequest.Builder(
-                            android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+
+                    int focusType;
+                    if (mIsDirectPlaybackMode) {
+                        // Direct Mode: Try Exclusive if available to force pause
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
+                            focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE;
+                        } else {
+                            focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT;
+                        }
+                    } else {
+                        // Mix Mode: Duck
+                        focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK;
+                    }
+
+                    android.media.AudioAttributes.Builder attrBuilder = new android.media.AudioAttributes.Builder();
+
+                    if (mAudioStreamType == android.media.AudioManager.STREAM_MUSIC) {
+                        // Media Channel
+                        attrBuilder.setUsage(android.media.AudioAttributes.USAGE_MEDIA);
+                        attrBuilder.setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC);
+                    } else {
+                        // Navigation Channel (Default)
+                        attrBuilder.setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE);
+                        attrBuilder.setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH);
+                    }
+
+                    android.media.AudioAttributes playbackAttributes = attrBuilder.build();
+
+                    focusRequest = new android.media.AudioFocusRequest.Builder(focusType)
                             .setAudioAttributes(playbackAttributes)
                             .setAcceptsDelayedFocusGain(false)
                             .setOnAudioFocusChangeListener(focusChangeListener)
                             .build();
-                    am.requestAudioFocus(focusRequest);
+                    int focusResult = am.requestAudioFocus(focusRequest);
+                    DebugLogger.d(TAG, "Audio Focus Requested (" + (mIsDirectPlaybackMode ? "DIRECT" : "MIX")
+                            + ", Stream="
+                            + (mAudioStreamType == android.media.AudioManager.STREAM_MUSIC ? "MEDIA" : "NAVI")
+                            + "), result=" + focusResult);
                 } else {
-                    am.requestAudioFocus(focusChangeListener, android.media.AudioManager.STREAM_MUSIC,
-                            android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+                    int focusType;
+                    if (mIsDirectPlaybackMode) {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
+                            focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE;
+                        } else {
+                            focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT;
+                        }
+                    } else {
+                        focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK;
+                    }
+
+                    int stream = mAudioStreamType;
+                    // Use the selected stream for legacy request
+
+                    int focusResult = am.requestAudioFocus(focusChangeListener, stream, focusType);
+                    DebugLogger.d(TAG, "Audio Focus Requested (Legacy " + (mIsDirectPlaybackMode ? "DIRECT" : "MIX")
+                            + "), result=" + focusResult);
                 }
             }
 
@@ -159,6 +224,22 @@ public class SoundPromptManager {
             } else {
                 mMediaPlayer.reset();
             }
+
+            // Set attributes for MediaPlayer as well
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
+                android.media.AudioAttributes.Builder attrBuilder = new android.media.AudioAttributes.Builder();
+                if (mAudioStreamType == android.media.AudioManager.STREAM_MUSIC) {
+                    attrBuilder.setUsage(android.media.AudioAttributes.USAGE_MEDIA);
+                    attrBuilder.setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC);
+                } else {
+                    attrBuilder.setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE);
+                    attrBuilder.setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH);
+                }
+                mMediaPlayer.setAudioAttributes(attrBuilder.build());
+            } else {
+                mMediaPlayer.setAudioStreamType(mAudioStreamType);
+            }
+
             mMediaPlayer.setDataSource(filePath);
             mMediaPlayer.prepare();
             mMediaPlayer.start();
@@ -167,11 +248,14 @@ public class SoundPromptManager {
             final android.media.AudioFocusRequest finalRequest = focusRequest;
             mMediaPlayer.setOnCompletionListener(mediaPlayer -> {
                 // Abandon Focus
+                DebugLogger.d(TAG, "Sound completed, abandoning audio focus...");
                 if (am != null) {
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && finalRequest != null) {
-                        am.abandonAudioFocusRequest(finalRequest);
+                        int result = am.abandonAudioFocusRequest(finalRequest);
+                        DebugLogger.d(TAG, "abandonAudioFocusRequest result: " + result);
                     } else {
-                        am.abandonAudioFocus(finalFocusListener);
+                        int result = am.abandonAudioFocus(finalFocusListener);
+                        DebugLogger.d(TAG, "abandonAudioFocus result: " + result);
                     }
                 }
             });

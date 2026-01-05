@@ -439,6 +439,17 @@
                             android:textSize="14sp"/>
                     </LinearLayout>
 
+                    <!-- 模拟发动机启动按钮 -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnSimulateEngineStart"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:text="模拟发动机启动"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        app:icon="@drawable/ic_check"
+                        app:iconGravity="textStart"/>
+
                     <!-- Delete Logs Button -->
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnDeleteLogs"

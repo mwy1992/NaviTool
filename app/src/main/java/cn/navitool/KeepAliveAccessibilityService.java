@@ -70,6 +70,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     @Override
     public void onCreate() {
         super.onCreate();
+        DebugLogger.init(this); // [Fix Cold Boot] Init logger early
+        ConfigManager.init(this); // [Fix Cold Boot] Init config early so triggers in onCreate can read prefs
         DebugLogger.i(TAG, "Service Created");
         DebugLogger.createDirectories();
 
@@ -94,8 +96,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
-        DebugLogger.init(this); // Initialize DebugLogger
-        ConfigManager.init(this); // Initialize ConfigManager (Syncs Prefs)
+        // DebugLogger.init(this); // Moved to onCreate
+        // ConfigManager.init(this); // Moved to onCreate
         DebugLogger.action(TAG, "无障碍服务已连接");
         DebugLogger.i(TAG, "Service Connected");
 
@@ -134,6 +136,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         filter.addAction(Intent.ACTION_CONFIGURATION_CHANGED);
         filter.addAction("cn.navitool.ACTION_REQUEST_ONEOS_STATUS");
         filter.addAction("cn.navitool.ACTION_REQUEST_DAY_NIGHT_STATUS");
+        filter.addAction("cn.navitool.ACTION_SIMULATE_ENGINE_START"); // 模拟发动机启动
         try {
             if (Build.VERSION.SDK_INT >= 33) { // Android 13+ (Tiramisu)
                 registerReceiver(configChangeReceiver, filter, Context.RECEIVER_EXPORTED);
@@ -144,12 +147,26 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             DebugLogger.e(TAG, "Failed to register configChangeReceiver", e);
         }
 
+        // Initialize and start Amap Broadcast Monitor (Silent Logger)
+        try {
+            cn.navitool.managers.AmapMonitorManager.getInstance(this).startMonitoring();
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to start AmapMonitorManager", e);
+        }
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
         DebugLogger.i(TAG, "Service destroying, cleaning up resources...");
+
+        // Stop Amap Monitor
+        try {
+            cn.navitool.managers.AmapMonitorManager.getInstance(this).stopMonitoring();
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to stop AmapMonitorManager", e);
+        }
+
         cn.navitool.managers.ThemeBrightnessManager.getInstance(this).destroy();
         cn.navitool.managers.SoundPromptManager.getInstance(this).destroy();
         cn.navitool.managers.KeyHandlerManager.getInstance(this).destroy();
@@ -242,6 +259,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private static final int SENSOR_TYPE_CAR_SPEED = 1048832; // 0x100100 - 实际车速
     private static final int SENSOR_TYPE_DIM_CAR_SPEED = 1055232; // 仪表盘显示速度 (与原车仪表一致)
     private static final int BCM_FUNC_DOOR = 553779456; // 0x21020000
+    private boolean mAutoStartPending = false; // Debounce flag for triggerAutoStart
 
     // Door Zones
     private static final int ZONE_DOOR_FL = 1; // Front Left
@@ -261,6 +279,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private int mLastIgnition = -1;
     private int mLastGear = -1;
     private int mLastDoor = -1;
+    private boolean mEngineStarted = false; // Bug 7: 只有发动机启动后才播放声音
+    private boolean mInitialGearSkipped = false; // Bug 7: 忽略启动时的第一次P档事件
 
     // --- Car AdaptAPI Implementation ---
 
@@ -318,8 +338,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                             }
                             // DIM车速传感器 - 用于仪表盘显示（与原车仪表一致）
                             else if (sensorType == SENSOR_TYPE_DIM_CAR_SPEED) {
-                                // DIM速度原始值需要乘以 0.2778 转换为 km/h (参考 adaptapi Sensor.getDIMSpd)
-                                int speedKmh = (int) (value * 0.2778f);
+                                // DIM速度与实际车速格式相同，都需要乘以3.6转换为km/h
+                                int speedKmh = (int) (value * 3.6f);
                                 ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
                                         .updateSpeed(speedKmh);
                             }
@@ -337,17 +357,28 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
                                 // User Request: Only trigger on DRIVING (2097415)
                                 if (value == ISensorEvent.IGNITION_STATE_DRIVING) {
+                                    mEngineStarted = true; // Bug 7: 标记发动机已启动，允许播放档位声音
                                     DebugLogger.i(TAG,
                                             "Ignition DRIVING detected - Triggering Auto Start Sequence");
                                     triggerAutoStart(); // Extracted method
                                 }
                             } else if (sensorType == SENSOR_TYPE_GEAR) {
                                 DebugLogger.d(TAG, "Gear Changed (int): " + value);
+                                // Bug 7: 只有发动机启动后才播放档位声音
                                 if (mLastGear != value) {
-                                    cn.navitool.managers.SoundPromptManager
-                                            .getInstance(KeepAliveAccessibilityService.this)
-                                            .playGearSound(value);
-                                    // 更新仪表盘显示的档位
+                                    // Bug 7: 忽略启动时的第一次P档事件
+                                    boolean isInitialP = !mInitialGearSkipped &&
+                                            (value == cn.navitool.managers.SoundPromptManager.GEAR_PARK ||
+                                                    value == cn.navitool.managers.SoundPromptManager.TRSM_GEAR_PARK);
+                                    if (isInitialP) {
+                                        mInitialGearSkipped = true;
+                                        DebugLogger.d(TAG, "Skipping initial P gear sound");
+                                    } else if (mEngineStarted) {
+                                        cn.navitool.managers.SoundPromptManager
+                                                .getInstance(KeepAliveAccessibilityService.this)
+                                                .playGearSound(value);
+                                    }
+                                    // 不管是否播放声音，仪表盘显示始终更新
                                     ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
                                             .updateGear(value);
                                     mLastGear = value;
@@ -398,6 +429,13 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     }
 
     private void triggerAutoStart() {
+        // Debounce: Prevent multiple calls during the 3-second delay period
+        if (mAutoStartPending) {
+            DebugLogger.i(TAG, "triggerAutoStart: Already pending, skipping duplicate call");
+            return;
+        }
+        mAutoStartPending = true;
+
         // 1. Repair Permissions (Fixes Auto Repair bug)
         checkAndRepairPermissions();
 
@@ -408,6 +446,38 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         cn.navitool.managers.SoundPromptManager
                 .getInstance(KeepAliveAccessibilityService.this)
                 .playStartSound();
+
+        // 4. 立即激活 UI (不需要等待 3 秒)
+        boolean isClusterEnabled = ConfigManager.getInstance().getBoolean("switch_cluster", false);
+        boolean isHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", false);
+
+        DebugLogger.i(TAG, "triggerAutoStart: Activating UI immediately (Cluster=" + isClusterEnabled + ", HUD="
+                + isHudEnabled + ")");
+
+        if (isClusterEnabled || isHudEnabled) {
+            // 立即显示 UI
+            ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
+                    .showUiOnly(isClusterEnabled, isHudEnabled);
+
+            // 同时发送广播以便 MainActivity 也能更新 UI
+            android.content.Intent intent = new android.content.Intent("cn.navitool.ACTION_ACTIVATE_CLUSTER_HUD");
+            sendBroadcast(intent);
+        }
+
+        // 5. 延迟 3 秒后切换导航模式 (如果是仪表模式)
+        // 只有开启了仪表才需要切换模式，HUD 不需要
+        if (isClusterEnabled) {
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                DebugLogger.i(TAG, "3s delay passed - Switching Navi Mode to 3");
+                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).applyNaviMode(3);
+
+                // Reset debounce flag after activation completes
+                mAutoStartPending = false;
+            }, 3000);
+        } else {
+            // 如果没开启仪表，直接重置标志
+            mAutoStartPending = false;
+        }
     }
 
     private void registerFunctionListeners() {
@@ -427,30 +497,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                             // Door Logic
                             if (functionId == BCM_FUNC_DOOR) {
                                 DebugLogger.d(TAG, "Door Function Changed: Zone=" + zone + ", Value=" + value);
-                                // Delegate to SoundPromptManager to handle sound logic and file checks safely
-                                // Assuming 1 = Open
-                                if (value == 1) {
-                                    String key = "";
-                                    if (zone == 4)
-                                        key = "sound_door_passenger_file";
-                                    else if (zone == 1)
-                                        key = "sound_door_driver_file"; // Example
-                                    else if (zone == 16)
-                                        key = "sound_door_rear_left_file";
-                                    else if (zone == 32)
-                                        key = "sound_door_rear_right_file";
-
-                                    if (!key.isEmpty()) {
-                                        String ret = getSharedPreferences("navitool_prefs", MODE_PRIVATE).getString(key,
-                                                "");
-                                        if (!ret.isEmpty()) {
-                                            cn.navitool.managers.SoundPromptManager
-                                                    .getInstance(KeepAliveAccessibilityService.this)
-                                                    .playCustomSound(ret);
-                                        }
-                                    }
-                                }
-
+                                handleDoorStatus(zone, value);
                             } else if (functionId == BCM_FUNC_LIGHT_LEFT_TRUN_SIGNAL) {
                                 DebugLogger.d(TAG, "Left Turn Signal Changed: " + value);
                                 ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
@@ -516,13 +563,45 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 iCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_RIGHT_TRUN_SIGNAL, watcher);
                 // Also PSD if needed
                 iCarFunction.registerFunctionValueWatcher(FUNC_PSD_SCREEN_SWITCH, watcher);
-                // Restore FUNC_DAYMODE_SETTING for Auto Theme Logic
                 iCarFunction.registerFunctionValueWatcher(FUNC_DAYMODE_SETTING, watcher);
 
                 DebugLogger.i(TAG, "Function watchers registered (AVM, Brightness, Door, Lights)");
+
+                // [Fix Door Sound] Poll door status immediately
+                pollDoorStatus();
             }
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to register function listeners", e);
+        }
+    }
+
+    private void pollDoorStatus() {
+        if (iCarFunction == null)
+            return;
+        try {
+            // Poll Passenger Door (Zone 4)
+            int val = iCarFunction.getFunctionValue(BCM_FUNC_DOOR, 4);
+            DebugLogger.d(TAG, "Polled Door Zone 4 Value: " + val);
+            if (val == 1) {
+                handleDoorStatus(4, 1);
+            }
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to poll door status", e);
+        }
+    }
+
+    private void handleDoorStatus(int zone, int value) {
+        // 只在门打开时播放 (value == 1)
+        if (value == 1) {
+            // Zone 4 = 副驾驶车门
+            if (zone == 4) {
+                DebugLogger.d(TAG, "Passenger Door (Zone 4) Open, triggering sound");
+                // 使用与其他声音相同的方法，自动处理开关检查和路径解析
+                cn.navitool.managers.SoundPromptManager
+                        .getInstance(KeepAliveAccessibilityService.this)
+                        .playDoorPassengerSound();
+            }
+            // 其他门暂时不处理
         }
     }
 
@@ -543,6 +622,10 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 DebugLogger.d(TAG, "Request Day/Night Status Received");
                 cn.navitool.managers.ThemeBrightnessManager.getInstance(KeepAliveAccessibilityService.this)
                         .checkDayNightStatus(true);
+            } else if ("cn.navitool.ACTION_SIMULATE_ENGINE_START".equals(action)) {
+                // 模拟发动机启动 - 执行完整的 triggerAutoStart 流程
+                DebugLogger.i(TAG, "Simulate Engine Start Received - Triggering full auto start sequence");
+                triggerAutoStart();
             }
         }
     };

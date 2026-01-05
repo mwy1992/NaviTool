@@ -42,6 +42,15 @@ public class ClusterHudManager {
     private VolumeReceiver mVolumeReceiver;
     private NotificationConnectionReceiver mNotifReceiver;
 
+    // Cached values for combined fuel_range component
+    private float mCachedFuelLiters = 0f;
+    private float mCachedRangeKm = 0f;
+    private int mCachedSpeed = 0;
+    private int mCachedGear = -1; // -1 for unknown
+    // [Fix Cold Boot] Add tracking for actually applied theme to avoid redundant
+    // resets
+    private int mCurrentAppliedTheme = -1;;
+
     private List<HudComponentData> mCachedHudComponents;
     private List<HudComponentData> mCachedClusterComponents;
     private Object mDimMenuInteraction; // IDimMenuInteraction via Reflection
@@ -73,6 +82,9 @@ public class ClusterHudManager {
         // [HUD FIX] 初始化缓存列表，避免 "Cache not ready" 错误
         this.mCachedHudComponents = new ArrayList<>();
         this.mCachedClusterComponents = new ArrayList<>();
+
+        // Load persisted sensor data
+        loadSensorCache();
 
         initAdaptApi();
         initDimInteraction(); // Restore missing call for Real HUD Mode Switch
@@ -224,13 +236,17 @@ public class ClusterHudManager {
                 if (sensorType == ISensor.SENSOR_TYPE_FUEL_LEVEL) {
                     // MConfig divides by 1000 for Liters
                     float liters = value / 1000f;
-                    updateComponentText("fuel", String.format("油量: %.0fL", liters));
+                    mCachedFuelLiters = liters;
+                    updateComponentText("fuel", String.format("%.0fL", liters));
+                    updateFuelRangeComponent();
                 } else if (sensorType == ISensor.SENSOR_TYPE_TEMPERATURE_AMBIENT) {
-                    updateComponentText("temp_out", String.format("外: %.1f°C", value));
+                    updateComponentText("temp_out", String.format("%.0f°C", value));
                 } else if (sensorType == ISensor.SENSOR_TYPE_TEMPERATURE_INDOOR) {
-                    updateComponentText("temp_in", String.format("内: %.1f°C", value));
+                    updateComponentText("temp_in", String.format("%.0f°C", value));
                 } else if (sensorType == ISensor.SENSOR_TYPE_ENDURANCE_MILEAGE) {
-                    updateComponentText("range", String.format("续航: %.0fkm", value));
+                    mCachedRangeKm = value;
+                    updateComponentText("range", String.format("%.0fkm", value));
+                    updateFuelRangeComponent();
                 } else if (sensorType == ISensor.SENSOR_TYPE_RPM) {
                     updateRpm(value);
                 }
@@ -596,6 +612,14 @@ public class ClusterHudManager {
         }
     }
 
+    /**
+     * 更新油量续航组合组件，格式: "32L|280km"
+     */
+    private void updateFuelRangeComponent() {
+        String text = String.format("%.0fL|%.0fkm", mCachedFuelLiters, mCachedRangeKm);
+        updateComponentText("fuel_range", text);
+    }
+
     // --- Listener for Preview UI ---
     public interface OnHudDataChangedListener {
         void onHudDataChanged(String type, String text, android.graphics.Bitmap image);
@@ -844,10 +868,82 @@ public class ClusterHudManager {
                 Method getMenuInteractionMethod = dimInteractionClass.getMethod("getDimMenuInteraction");
                 mDimMenuInteraction = getMenuInteractionMethod.invoke(dimInteraction);
                 DebugLogger.i(TAG, "AdaptAPI DimMenuInteraction initialized successfully: " + mDimMenuInteraction);
+
+                // 注册 naviMode 变化监听器
+                registerNaviModeListener();
             } catch (Exception e) {
                 DebugLogger.e(TAG, "Failed to initialize AdaptAPI DimMenuInteraction", e);
             }
         }).start();
+    }
+
+    /**
+     * 注册 NaviMode 变化监听器
+     * 当导航结束后系统会触发 naviMode=1，此时延迟1秒重新显示仪表
+     */
+    private void registerNaviModeListener() {
+        if (mDimMenuInteraction == null) {
+            DebugLogger.w(TAG, "Cannot register NaviMode listener: DimMenuInteraction is null");
+            return;
+        }
+
+        try {
+            // 获取 IDimMenuInteractionCallback 接口
+            Class<?> callbackInterface = Class.forName(
+                    "com.ecarx.xui.adaptapi.diminteraction.IDimMenuInteraction$IDimMenuInteractionCallback");
+
+            // 创建动态代理来实现回调接口
+            Object callbackProxy = java.lang.reflect.Proxy.newProxyInstance(
+                    callbackInterface.getClassLoader(),
+                    new Class<?>[] { callbackInterface },
+                    (proxy, method, args) -> {
+                        String methodName = method.getName();
+
+                        if ("onChangeNaviMode".equals(methodName) && args != null && args.length > 0) {
+                            int naviMode = (int) args[0];
+                            DebugLogger.i(TAG, "NaviMode Changed: " + naviMode);
+
+                            // 当导航结束 (naviMode=1) 时，延迟1秒重新显示仪表
+                            if (naviMode == 1 && mIsClusterEnabled) {
+                                DebugLogger.i(TAG, "Navigation ended (mode=1), will re-display cluster in 1 second...");
+                                mMainHandler.postDelayed(() -> {
+                                    DebugLogger.i(TAG, "Re-displaying cluster after navigation end...");
+                                    // 重新调用 switchNaviMode(3) 并刷新显示
+                                    if (mDimMenuInteraction != null) {
+                                        try {
+                                            Method switchMethod = mDimMenuInteraction.getClass()
+                                                    .getMethod("switchNaviMode", int.class);
+                                            switchMethod.invoke(mDimMenuInteraction, 3);
+                                            DebugLogger.i(TAG, "NaviMode re-set to 3 after navigation end");
+                                        } catch (Exception e) {
+                                            DebugLogger.e(TAG, "Failed to re-set NaviMode", e);
+                                        }
+                                    }
+                                    if (mPresentation != null) {
+                                        mPresentation.setClusterVisible(true);
+                                    }
+                                }, 1000);
+                            }
+                        }
+
+                        // 其他回调方法返回默认值
+                        if (method.getReturnType() == boolean.class) {
+                            return false;
+                        } else if (method.getReturnType() == int.class) {
+                            return 0;
+                        }
+                        return null;
+                    });
+
+            // 注册回调: mDimMenuInteraction.registerDimMenuInteractionCallback(callback)
+            Method registerMethod = mDimMenuInteraction.getClass().getMethod(
+                    "registerDimMenuInteractionCallback", callbackInterface);
+            registerMethod.invoke(mDimMenuInteraction, callbackProxy);
+            DebugLogger.i(TAG, "NaviMode listener registered successfully");
+
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to register NaviMode listener", e);
+        }
     }
 
     private void registerDisplayListener() {
@@ -916,6 +1012,157 @@ public class ClusterHudManager {
         }
     }
 
+    /**
+     * 强制刷新 Presentation 显示，用于延迟激活场景
+     * 绕过状态检查，直接调用 showPresentation
+     */
+    public void forceRefreshPresentation() {
+        DebugLogger.i(TAG, "forceRefreshPresentation called");
+
+        // 先关闭现有的 presentation
+        if (mPresentation != null) {
+            try {
+                mPresentation.dismiss();
+            } catch (Exception e) {
+                DebugLogger.w(TAG, "Error dismissing presentation for refresh", e);
+            }
+            mPresentation = null;
+        }
+
+        // 重新创建并显示
+        if (mIsClusterEnabled || mIsHudEnabled) {
+            // 在创建 presentation 前，先加载保存的主题
+            int savedTheme = ConfigManager.getInstance().getInt("cluster_theme_builtin",
+                    ClusterHudPresentation.THEME_DEFAULT);
+            mPendingTheme = savedTheme;
+            DebugLogger.i(TAG, "forceRefresh: Loaded saved theme: " + savedTheme);
+
+            showPresentation();
+
+            // 调用 switchNaviMode
+            if (mIsClusterEnabled && mDimMenuInteraction != null) {
+                try {
+                    Method switchNaviModeMethod = mDimMenuInteraction.getClass().getMethod("switchNaviMode", int.class);
+                    switchNaviModeMethod.invoke(mDimMenuInteraction, 3);
+                    DebugLogger.i(TAG, "forceRefresh: Called switchNaviMode(3)");
+                } catch (Exception e) {
+                    DebugLogger.e(TAG, "forceRefresh: Failed to call switchNaviMode", e);
+                }
+            }
+        }
+    }
+
+    /**
+     * 强制激活并设置状态，用于延迟激活场景
+     * 直接设置状态并创建 Presentation，绕过所有状态检查
+     */
+    /**
+     * 仅显示 UI，不切换导航模式。
+     * 用于冷启动时立即显示画面，避免等待。
+     */
+    public void showUiOnly(boolean clusterEnabled, boolean hudEnabled) {
+        DebugLogger.i(TAG, "showUiOnly: cluster=" + clusterEnabled + ", hud=" + hudEnabled);
+
+        // 关闭现有的 presentation
+        if (mPresentation != null) {
+            try {
+                mPresentation.dismiss();
+            } catch (Exception e) {
+                DebugLogger.w(TAG, "Error dismissing presentation", e);
+            }
+            mPresentation = null;
+        }
+
+        // 直接设置内部状态（绕过状态检查）
+        mIsClusterEnabled = clusterEnabled;
+        mIsHudEnabled = hudEnabled;
+
+        // 加载保存的主题
+        int savedTheme = ConfigManager.getInstance().getInt("cluster_theme_builtin",
+                ClusterHudPresentation.THEME_DEFAULT);
+        mPendingTheme = savedTheme;
+        DebugLogger.i(TAG, "showUiOnly: Loaded saved theme: " + savedTheme);
+
+        // [FIX Cold Boot] 加载 HUD 组件配置到缓存（如果 MainActivity 还没启动）
+        if (hudEnabled && (mCachedHudComponents == null || mCachedHudComponents.isEmpty())) {
+            loadCachedHudLayout();
+        }
+
+        // 创建并显示 Presentation
+        if (clusterEnabled || hudEnabled) {
+            showPresentation();
+        }
+    }
+
+    /**
+     * 仅切换导航模式。
+     * 用于冷启动后的延迟切换。
+     */
+    public void applyNaviMode(int mode) {
+        DebugLogger.i(TAG, "applyNaviMode: " + mode);
+        if (mIsClusterEnabled && mDimMenuInteraction != null) {
+            try {
+                Method switchNaviModeMethod = mDimMenuInteraction.getClass().getMethod("switchNaviMode", int.class);
+                switchNaviModeMethod.invoke(mDimMenuInteraction, mode);
+                DebugLogger.i(TAG, "applyNaviMode: Called switchNaviMode(" + mode + ")");
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "applyNaviMode: Failed to call switchNaviMode", e);
+            }
+        } else {
+            DebugLogger.w(TAG, "applyNaviMode: Skipped (Cluster disabled or AdaptAPI null)");
+        }
+    }
+
+    /**
+     * 强制激活并设置状态 (保留原有逻辑，但在内部调用分离的方法)
+     */
+    public void forceActivateWithStates(boolean clusterEnabled, boolean hudEnabled) {
+        showUiOnly(clusterEnabled, hudEnabled);
+        applyNaviMode(3);
+    }
+
+    /**
+     * 从 ConfigManager 加载保存的 HUD 布局配置到缓存
+     * 用于冷启动时 MainActivity 尚未启动的情况
+     */
+    private void loadCachedHudLayout() {
+        try {
+            // 读取当前 HUD 模式 (0=WHUD, 1=AR)
+            int currentMode = ConfigManager.getInstance().getInt("hud_current_mode", 0);
+            String key = (currentMode == 0) ? "hud_layout_whud" : "hud_layout_ar";
+            String jsonStr = ConfigManager.getInstance().getString(key, "[]");
+
+            if (jsonStr != null && !jsonStr.isEmpty() && !jsonStr.equals("[]")) {
+                org.json.JSONArray jsonArray = new org.json.JSONArray(jsonStr);
+                boolean isSnowMode = ConfigManager.getInstance().getBoolean("hud_snow_mode", false);
+                int color = isSnowMode ? 0xFF00FFFF : 0xFFFFFFFF;
+
+                java.util.List<HudComponentData> syncList = new java.util.ArrayList<>();
+                for (int i = 0; i < jsonArray.length(); i++) {
+                    org.json.JSONObject obj = jsonArray.getJSONObject(i);
+                    String type = obj.optString("type", "text");
+                    String text = obj.optString("text", "Text");
+                    float x = (float) obj.optDouble("x", 0);
+                    float y = (float) obj.optDouble("y", 0);
+                    float scale = (float) obj.optDouble("scale", 1.0f);
+
+                    HudComponentData data = new HudComponentData(type, text, x * 0.5f, y * 0.5f, color);
+                    data.scale = scale;
+                    syncList.add(data);
+                }
+
+                if (!syncList.isEmpty()) {
+                    mCachedHudComponents = syncList;
+                    DebugLogger.i(TAG, "forceActivate: Loaded " + syncList.size() + " HUD components from config");
+                }
+            } else {
+                DebugLogger.i(TAG, "forceActivate: No HUD layout config found");
+            }
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "forceActivate: Failed to load HUD layout config", e);
+        }
+    }
+
     private void updatePresentation() {
         // Fix: Decoupled Cluster and HUD. Presentation should only stay alive if AT
         // LEAST ONE is enabled.
@@ -976,6 +1223,21 @@ public class ClusterHudManager {
                     // 应用保存的主题（始终应用，确保正确的布局被加载）
                     mPresentation.setClusterTheme(mPendingTheme);
                     DebugLogger.d(TAG, "Applied pending theme on show: " + mPendingTheme);
+
+                    // [FIX Cold Boot] Apply cached gear value
+                    if (mCachedGear != -1) {
+                        mPresentation.updateGear(mCachedGear);
+                        DebugLogger.d(TAG, "Applied cached gear on show: " + mCachedGear);
+                    }
+
+                    // [FIX Cold Boot] Apply cached sensor values
+                    if (mPresentation != null) {
+                        mPresentation.updateComponent("fuel", mCachedFuelText, null);
+                        mPresentation.updateComponent("temp_out", mCachedTempOutText, null);
+                        mPresentation.updateComponent("temp_in", mCachedTempInText, null);
+                        mPresentation.updateComponent("range", mCachedRangeText, null);
+                        mPresentation.updateComponent("fuel_range", mCachedFuelText + "|" + mCachedRangeText, null);
+                    }
                 });
 
                 mPresentation.show();
@@ -1138,6 +1400,12 @@ public class ClusterHudManager {
      *              ClusterHudPresentation.THEME_AUDI_RS
      */
     public void setClusterTheme(int theme) {
+        // [Fix Cold Boot] Skip if already applied to active presentation
+        if (mPresentation != null && mCurrentAppliedTheme == theme) {
+            DebugLogger.d(TAG, "setClusterTheme: Theme " + theme + " already applied, skipping.");
+            return;
+        }
+
         // 始终保存主题，以便后续presentation创建时使用
         mPendingTheme = theme;
         DebugLogger.d(TAG, "setClusterTheme: theme=" + theme + ", mPresentation=" + (mPresentation != null));
@@ -1146,6 +1414,7 @@ public class ClusterHudManager {
             mMainHandler.post(() -> {
                 if (mPresentation != null) {
                     mPresentation.setClusterTheme(theme);
+                    mCurrentAppliedTheme = theme; // Update applied theme
                 }
             });
         }
@@ -1181,6 +1450,9 @@ public class ClusterHudManager {
     }
 
     public void updateGear(int gearValue) {
+        // [FIX] Cache gear value for cold boot display
+        mCachedGear = gearValue;
+
         if (mPresentation != null) {
             mMainHandler.post(() -> {
                 if (mPresentation != null) {
@@ -1317,6 +1589,56 @@ public class ClusterHudManager {
 
     public boolean isSnowModeEnabled() {
         return ConfigManager.getInstance().getBoolean("hud_snow_mode", false);
+    }
+
+    // --- Sensor Data Persistence ---
+    private String mCachedFuelText = "--L";
+    private String mCachedRangeText = "--km";
+    private String mCachedTempOutText = "--°C";
+    private String mCachedTempInText = "--°C";
+
+    private void loadSensorCache() {
+        mCachedFuelText = ConfigManager.getInstance().getString("last_fuel_text", "--L");
+        mCachedRangeText = ConfigManager.getInstance().getString("last_range_text", "--km");
+        mCachedTempOutText = ConfigManager.getInstance().getString("last_temp_out_text", "--°C");
+        mCachedTempInText = ConfigManager.getInstance().getString("last_temp_in_text", "--°C");
+    }
+
+    private void saveSensorCache(String key, String value) {
+        ConfigManager.getInstance().setString(key, value);
+    }
+
+    public void updateFuel(String text) {
+        mCachedFuelText = text;
+        saveSensorCache("last_fuel_text", text);
+        if (mPresentation != null) {
+            updateComponentText("fuel", text);
+        }
+    }
+
+    public void updateRange(String text) {
+        mCachedRangeText = text;
+        saveSensorCache("last_range_text", text);
+        if (mPresentation != null) {
+            updateComponentText("range", text);
+            updateComponentText("fuel_range", mCachedFuelText + "|" + mCachedRangeText); // Update combined too
+        }
+    }
+
+    public void updateTempOut(String text) {
+        mCachedTempOutText = text;
+        saveSensorCache("last_temp_out_text", text);
+        if (mPresentation != null) {
+            updateComponentText("temp_out", text);
+        }
+    }
+
+    public void updateTempIn(String text) {
+        mCachedTempInText = text;
+        saveSensorCache("last_temp_in_text", text);
+        if (mPresentation != null) {
+            updateComponentText("temp_in", text);
+        }
     }
 
     // --- [Merged from ClusterManager.java] ---
