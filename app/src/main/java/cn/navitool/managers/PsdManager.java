@@ -71,36 +71,40 @@ public class PsdManager {
         });
     }
 
+    private ICarFunction.IFunctionValueWatcher mFunctionWatcher;
+
     private void registerFunctionWatcher() {
         ICarFunction carFunc = CarServiceManager.getInstance(mContext).getCarFunction();
         if (carFunc != null) {
-            carFunc.registerFunctionValueWatcher(new int[] { FUNC_PSD_SCREEN_SWITCH },
-                    new ICarFunction.IFunctionValueWatcher() {
-                        @Override
-                        public void onFunctionValueChanged(int functionId, int zone, int value) {
-                            if (functionId == FUNC_PSD_SCREEN_SWITCH) {
-                                DebugLogger.i(TAG, "PSD Switch Changed: " + value);
-                                onPsdStatusChanged(value);
-                            }
+            if (mFunctionWatcher == null) {
+                mFunctionWatcher = new ICarFunction.IFunctionValueWatcher() {
+                    @Override
+                    public void onFunctionValueChanged(int functionId, int zone, int value) {
+                        if (functionId == FUNC_PSD_SCREEN_SWITCH) {
+                            DebugLogger.i(TAG, "PSD Switch Changed: " + value);
+                            onPsdStatusChanged(value);
                         }
+                    }
 
-                        @Override
-                        public void onCustomizeFunctionValueChanged(int functionId, int zone, float value) {
-                        }
+                    @Override
+                    public void onCustomizeFunctionValueChanged(int functionId, int zone, float value) {
+                    }
 
-                        @Override
-                        public void onSupportedFunctionStatusChanged(int functionId, int zone,
-                                com.ecarx.xui.adaptapi.FunctionStatus status) {
-                        }
+                    @Override
+                    public void onSupportedFunctionStatusChanged(int functionId, int zone,
+                            com.ecarx.xui.adaptapi.FunctionStatus status) {
+                    }
 
-                        @Override
-                        public void onSupportedFunctionValueChanged(int functionId, int[] value) {
-                        }
+                    @Override
+                    public void onSupportedFunctionValueChanged(int functionId, int[] value) {
+                    }
 
-                        @Override
-                        public void onFunctionChanged(int functionId) {
-                        }
-                    });
+                    @Override
+                    public void onFunctionChanged(int functionId) {
+                    }
+                };
+            }
+            carFunc.registerFunctionValueWatcher(new int[] { FUNC_PSD_SCREEN_SWITCH }, mFunctionWatcher);
         }
     }
 
@@ -127,6 +131,16 @@ public class PsdManager {
 
     public void destroy() {
         setEnabled(false);
+        if (mFunctionWatcher != null) {
+            ICarFunction carFunc = CarServiceManager.getInstance(mContext).getCarFunction();
+            if (carFunc != null) {
+                try {
+                    carFunc.unregisterFunctionValueWatcher(mFunctionWatcher);
+                } catch (Exception e) {
+                }
+            }
+            mFunctionWatcher = null;
+        }
         if (mPsdTestReceiver != null) {
             try {
                 mContext.unregisterReceiver(mPsdTestReceiver);

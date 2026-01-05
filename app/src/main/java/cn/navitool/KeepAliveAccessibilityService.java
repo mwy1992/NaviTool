@@ -64,6 +64,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     };
 
     // private KeepAlivePresentation mPsdPresentation; // Removed
+    private cn.navitool.verifier.LightSensorVerifier mLightVerifier;
 
     // initPsdKeepAlive and showKeepAliveOnDisplay Removed
 
@@ -77,8 +78,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
         // 启动光照传感器验证器
         try {
-            cn.navitool.verifier.LightSensorVerifier verifier = new cn.navitool.verifier.LightSensorVerifier(this);
-            verifier.start();
+            mLightVerifier = new cn.navitool.verifier.LightSensorVerifier(this);
+            mLightVerifier.start();
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to start LightSensorVerifier", e);
         }
@@ -160,6 +161,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         super.onDestroy();
         DebugLogger.i(TAG, "Service destroying, cleaning up resources...");
 
+        if (mLightVerifier != null) {
+            mLightVerifier.stop();
+            mLightVerifier = null;
+        }
+
         // Stop Amap Monitor
         try {
             cn.navitool.managers.AmapMonitorManager.getInstance(this).stopMonitoring();
@@ -170,6 +176,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         cn.navitool.managers.ThemeBrightnessManager.getInstance(this).destroy();
         cn.navitool.managers.SoundPromptManager.getInstance(this).destroy();
         cn.navitool.managers.KeyHandlerManager.getInstance(this).destroy();
+        cn.navitool.managers.PsdManager.getInstance(this).destroy();
+        cn.navitool.ClusterHudManager.getInstance(this).destroy();
+        cn.navitool.managers.VehicleSensorManager.getInstance(this).destroy();
         // The following catch block and assignment were part of the mPsdPresentation
         // logic.
         // Since mPsdPresentation dismissal is commented out, these lines are also
@@ -422,9 +431,45 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     DebugLogger.e(TAG, "Failed to poll initial ignition state", e);
                 }
 
+                // [HUD/Cluster Fix] Active Polling for Sensor Data to prevent delay
+                pollInitialSensorData();
+
             }
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to register sensor listeners", e);
+        }
+    }
+
+    private void pollInitialSensorData() {
+        if (iSensor == null)
+            return;
+        DebugLogger.i(TAG, "Polling initial sensor data (Fuel, Range, Temp, Gear)...");
+        try {
+            // 1. Gear (Event Type)
+            // Use local constant or VehicleSensorManager constant
+            int gear = iSensor.getSensorEvent(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_GEAR);
+            DebugLogger.d(TAG, "Polled Gear: " + gear);
+            ClusterHudManager.getInstance(this).updateGear(gear);
+            mLastGear = gear;
+
+            // 2. Fuel Level (Value Type - Float)
+            float fuel = iSensor.getSensorLatestValue(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_FUEL);
+            DebugLogger.d(TAG, "Polled Fuel: " + fuel);
+            ClusterHudManager.getInstance(this).updateFuel((int) fuel + "L");
+
+            // 3. Range (Value Type - Float)
+            float range = iSensor.getSensorLatestValue(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_RANGE);
+            DebugLogger.d(TAG, "Polled Range: " + range);
+            ClusterHudManager.getInstance(this).updateRange((int) range + "km");
+
+            // 4. Outside Temp (Value Type - Float)
+            float tempOut = iSensor
+                    .getSensorLatestValue(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_TEMP_OUTDOOR);
+            DebugLogger.d(TAG, "Polled TempOut: " + tempOut);
+            ClusterHudManager.getInstance(this).updateTempOut(tempOut + "°C");
+
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to poll initial sensor data", e);
         }
     }
 

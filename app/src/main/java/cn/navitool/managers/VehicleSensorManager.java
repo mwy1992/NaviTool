@@ -36,6 +36,19 @@ public class VehicleSensorManager {
     public static final int SENSOR_TYPE_ODOMETER = 1050368; // 总里程
     public static final int SENSOR_TYPE_LIGHT = 0x200F00; // 光照传感器
 
+    // --- 胎压监测系统 (TPMS) ---
+    // 胎压 (Pressure)
+    public static final int SENSOR_TYPE_TIRE_PRESSURE_FL = 5243136;
+    public static final int SENSOR_TYPE_TIRE_PRESSURE_FR = 5243392;
+    public static final int SENSOR_TYPE_TIRE_PRESSURE_RL = 5243648;
+    public static final int SENSOR_TYPE_TIRE_PRESSURE_RR = 5243904;
+
+    // 胎温 (Temperature)
+    public static final int SENSOR_TYPE_TIRE_TEMP_FL = 5244160;
+    public static final int SENSOR_TYPE_TIRE_TEMP_FR = 5244416;
+    public static final int SENSOR_TYPE_TIRE_TEMP_RL = 5244672;
+    public static final int SENSOR_TYPE_TIRE_TEMP_RR = 5244928;
+
     // --- 单例 ---
     private static VehicleSensorManager sInstance;
     private Context mContext;
@@ -57,8 +70,13 @@ public class VehicleSensorManager {
     private int mGear = 0;
     private int mDayNight = 0;
 
+    // TPMS Cache (0:FL, 1:FR, 2:RL, 3:RR)
+    private float[] mTirePressure = new float[4];
+    private float[] mTireTemp = new float[4];
+
     // --- 监听器 ---
     private final List<Listener> mListeners = new ArrayList<>();
+    private ISensor.ISensorListener mSensorListener; // Promoted to member variable
 
     public interface Listener {
         default void onSpeedChanged(float speedKmh) {
@@ -86,6 +104,16 @@ public class VehicleSensorManager {
         }
 
         default void onLightChanged(float light) {
+        }
+
+        /**
+         * 胎压监测数据变化回调
+         * 
+         * @param index    0:左前, 1:右前, 2:左后, 3:右后
+         * @param pressure 胎压值 (KPa?)
+         * @param temp     胎温值 (°C)
+         */
+        default void onTireDataChanged(int index, float pressure, float temp) {
         }
     }
 
@@ -124,37 +152,50 @@ public class VehicleSensorManager {
         if (mSensor == null)
             return;
 
-        ISensor.ISensorListener listener = new ISensor.ISensorListener() {
-            @Override
-            public void onSensorEventChanged(int sensorType, int value) {
-                handleEventSensor(sensorType, value);
-            }
+        if (mSensorListener == null) {
+            mSensorListener = new ISensor.ISensorListener() {
+                @Override
+                public void onSensorEventChanged(int sensorType, int value) {
+                    handleEventSensor(sensorType, value);
+                }
 
-            @Override
-            public void onSensorValueChanged(int sensorType, float value) {
-                handleValueSensor(sensorType, value);
-            }
+                @Override
+                public void onSensorValueChanged(int sensorType, float value) {
+                    handleValueSensor(sensorType, value);
+                }
 
-            @Override
-            public void onSensorSupportChanged(int sensorType, com.ecarx.xui.adaptapi.FunctionStatus status) {
-                // Not used
-            }
-        };
+                @Override
+                public void onSensorSupportChanged(int sensorType, com.ecarx.xui.adaptapi.FunctionStatus status) {
+                    // Not used
+                }
+            };
+        }
 
         // 注册事件类型传感器
-        mSensor.registerListener(listener, SENSOR_TYPE_IGNITION);
-        mSensor.registerListener(listener, SENSOR_TYPE_GEAR);
-        mSensor.registerListener(listener, SENSOR_TYPE_DAY_NIGHT);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_IGNITION);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_GEAR);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_DAY_NIGHT);
 
         // 注册数值类型传感器
-        mSensor.registerListener(listener, SENSOR_TYPE_SPEED, ISensor.RATE_UI);
-        mSensor.registerListener(listener, SENSOR_TYPE_RPM, ISensor.RATE_UI);
-        mSensor.registerListener(listener, SENSOR_TYPE_FUEL, ISensor.RATE_NORMAL);
-        mSensor.registerListener(listener, SENSOR_TYPE_TEMP_INDOOR, ISensor.RATE_NORMAL);
-        mSensor.registerListener(listener, SENSOR_TYPE_TEMP_OUTDOOR, ISensor.RATE_NORMAL);
-        mSensor.registerListener(listener, SENSOR_TYPE_RANGE, ISensor.RATE_NORMAL);
-        mSensor.registerListener(listener, SENSOR_TYPE_ODOMETER, ISensor.RATE_NORMAL);
-        mSensor.registerListener(listener, SENSOR_TYPE_LIGHT, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_SPEED, ISensor.RATE_UI);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_RPM, ISensor.RATE_UI);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TEMP_INDOOR, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TEMP_OUTDOOR, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_RANGE, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_ODOMETER, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_LIGHT, ISensor.RATE_NORMAL);
+
+        // 注册 TPMS 传感器
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_FL, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_FR, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_RL, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_RR, ISensor.RATE_NORMAL);
+
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_FL, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_FR, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_RL, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_RR, ISensor.RATE_NORMAL);
 
         DebugLogger.i(TAG, "All sensors registered");
 
@@ -230,6 +271,40 @@ public class VehicleSensorManager {
                 mLight = value;
                 notifyLightChanged(value);
                 break;
+
+            // TPMS Logic
+            case SENSOR_TYPE_TIRE_PRESSURE_FL:
+                mTirePressure[0] = value;
+                notifyTireDataChanged(0);
+                break;
+            case SENSOR_TYPE_TIRE_PRESSURE_FR:
+                mTirePressure[1] = value;
+                notifyTireDataChanged(1);
+                break;
+            case SENSOR_TYPE_TIRE_PRESSURE_RL:
+                mTirePressure[2] = value;
+                notifyTireDataChanged(2);
+                break;
+            case SENSOR_TYPE_TIRE_PRESSURE_RR:
+                mTirePressure[3] = value;
+                notifyTireDataChanged(3);
+                break;
+            case SENSOR_TYPE_TIRE_TEMP_FL:
+                mTireTemp[0] = value;
+                notifyTireDataChanged(0);
+                break;
+            case SENSOR_TYPE_TIRE_TEMP_FR:
+                mTireTemp[1] = value;
+                notifyTireDataChanged(1);
+                break;
+            case SENSOR_TYPE_TIRE_TEMP_RL:
+                mTireTemp[2] = value;
+                notifyTireDataChanged(2);
+                break;
+            case SENSOR_TYPE_TIRE_TEMP_RR:
+                mTireTemp[3] = value;
+                notifyTireDataChanged(3);
+                break;
         }
     }
 
@@ -251,6 +326,17 @@ public class VehicleSensorManager {
             mIgnition = mSensor.getSensorEvent(SENSOR_TYPE_IGNITION);
             mGear = mSensor.getSensorEvent(SENSOR_TYPE_GEAR);
             mDayNight = mSensor.getSensorEvent(SENSOR_TYPE_DAY_NIGHT);
+
+            // Refresh TPMS
+            mTirePressure[0] = mSensor.getSensorLatestValue(SENSOR_TYPE_TIRE_PRESSURE_FL);
+            mTirePressure[1] = mSensor.getSensorLatestValue(SENSOR_TYPE_TIRE_PRESSURE_FR);
+            mTirePressure[2] = mSensor.getSensorLatestValue(SENSOR_TYPE_TIRE_PRESSURE_RL);
+            mTirePressure[3] = mSensor.getSensorLatestValue(SENSOR_TYPE_TIRE_PRESSURE_RR);
+
+            mTireTemp[0] = mSensor.getSensorLatestValue(SENSOR_TYPE_TIRE_TEMP_FL);
+            mTireTemp[1] = mSensor.getSensorLatestValue(SENSOR_TYPE_TIRE_TEMP_FR);
+            mTireTemp[2] = mSensor.getSensorLatestValue(SENSOR_TYPE_TIRE_TEMP_RL);
+            mTireTemp[3] = mSensor.getSensorLatestValue(SENSOR_TYPE_TIRE_TEMP_RR);
 
             DebugLogger.d(TAG, "Refreshed all sensor values");
         } catch (Exception e) {
@@ -370,5 +456,25 @@ public class VehicleSensorManager {
     private void notifyLightChanged(float light) {
         for (Listener l : mListeners)
             l.onLightChanged(light);
+    }
+
+    private void notifyTireDataChanged(int index) {
+        for (Listener l : mListeners)
+            l.onTireDataChanged(index, mTirePressure[index], mTireTemp[index]);
+    }
+
+    public void destroy() {
+        if (mSensor != null && mSensorListener != null) {
+            try {
+                mSensor.unregisterListener(mSensorListener);
+                DebugLogger.i(TAG, "Unregistered all sensors");
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Error unregistering sensors", e);
+            }
+        }
+        mListeners.clear();
+        mSensorListener = null;
+        mSensor = null;
+        mIsInitialized = false;
     }
 }

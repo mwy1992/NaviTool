@@ -9,6 +9,9 @@ import android.view.Display;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.ArrayList;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.json.JSONException;
 
 // ECarX AdaptAPI Imports
 import com.ecarx.xui.adaptapi.car.Car;
@@ -18,10 +21,12 @@ import com.ecarx.xui.adaptapi.car.sensor.ISensorEvent;
 import com.ecarx.xui.adaptapi.FunctionStatus;
 import com.ecarx.xui.adaptapi.car.base.ICarFunction;
 
-public class ClusterHudManager {
+import cn.navitool.managers.VehicleSensorManager; // Added missing import
+
+public class ClusterHudManager implements VehicleSensorManager.Listener {
     private static final String TAG = "ClusterHudManager";
 
-    private static ClusterHudManager instance;
+    private static volatile ClusterHudManager instance;
     private Context mContext;
     private ClusterHudPresentation mPresentation;
     private boolean mIsClusterEnabled = false;
@@ -49,7 +54,7 @@ public class ClusterHudManager {
     private int mCachedGear = -1; // -1 for unknown
     // [Fix Cold Boot] Add tracking for actually applied theme to avoid redundant
     // resets
-    private int mCurrentAppliedTheme = -1;;
+    private int mCurrentAppliedTheme = -1;
 
     private List<HudComponentData> mCachedHudComponents;
     private List<HudComponentData> mCachedClusterComponents;
@@ -76,12 +81,20 @@ public class ClusterHudManager {
     private static final int TIRE_TEMPERATURE_REAR_LEFT = 5244672;
     private static final int TIRE_TEMPERATURE_REAR_RIGHT = 5244928;
 
+    private final Handler mMainHandler = new Handler(Looper.getMainLooper());
+
     private ClusterHudManager(Context context) {
         this.mContext = context.getApplicationContext();
 
         // [HUD FIX] 初始化缓存列表，避免 "Cache not ready" 错误
         this.mCachedHudComponents = new ArrayList<>();
         this.mCachedClusterComponents = new ArrayList<>();
+
+        // [Self-Init] Load all saved configurations immediately
+        loadSavedState();
+
+        // Register Sensor Listener (including TPMS)
+        VehicleSensorManager.getInstance(mContext).addListener(this);
 
         // Load persisted sensor data
         loadSensorCache();
@@ -107,11 +120,18 @@ public class ClusterHudManager {
         initCarService();
 
         registerDisplayListener();
+
+        // Cold Boot Robustness: Check for presentation after init
+        mMainHandler.post(this::checkAndShowPresentation);
     }
 
-    public static synchronized ClusterHudManager getInstance(Context context) {
+    public static ClusterHudManager getInstance(Context context) {
         if (instance == null) {
-            instance = new ClusterHudManager(context);
+            synchronized (ClusterHudManager.class) {
+                if (instance == null) {
+                    instance = new ClusterHudManager(context);
+                }
+            }
         }
         return instance;
     }
@@ -126,30 +146,40 @@ public class ClusterHudManager {
     }
 
     // --- ECarX Car Service Initialization ---
-    private void initCarService() {
-        new Thread(() -> {
-            try {
-                // Create ECarX Car Instance
-                mCar = Car.create(mContext);
-                if (mCar != null) {
-                    mSensorManager = mCar.getSensorManager();
-                    if (mSensorManager != null) {
-                        registerSensors();
-                    } else {
-                        DebugLogger.e(TAG, "ECarX SensorManager is null");
-                    }
+    private boolean mIsDayMode = true;
 
-                    mCarFunction = mCar.getICarFunction();
-                    if (mCarFunction != null) {
-                        registerFunctions();
-                    }
-                } else {
-                    DebugLogger.e(TAG, "Failed to create ECarX Car instance");
-                }
-            } catch (Throwable t) {
-                DebugLogger.e(TAG, "Failed to init ECarX Car Service (Fatal)", t);
+    public void updateDayNightMode(boolean isDay) {
+        if (mIsDayMode != isDay) {
+            mIsDayMode = isDay;
+            DebugLogger.d(TAG, "updateDayNightMode: " + isDay);
+            if (mPresentation != null) {
+                mPresentation.updateDayNightMode(isDay);
             }
-        }).start();
+        }
+    }
+
+    private void initCarService() {
+        // Use shared CarServiceManager to avoid multiple instances/connections
+        cn.navitool.managers.CarServiceManager.getInstance(mContext).registerListener(() -> {
+            mCar = cn.navitool.managers.CarServiceManager.getInstance(mContext).getCar();
+            if (mCar != null) {
+                // Use getSensor() from manager (handles reflection fallback)
+                mSensorManager = cn.navitool.managers.CarServiceManager.getInstance(mContext).getSensor();
+                if (mSensorManager != null) {
+                    registerSensors();
+                } else {
+                    DebugLogger.e(TAG, "Shared SensorManager is null");
+                }
+
+                mCarFunction = cn.navitool.managers.CarServiceManager.getInstance(mContext).getCarFunction();
+                if (mCarFunction != null) {
+                    registerFunctions();
+                }
+            }
+        });
+
+        // Ensure init is called (safe to call multiple times)
+        cn.navitool.managers.CarServiceManager.getInstance(mContext).init();
     }
 
     private void registerSensors() {
@@ -398,7 +428,12 @@ public class ClusterHudManager {
     // Cache bitmaps to avoid GC thrashing
     private android.graphics.Bitmap mBitmapLeft;
     private android.graphics.Bitmap mBitmapRight;
+
     private android.graphics.Bitmap mBitmapHazard;
+
+    // Volume Cache
+    private android.graphics.Bitmap mCachedVolumeBitmap;
+    private int mLastVolume = -1;
 
     // Helper to get/create bitmap
     public android.graphics.Bitmap getTurnSignalBitmap(boolean left, boolean right) {
@@ -477,50 +512,118 @@ public class ClusterHudManager {
     }
 
     public android.graphics.Bitmap getVolumeBitmap(int volume) {
+        if (mCachedVolumeBitmap != null && volume == mLastVolume) {
+            return mCachedVolumeBitmap;
+        }
+
         try {
+            // ... (Drawing logic) ...
             android.graphics.drawable.Drawable drawable = mContext.getDrawable(R.drawable.ic_volume);
             if (drawable == null)
                 return null;
 
-            int iconSize = 48; // Double size (was 24)
-            int padding = 12; // Scaled padding
-
-            // Measure Text
+            int iconSize = 48;
+            int padding = 12;
             android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
             paint.setColor(android.graphics.Color.WHITE);
-            paint.setTextSize(36); // Double size (was 18)
+            paint.setTextSize(36);
             paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
 
             String volText = String.valueOf(volume);
             android.graphics.Rect textBounds = new android.graphics.Rect();
             paint.getTextBounds(volText, 0, volText.length(), textBounds);
 
-            int totalWidth = iconSize + padding + textBounds.width();
-            int totalHeight = Math.max(iconSize, textBounds.height());
-
-            // Add some margin
-            totalHeight += 4;
-            totalWidth += 4;
+            int totalWidth = iconSize + padding + textBounds.width() + 4;
+            int totalHeight = Math.max(iconSize, textBounds.height()) + 4;
 
             android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(totalWidth, totalHeight,
                     android.graphics.Bitmap.Config.ARGB_8888);
             android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
 
-            // Draw Icon
             drawable.setBounds(0, (totalHeight - iconSize) / 2, iconSize, (totalHeight - iconSize) / 2 + iconSize);
             drawable.setTint(android.graphics.Color.WHITE);
             drawable.draw(canvas);
 
-            // Draw Text
-            // Align text vertically center
             float textY = (totalHeight / 2f) - ((paint.descent() + paint.ascent()) / 2f);
             canvas.drawText(volText, iconSize + padding, textY, paint);
+
+            // Recycle old cache if exists
+            if (mCachedVolumeBitmap != null && !mCachedVolumeBitmap.isRecycled()) {
+                mCachedVolumeBitmap.recycle();
+            }
+            mCachedVolumeBitmap = bitmap;
+            mLastVolume = volume;
 
             return bitmap;
         } catch (Exception e) {
             DebugLogger.e(TAG, "Error generating volume bitmap", e);
             return null;
         }
+    }
+
+    public void destroy() {
+        if (mBitmapLeft != null)
+            mBitmapLeft.recycle();
+        if (mBitmapRight != null)
+            mBitmapRight.recycle();
+        if (mBitmapHazard != null)
+            mBitmapHazard.recycle();
+        if (mCachedVolumeBitmap != null)
+            mCachedVolumeBitmap.recycle();
+        if (mTransparentBitmap != null)
+            mTransparentBitmap.recycle();
+        mBitmapLeft = null;
+        mBitmapRight = null;
+        mBitmapHazard = null;
+        mCachedVolumeBitmap = null;
+        mTransparentBitmap = null;
+
+        dismissPresentation();
+
+        // Unregister Receivers
+        try {
+            if (mVolumeReceiver != null) {
+                mContext.unregisterReceiver(mVolumeReceiver);
+                mVolumeReceiver = null;
+                DebugLogger.d(TAG, "Volume Receiver Unregistered");
+            }
+            if (mMediaReceiver != null) {
+                mContext.unregisterReceiver(mMediaReceiver);
+                mMediaReceiver = null;
+                DebugLogger.d(TAG, "Media Receiver Unregistered");
+            }
+            if (mNotificationConnectionReceiver != null) {
+                mContext.unregisterReceiver(mNotificationConnectionReceiver);
+                mNotificationConnectionReceiver = null;
+            }
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error unregistering receivers", e);
+        }
+
+        // Unregister Display Listener
+        DisplayManager dm = (DisplayManager) mContext.getSystemService(Context.DISPLAY_SERVICE);
+        if (dm != null && mDisplayListener != null) {
+            dm.unregisterDisplayListener(mDisplayListener);
+            mDisplayListener = null;
+            DebugLogger.d(TAG, "Display Listener Unregistered");
+        }
+
+        // Cleanup DimInteraction if supported
+        if (mDimMenuInteraction != null && mDimCallbackProxy != null) {
+            try {
+                Method unregisterMethod = mDimMenuInteraction.getClass().getMethod(
+                        "unregisterDimMenuInteractionCallback",
+                        Class.forName(
+                                "com.ecarx.xui.adaptapi.diminteraction.IDimMenuInteraction$IDimMenuInteractionCallback"));
+                unregisterMethod.invoke(mDimMenuInteraction, mDimCallbackProxy);
+                DebugLogger.d(TAG, "DimMenuInteraction Callback Unregistered");
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+
+        // Unregister from VehicleSensorManager
+        VehicleSensorManager.getInstance(mContext).removeListener(this);
     }
 
     // --- Volume Listener ---
@@ -535,12 +638,16 @@ public class ClusterHudManager {
     private void initVolumeListener() {
         try {
             mAudioManager = (android.media.AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
+            if (mAudioManager == null) {
+                DebugLogger.e(TAG, "Failed to get AudioManager service");
+            }
             mVolumeReceiver = new VolumeReceiver();
             android.content.IntentFilter filter = new android.content.IntentFilter();
             filter.addAction("android.media.VOLUME_CHANGED_ACTION");
             // Initial Update
             updateVolume();
             mContext.registerReceiver(mVolumeReceiver, filter, null, new Handler(Looper.getMainLooper()));
+            DebugLogger.i(TAG, "Volume Receiver Registered");
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to init Volume Listener", e);
         }
@@ -737,14 +844,60 @@ public class ClusterHudManager {
     }
 
     // --- Media (Broadcast & Session) ---
+    private android.content.BroadcastReceiver mMediaReceiver;
+
     private void initMediaListener() {
         // 1. Register Standard Broadcast Receiver (Only from our own Service)
         try {
-            MusicBroadcastReceiver receiver = new MusicBroadcastReceiver();
+            mMediaReceiver = new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(Context context, android.content.Intent intent) {
+                    if (cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE
+                            .equals(intent.getAction())) {
+                        // Handle Direct Service Broadcast
+                        String title = intent.getStringExtra("title");
+                        String artist = intent.getStringExtra("artist");
+                        boolean isPlaying = intent.getBooleanExtra("is_playing", false);
+
+                        String display = title;
+                        if (artist != null && !artist.isEmpty()) {
+                            display = title + "\n" + artist;
+                        }
+                        updateComponentText("song", display);
+                        updateComponentText("test_media", display);
+
+                        // Update Playing State
+                        updateMediaPlayingState(isPlaying);
+
+                        // Update Cover (Byte Array)
+                        boolean hasArtwork = intent.getBooleanExtra("has_artwork", true); // Default true
+                        if (!hasArtwork) {
+                            updateComponentImage("media_cover", null);
+                            updateComponentImage("test_media_cover", null);
+                        } else {
+                            byte[] artwork = intent.getByteArrayExtra("artwork");
+                            if (artwork != null) {
+                                android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(artwork, 0,
+                                        artwork.length);
+                                if (bmp != null) {
+                                    updateComponentImage("media_cover", bmp);
+                                    updateComponentImage("test_media_cover", bmp);
+                                }
+                            }
+                        }
+                    }
+                }
+            };
             android.content.IntentFilter filter = new android.content.IntentFilter();
             filter.addAction(cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE);
-            mContext.registerReceiver(receiver, filter, null, new Handler(Looper.getMainLooper()));
+            mContext.registerReceiver(mMediaReceiver, filter, null, new Handler(Looper.getMainLooper()));
             DebugLogger.i(TAG, "Registered Media Receiver for Service Updates");
+
+            mNotificationConnectionReceiver = new NotificationConnectionReceiver();
+            android.content.IntentFilter notificationFilter = new android.content.IntentFilter(
+                    "android.service.notification.NotificationListenerService");
+            mContext.registerReceiver(mNotificationConnectionReceiver, notificationFilter, null,
+                    new Handler(Looper.getMainLooper()));
 
             // Request Initial Media State immediately (in case Service is already running)
             android.content.Intent requestIntent = new android.content.Intent(
@@ -814,6 +967,9 @@ public class ClusterHudManager {
 
     // --- AdaptAPI Init ---
     // --- AdaptAPI Init ---
+    private Object mDimCallbackProxy;
+    private android.content.BroadcastReceiver mNotificationConnectionReceiver;
+
     private void initAdaptApi() {
         // Use the new Listener mechanism
         cn.navitool.managers.CarServiceManager.getInstance(mContext).registerListener(() -> {
@@ -893,7 +1049,7 @@ public class ClusterHudManager {
                     "com.ecarx.xui.adaptapi.diminteraction.IDimMenuInteraction$IDimMenuInteractionCallback");
 
             // 创建动态代理来实现回调接口
-            Object callbackProxy = java.lang.reflect.Proxy.newProxyInstance(
+            mDimCallbackProxy = java.lang.reflect.Proxy.newProxyInstance(
                     callbackInterface.getClassLoader(),
                     new Class<?>[] { callbackInterface },
                     (proxy, method, args) -> {
@@ -938,7 +1094,7 @@ public class ClusterHudManager {
             // 注册回调: mDimMenuInteraction.registerDimMenuInteractionCallback(callback)
             Method registerMethod = mDimMenuInteraction.getClass().getMethod(
                     "registerDimMenuInteractionCallback", callbackInterface);
-            registerMethod.invoke(mDimMenuInteraction, callbackProxy);
+            registerMethod.invoke(mDimMenuInteraction, mDimCallbackProxy);
             DebugLogger.i(TAG, "NaviMode listener registered successfully");
 
         } catch (Exception e) {
@@ -946,9 +1102,16 @@ public class ClusterHudManager {
         }
     }
 
+    private DisplayManager.DisplayListener mDisplayListener;
+
     private void registerDisplayListener() {
         DisplayManager dm = (DisplayManager) mContext.getSystemService(Context.DISPLAY_SERVICE);
-        dm.registerDisplayListener(new DisplayManager.DisplayListener() {
+        if (dm == null) {
+            DebugLogger.e(TAG, "Failed to get DisplayManager service");
+            return;
+        }
+
+        mDisplayListener = new DisplayManager.DisplayListener() {
             @Override
             public void onDisplayAdded(int displayId) {
                 DebugLogger.i(TAG, "Display added: " + displayId);
@@ -963,15 +1126,19 @@ public class ClusterHudManager {
             @Override
             public void onDisplayChanged(int displayId) {
             }
-        }, new Handler(Looper.getMainLooper()));
+        };
+
+        dm.registerDisplayListener(mDisplayListener, new Handler(Looper.getMainLooper()));
     }
 
     private void checkAndShowPresentation() {
-        if (mIsClusterEnabled || mIsHudEnabled) {
-            if (mPresentation == null) {
-                showPresentation();
+        mMainHandler.post(() -> {
+            if (mIsClusterEnabled || mIsHudEnabled) {
+                if (mPresentation == null) {
+                    showPresentation();
+                }
             }
-        }
+        });
     }
 
     public void setClusterEnabled(boolean enabled) {
@@ -1146,6 +1313,11 @@ public class ClusterHudManager {
                     float y = (float) obj.optDouble("y", 0);
                     float scale = (float) obj.optDouble("scale", 1.0f);
 
+                    // [FIX] Ensure time component has correct format string
+                    if ("time".equals(type)) {
+                        text = "HH:mm";
+                    }
+
                     HudComponentData data = new HudComponentData(type, text, x * 0.5f, y * 0.5f, color);
                     data.scale = scale;
                     syncList.add(data);
@@ -1182,6 +1354,10 @@ public class ClusterHudManager {
 
     private void showPresentation() {
         DisplayManager dm = (DisplayManager) mContext.getSystemService(Context.DISPLAY_SERVICE);
+        if (dm == null) {
+            DebugLogger.e(TAG, "Failed to get DisplayManager for showPresentation");
+            return;
+        }
         Display[] displays = dm.getDisplays();
         DebugLogger.d(TAG, "Found " + displays.length + " displays");
 
@@ -1199,9 +1375,13 @@ public class ClusterHudManager {
             if (android.os.Build.VERSION.SDK_INT >= 31) {
                 DebugLogger.i(TAG, "Android 12+: Using default Presentation Window Type (2037)");
             } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                mPresentation.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
+                if (mPresentation.getWindow() != null) {
+                    mPresentation.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
+                }
             } else {
-                mPresentation.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_PHONE);
+                if (mPresentation.getWindow() != null) {
+                    mPresentation.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_PHONE);
+                }
             }
 
             try {
@@ -1427,7 +1607,8 @@ public class ClusterHudManager {
         return ClusterHudPresentation.THEME_DEFAULT;
     }
 
-    private final Handler mMainHandler = new Handler(Looper.getMainLooper());
+    // Moved to top: private final Handler mMainHandler = new
+    // Handler(Looper.getMainLooper());
 
     public void updateRpm(float rpm) {
         if (mPresentation != null) {
@@ -1659,5 +1840,38 @@ public class ClusterHudManager {
 
     public void applyClusterTheme(int themeId) {
         applyClusterTheme(String.valueOf(themeId));
+    }
+
+    /**
+     * [Self-Init] 从 ConfigManager 加载所有保存的状态
+     * 消除 MainActivity 和 BootReceiver 之间的初始化冲突
+     */
+    private void loadSavedState() {
+        try {
+            // 1. Load Enabled States
+            mIsClusterEnabled = ConfigManager.getInstance().getBoolean("switch_cluster", false);
+            mIsHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", false);
+            DebugLogger.i(TAG, "Self-Init: Loaded State -> Cluster=" + mIsClusterEnabled + ", HUD=" + mIsHudEnabled);
+
+            // 2. Load Theme
+            mPendingTheme = ConfigManager.getInstance().getInt("cluster_theme_builtin",
+                    ClusterHudPresentation.THEME_DEFAULT);
+            DebugLogger.i(TAG, "Self-Init: Loaded Theme -> " + mPendingTheme);
+
+            // 3. Load UI Layouts (HUD & Cluster)
+            if (mIsHudEnabled) {
+                loadCachedHudLayout();
+            }
+            if (mIsClusterEnabled) {
+                // Load saved cluster theme or layout if needed
+                // Currently cluster uses fixed themes mostly, but if we had custom layout
+                // loading it would go here
+            }
+
+            // 4. Force consistency on first start
+            // If enabled, we prepare to show. DisplayListener will trigger actual show.
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error in loadSavedState", e);
+        }
     }
 }

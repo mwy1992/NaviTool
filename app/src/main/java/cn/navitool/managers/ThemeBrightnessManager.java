@@ -11,6 +11,7 @@ import android.os.Looper;
 
 import cn.navitool.DebugLogger;
 import cn.navitool.ConfigManager;
+import cn.navitool.ClusterHudManager;
 import cn.navitool.R;
 import com.ecarx.xui.adaptapi.car.base.ICarFunction;
 import com.ecarx.xui.adaptapi.car.sensor.ISensor;
@@ -20,7 +21,7 @@ import com.ecarx.xui.adaptapi.car.vehicle.IVehicle;
 
 public class ThemeBrightnessManager {
     private static final String TAG = "ThemeManager";
-    private static ThemeBrightnessManager instance;
+    private static volatile ThemeBrightnessManager instance;
     private Context mContext;
 
     // Constants
@@ -63,7 +64,9 @@ public class ThemeBrightnessManager {
             if (!mIsMonitoring)
                 return;
             checkAndForceAutoDayNight();
-            mHandler.postDelayed(this, 1000); // Polling interval 1s
+            mHandler.postDelayed(this, 1000); // Polling
+                                              // interval
+                                              // 1s
         }
     };
 
@@ -82,9 +85,13 @@ public class ThemeBrightnessManager {
         mContext = context.getApplicationContext();
     }
 
-    public static synchronized ThemeBrightnessManager getInstance(Context context) {
+    public static ThemeBrightnessManager getInstance(Context context) {
         if (instance == null) {
-            instance = new ThemeBrightnessManager(context);
+            synchronized (ThemeBrightnessManager.class) {
+                if (instance == null) {
+                    instance = new ThemeBrightnessManager(context);
+                }
+            }
         }
         return instance;
     }
@@ -166,6 +173,7 @@ public class ThemeBrightnessManager {
 
         if (sensor != null) {
             sensor.registerListener(new ISensor.ISensorListener() {
+
                 @Override
                 public void onSensorEventChanged(int sensorType, int value) {
                     ThemeBrightnessManager.this.onSensorEventChanged(sensorType, value);
@@ -204,7 +212,9 @@ public class ThemeBrightnessManager {
 
         checkMonitoringRequirement();
 
-        if (mIsOverrideEnabled) {
+        if (mIsOverrideEnabled)
+
+        {
             mOverrideHandler.post(mOverrideRunnable);
         }
 
@@ -570,6 +580,7 @@ public class ThemeBrightnessManager {
                         mLastBrightnessNightValue);
             }
         } catch (Exception e) {
+            DebugLogger.e(TAG, "Error in pollAndBroadcastBrightness", e);
         }
     }
 
@@ -578,6 +589,10 @@ public class ThemeBrightnessManager {
         mLastAvmValue = avm;
         mLastBrightnessDayValue = bDay;
         mLastBrightnessNightValue = bNight;
+
+        // Notify ClusterHudManager directly
+        boolean isDay = (dayNight == ISensorEvent.DAY_NIGHT_MODE_DAY);
+        ClusterHudManager.getInstance(mContext).updateDayNightMode(isDay);
 
         Intent intent = new Intent("cn.navitool.ACTION_DAY_NIGHT_STATUS");
         intent.putExtra("mode", mLastThemeMode);

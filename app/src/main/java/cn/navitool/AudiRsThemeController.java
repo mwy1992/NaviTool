@@ -39,10 +39,14 @@ public class AudiRsThemeController {
     private ImageView mFlashBar;
     private TextView mSpeedText;
     private TextView mGearText;
+    private ImageView mBackground; // New Background View
 
     // 档位状态
     private static final String[] GEARS = { "P", "R", "N", "D" };
     private int mCurrentGearIndex = 0;
+
+    // Day/Night State
+    private boolean mIsDayMode = true;
 
     // 闪烁动画
     private Handler mHandler = new Handler(Looper.getMainLooper());
@@ -78,10 +82,17 @@ public class AudiRsThemeController {
     /**
      * 绑定Views
      */
+    // TPMS Views
+    private TextView mPresFL, mTempFL;
+    private TextView mPresFR, mTempFR;
+    private TextView mPresRL, mTempRL;
+    private TextView mPresRR, mTempRR;
+
     public void bindViews(View rootView) {
         if (rootView == null)
             return;
 
+        mBackground = rootView.findViewById(R.id.audiRsBg);
         mPointer = rootView.findViewById(R.id.audiRsPointer);
         mLight1 = rootView.findViewById(R.id.audiRsLight1);
         mLight2 = rootView.findViewById(R.id.audiRsLight2);
@@ -92,7 +103,88 @@ public class AudiRsThemeController {
         mSpeedText = rootView.findViewById(R.id.audiRsSpeedText);
         mGearText = rootView.findViewById(R.id.audiRsGearText);
 
+        // TPMS Binding
+        mPresFL = rootView.findViewById(R.id.audiRsPresFL);
+        mTempFL = rootView.findViewById(R.id.audiRsTempFL);
+        mPresFR = rootView.findViewById(R.id.audiRsPresFR);
+        mTempFR = rootView.findViewById(R.id.audiRsTempFR);
+        mPresRL = rootView.findViewById(R.id.audiRsPresRL);
+        mTempRL = rootView.findViewById(R.id.audiRsTempRL);
+        mPresRR = rootView.findViewById(R.id.audiRsPresRR);
+        mTempRR = rootView.findViewById(R.id.audiRsTempRR);
+
         DebugLogger.d(TAG, "Views bound successfully");
+
+        // Initial sync
+        updateDayMode();
+    }
+
+    public void updateTireData(int index, float pressure, float temp) {
+        TextView presView = null;
+        TextView tempView = null;
+
+        switch (index) {
+            case 0:
+                presView = mPresFL;
+                tempView = mTempFL;
+                break;
+            case 1:
+                presView = mPresFR;
+                tempView = mTempFR;
+                break;
+            case 2:
+                presView = mPresRL;
+                tempView = mTempRL;
+                break;
+            case 3:
+                presView = mPresRR;
+                tempView = mTempRR;
+                break;
+        }
+
+        if (presView == null || tempView == null)
+            return;
+
+        // Pressure logic: Assume KPa from sensor. Convert to Bar.
+        // Usually 100 KPa = 1 Bar.
+        // Sometimes raw value is already Bar * 10 or similar?
+        // Assuming raw unit is KPa based on common automotive standards (e.g. 240 KPa =
+        // 2.4 Bar).
+
+        float bar = pressure / 100.0f;
+
+        // Safety check: if value is tiny (e.g. < 10) it might already be bar?
+        // But user provided standard "2.4 bar".
+        // Let's assume standard input is KPa like ~240.
+        // If input is 2.4, then bar becomes 0.024 which is wrong.
+        // Adaptive logic: if val < 10, treat as Bar directly.
+        if (pressure < 10.0f) {
+            bar = pressure;
+        }
+
+        // Color Logic: Ref User Request 2.0 - 2.8 Bar is Green
+        boolean isNormal = (bar >= 2.0f && bar <= 2.8f);
+
+        presView.setText(String.format(java.util.Locale.US, "%.1f bar", bar));
+        presView.setTextColor(isNormal ? 0xFF00FF00 : 0xFFFF0000); // Green or Red
+
+        // Temp Unit: °C
+        tempView.setText(String.format(java.util.Locale.US, "%.0f°C", temp));
+        // Temp always Gray (set in XML, but we can enforce if needed)
+    }
+
+    public void setDayMode(boolean isDay) {
+        if (mIsDayMode != isDay) {
+            mIsDayMode = isDay;
+            updateDayMode();
+        }
+    }
+
+    private void updateDayMode() {
+        if (mBackground != null) {
+            // Day: audi_rs_bg_day, Night: audi_rs_bg_night
+            mBackground.setImageResource(mIsDayMode ? R.drawable.audi_rs_bg_day : R.drawable.audi_rs_bg_night);
+        }
     }
 
     /**

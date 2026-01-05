@@ -7,6 +7,10 @@ import android.content.ServiceConnection;
 import android.os.Environment;
 import android.os.IBinder;
 import android.os.RemoteException;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.IBinder;
+import android.os.RemoteException;
 import android.util.Log;
 
 import com.autonavi.amapauto.protocol.connector.IProtocolAidlInterface;
@@ -32,18 +36,56 @@ public class AmapAidlManager {
     // Hardcoded auth key found in analysis
     private static final String AUTH_KEY = "AlSimulate";
 
-    private static AmapAidlManager instance;
+    private static volatile AmapAidlManager instance;
     private Context mContext;
     private IProtocolAidlInterface mService;
     private boolean mIsBound = false;
+    private boolean mIsIntentionalDisconnect = false;
+    private static final int RECONNECT_DELAY_MS = 5000;
+    private int mRetryCount = 0;
+    private static final int MAX_RETRIES = 10;
+    private final Handler mMainHandler = new Handler(android.os.Looper.getMainLooper());
+
+    private final Runnable mReconnectRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!mIsBound && !mIsIntentionalDisconnect) {
+                if (mRetryCount < MAX_RETRIES) {
+                    mRetryCount++;
+                    DebugLogger.i(TAG, "Attempting reconnection (Try " + mRetryCount + "/" + MAX_RETRIES + ")...");
+                    logToFile("Attempting reconnection (Try " + mRetryCount + ")...");
+                    connect();
+                } else {
+                    DebugLogger.e(TAG, "Max retries reached. Giving up reconnection.");
+                    logToFile("Max retries reached. Giving up.");
+                    mRetryCount = 0;
+                }
+            }
+        }
+    };
+
+    // Async Logging Handler
+    private HandlerThread mLogThread;
+    private Handler mLogHandler;
 
     private AmapAidlManager(Context context) {
         this.mContext = context.getApplicationContext();
+        initLogThread();
     }
 
-    public static synchronized AmapAidlManager getInstance(Context context) {
+    private void initLogThread() {
+        mLogThread = new HandlerThread("AmapAidlLogThread");
+        mLogThread.start();
+        mLogHandler = new Handler(mLogThread.getLooper());
+    }
+
+    public static AmapAidlManager getInstance(Context context) {
         if (instance == null) {
-            instance = new AmapAidlManager(context);
+            synchronized (AmapAidlManager.class) {
+                if (instance == null) {
+                    instance = new AmapAidlManager(context);
+                }
+            }
         }
         return instance;
     }
@@ -53,6 +95,8 @@ public class AmapAidlManager {
             DebugLogger.e(TAG, "Already bound to Amap AIDL Service.");
             return;
         }
+        mIsIntentionalDisconnect = false;
+        mMainHandler.removeCallbacks(mReconnectRunnable);
 
         Intent intent = new Intent();
         intent.setAction(SERVICE_ACTION);
@@ -67,6 +111,9 @@ public class AmapAidlManager {
             if (!result) {
                 DebugLogger.e(TAG, "Bind failed. Is Amap Auto installed and version compatible?");
                 logToFile("Bind failed. Is Amap Auto installed?");
+                if (!mIsIntentionalDisconnect) {
+                    mMainHandler.postDelayed(mReconnectRunnable, RECONNECT_DELAY_MS);
+                }
             }
         } catch (Exception e) {
             DebugLogger.e(TAG, "Bind exception", e);
@@ -75,6 +122,8 @@ public class AmapAidlManager {
     }
 
     public void disconnect() {
+        mIsIntentionalDisconnect = true; // Mark as intentional
+        mMainHandler.removeCallbacks(mReconnectRunnable);
         if (mIsBound) {
             try {
                 mContext.unbindService(mConnection);
@@ -98,6 +147,7 @@ public class AmapAidlManager {
             logToFile(msg);
             mService = IProtocolAidlInterface.Stub.asInterface(service);
             mIsBound = true;
+            mRetryCount = 0; // Reset retry count on success
 
             performHandshakeAndRegister();
         }
@@ -109,6 +159,12 @@ public class AmapAidlManager {
             logToFile(msg);
             mService = null;
             mIsBound = false;
+
+            if (!mIsIntentionalDisconnect) {
+                DebugLogger.w(TAG, "Service disconnected unexpectedly! Scheduling reconnect...");
+                logToFile("Unexpected disconnection. Reconnecting in " + (RECONNECT_DELAY_MS / 1000) + "s...");
+                mMainHandler.postDelayed(mReconnectRunnable, RECONNECT_DELAY_MS);
+            }
         }
     };
 
@@ -132,6 +188,16 @@ public class AmapAidlManager {
             // 3. Send Test Requests
             sendTestRequest();
 
+        } catch (android.os.DeadObjectException e) {
+            DebugLogger.e(TAG, "DeadObjectException during handshake", e);
+            logToFile("DeadObjectException: Service died.");
+            mService = null;
+            mIsBound = false;
+            // Trigger reconnect logic handled by onServiceDisconnected usually, but safe to
+            // ensure
+            if (!mIsIntentionalDisconnect) {
+                mMainHandler.postDelayed(mReconnectRunnable, RECONNECT_DELAY_MS);
+            }
         } catch (RemoteException e) {
             DebugLogger.e(TAG, "RemoteException during handshake/register", e);
             logToFile("RemoteException during handshake/register: " + e.getMessage());
@@ -220,18 +286,23 @@ public class AmapAidlManager {
     };
 
     private void logToFile(String content) {
-        File dir = new File(Environment.getExternalStorageDirectory(), "NaviTool");
-        if (!dir.exists()) {
-            dir.mkdirs();
-        }
-        File file = new File(dir, LOG_FILENAME);
-        String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(new Date());
-        String finalLog = timestamp + "\n" + content + "\n--------------------------------\n";
+        if (mLogHandler == null)
+            return;
 
-        try (FileOutputStream fos = new FileOutputStream(file, true)) {
-            fos.write(finalLog.getBytes());
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to write Amap AIDL log to file", e);
-        }
+        mLogHandler.post(() -> {
+            File dir = new File(Environment.getExternalStorageDirectory(), "NaviTool");
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            File file = new File(dir, LOG_FILENAME);
+            String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(new Date());
+            String finalLog = timestamp + "\n" + content + "\n--------------------------------\n";
+
+            try (FileOutputStream fos = new FileOutputStream(file, true)) {
+                fos.write(finalLog.getBytes());
+            } catch (IOException e) {
+                Log.e(TAG, "Failed to write Amap AIDL log to file", e);
+            }
+        });
     }
 }

@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.util.Log;
 
 import java.io.File;
@@ -24,17 +26,32 @@ public class AmapMonitorManager {
     private static final String LOG_FILENAME = "amap_broadcast.txt";
 
     // Singleton instance
-    private static AmapMonitorManager instance;
+    private static volatile AmapMonitorManager instance;
     private Context mContext;
     private boolean isRegistered = false;
 
+    // Async Logging
+    private HandlerThread mLogThread;
+    private Handler mLogHandler;
+
     private AmapMonitorManager(Context context) {
         this.mContext = context.getApplicationContext();
+        initLogThread();
     }
 
-    public static synchronized AmapMonitorManager getInstance(Context context) {
+    private void initLogThread() {
+        mLogThread = new HandlerThread("AmapMonitorLogThread");
+        mLogThread.start();
+        mLogHandler = new Handler(mLogThread.getLooper());
+    }
+
+    public static AmapMonitorManager getInstance(Context context) {
         if (instance == null) {
-            instance = new AmapMonitorManager(context);
+            synchronized (AmapMonitorManager.class) {
+                if (instance == null) {
+                    instance = new AmapMonitorManager(context);
+                }
+            }
         }
         return instance;
     }
@@ -125,18 +142,23 @@ public class AmapMonitorManager {
     }
 
     private void logToFile(String content) {
-        File dir = new File(Environment.getExternalStorageDirectory(), "NaviTool");
-        if (!dir.exists()) {
-            dir.mkdirs();
-        }
-        File file = new File(dir, LOG_FILENAME);
-        String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(new Date());
-        String finalLog = timestamp + "\n" + content + "\n";
+        if (mLogHandler == null)
+            return;
 
-        try (FileOutputStream fos = new FileOutputStream(file, true)) {
-            fos.write(finalLog.getBytes());
-        } catch (IOException e) {
-            Log.e(TAG, "Failed to write Amap log to file", e);
-        }
+        mLogHandler.post(() -> {
+            File dir = new File(Environment.getExternalStorageDirectory(), "NaviTool");
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            File file = new File(dir, LOG_FILENAME);
+            String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(new Date());
+            String finalLog = timestamp + "\n" + content + "\n";
+
+            try (FileOutputStream fos = new FileOutputStream(file, true)) {
+                fos.write(finalLog.getBytes());
+            } catch (IOException e) {
+                Log.e(TAG, "Failed to write Amap log to file", e);
+            }
+        });
     }
 }

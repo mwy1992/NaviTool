@@ -5,21 +5,15 @@
     android:layout_height="match_parent"
     android:background="@android:color/transparent">
 
-    <!-- Layer 1: Background -->
+    <!-- Layer 1: Background (Switchable Day/Night) -->
     <ImageView
         android:id="@+id/audiRsBg"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scaleType="fitCenter"
-        android:src="@drawable/audi_rs_bg" />
+        android:src="@drawable/audi_rs_bg_day" />
 
-    <!-- Layer 2: Dial (表盘) -->
-    <ImageView
-        android:id="@+id/audiRsDial"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:scaleType="fitCenter"
-        android:src="@drawable/audi_rs_dial" />
+    <!-- Layer 2: Dial (REMOVED - Merged into background) -->
 
     <!-- Layer 3: Color Lights (彩灯1-5, 默认隐藏) -->
     <ImageView
@@ -105,5 +99,121 @@
         android:textColor="#00FF00"
         android:textSize="32sp"
         android:textStyle="bold" />
+
+    <!-- TPMS Layout: Front Left (Top Inner) -->
+    <LinearLayout
+        android:id="@+id/audiRsTpmsFL"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginEnd="210dp"
+        android:layout_marginTop="110dp"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <TextView
+            android:id="@+id/audiRsPresFL"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="2.4"
+            android:textColor="#00FF00"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/audiRsTempFL"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="25°C"
+            android:textColor="#AAAAAA"
+            android:textSize="18sp" />
+    </LinearLayout>
+
+    <!-- TPMS Layout: Front Right (Top Outer) -->
+    <LinearLayout
+        android:id="@+id/audiRsTpmsFR"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginEnd="89dp"
+        android:layout_marginTop="110dp"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <TextView
+            android:id="@+id/audiRsPresFR"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="2.4"
+            android:textColor="#00FF00"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/audiRsTempFR"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="25°C"
+            android:textColor="#AAAAAA"
+            android:textSize="18sp" />
+    </LinearLayout>
+
+    <!-- TPMS Layout: Rear Left (Bottom Inner) -->
+    <LinearLayout
+        android:id="@+id/audiRsTpmsRL"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="210dp"
+        android:layout_marginBottom="110dp"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <TextView
+            android:id="@+id/audiRsPresRL"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="2.4"
+            android:textColor="#00FF00"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/audiRsTempRL"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="25°C"
+            android:textColor="#AAAAAA"
+            android:textSize="18sp" />
+    </LinearLayout>
+
+    <!-- TPMS Layout: Rear Right (Bottom Outer) -->
+    <LinearLayout
+        android:id="@+id/audiRsTpmsRR"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="89dp"
+        android:layout_marginBottom="110dp"
+        android:orientation="vertical"
+        android:gravity="center">
+
+        <TextView
+            android:id="@+id/audiRsPresRR"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="2.4"
+            android:textColor="#00FF00"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/audiRsTempRR"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="25°C"
+            android:textColor="#AAAAAA"
+            android:textSize="18sp" />
+    </LinearLayout>
 
 </FrameLayout>

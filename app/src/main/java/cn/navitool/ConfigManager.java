@@ -24,7 +24,7 @@ public class ConfigManager {
     }
 
     public static void init(android.content.Context context) {
-        android.util.Log.e(TAG, "ConfigManager.init() called");
+        DebugLogger.e(TAG, "ConfigManager.init() called");
         sContext = context.getApplicationContext();
         if (instance == null) {
             instance = new ConfigManager();
@@ -32,7 +32,7 @@ public class ConfigManager {
         // Use DefaultSharedPreferences for maximum compatibility and standard file
         // location
         instance.mPrefs = sContext.getSharedPreferences("navitool_prefs", android.content.Context.MODE_PRIVATE);
-        android.util.Log.e(TAG, "ConfigManager initialized mPrefs: " + (instance.mPrefs != null));
+        DebugLogger.e(TAG, "ConfigManager initialized mPrefs: " + (instance.mPrefs != null));
     }
 
     public static synchronized ConfigManager getInstance() {
@@ -59,9 +59,9 @@ public class ConfigManager {
                     }
                     editor.commit(); // Ensure write
                 }
-                Log.i(TAG, "Imported config from External Storage");
+                DebugLogger.i(TAG, "Imported config from External Storage");
             } catch (IOException e) {
-                Log.e(TAG, "Failed to import External config", e);
+                DebugLogger.e(TAG, "Failed to import External config", e);
             }
         }
     }
@@ -88,10 +88,10 @@ public class ConfigManager {
 
             try (FileOutputStream fos = new FileOutputStream(externalFile)) {
                 mProperties.storeToXML(fos, "NaviTool Configuration");
-                Log.i(TAG, "Exported config to: " + EXTERNAL_PATH);
+                DebugLogger.i(TAG, "Exported config to: " + EXTERNAL_PATH);
             }
         } catch (Exception e) {
-            Log.w(TAG, "Failed to export config: " + e.getMessage());
+            DebugLogger.w(TAG, "Failed to export config: " + e.getMessage());
         }
     }
 
@@ -102,9 +102,9 @@ public class ConfigManager {
             editor.putString(key, value);
             // Critical: Use commit() to ensure write to disk before process death
             boolean success = editor.commit();
-            android.util.Log.e(TAG, "setString(" + key + ", " + value + ") success=" + success);
+            DebugLogger.e(TAG, "setString(" + key + ", " + value + ") success=" + success);
         } else {
-            android.util.Log.e(TAG, "setString(" + key + ", " + value + ") FAILED: mPrefs is null");
+            DebugLogger.e(TAG, "setString(" + key + ", " + value + ") FAILED: mPrefs is null");
         }
         // saveProperties(); // Disable auto-export on every change for performance
     }
@@ -112,10 +112,10 @@ public class ConfigManager {
     public String getString(String key, String defaultValue) {
         if (mPrefs != null) {
             String val = mPrefs.getString(key, defaultValue);
-            android.util.Log.e(TAG, "getString(" + key + ") returned: " + val);
+            DebugLogger.e(TAG, "getString(" + key + ") returned: " + val);
             return val;
         }
-        android.util.Log.e(TAG, "getString(" + key + ") FAILED: mPrefs is null, returning default: " + defaultValue);
+        DebugLogger.e(TAG, "getString(" + key + ") FAILED: mPrefs is null, returning default: " + defaultValue);
         return defaultValue;
     }
 
@@ -125,9 +125,9 @@ public class ConfigManager {
             SharedPreferences.Editor editor = mPrefs.edit();
             editor.putBoolean(key, value);
             boolean success = editor.commit(); // Use commit() for sync save
-            android.util.Log.e(TAG, "setBoolean(" + key + ", " + value + ") success=" + success);
+            DebugLogger.e(TAG, "setBoolean(" + key + ", " + value + ") success=" + success);
         } else {
-            android.util.Log.e(TAG, "setBoolean(" + key + ", " + value + ") FAILED: mPrefs is null");
+            DebugLogger.e(TAG, "setBoolean(" + key + ", " + value + ") FAILED: mPrefs is null");
         }
     }
 
@@ -153,9 +153,9 @@ public class ConfigManager {
             SharedPreferences.Editor editor = mPrefs.edit();
             editor.putInt(key, value);
             boolean success = editor.commit(); // Use commit() for sync save
-            android.util.Log.e(TAG, "setInt(" + key + ", " + value + ") success=" + success);
+            DebugLogger.e(TAG, "setInt(" + key + ", " + value + ") success=" + success);
         } else {
-            android.util.Log.e(TAG, "setInt(" + key + ", " + value + ") FAILED: mPrefs is null");
+            DebugLogger.e(TAG, "setInt(" + key + ", " + value + ") FAILED: mPrefs is null");
         }
     }
 

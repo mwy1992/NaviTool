@@ -46,12 +46,12 @@ public class AdbShell {
 
         new Thread(() -> {
             try {
-                Log.d(TAG, "Connecting to " + HOST + ":" + PORT);
+                DebugLogger.d(TAG, "Connecting to " + HOST + ":" + PORT);
                 Socket socket = new Socket(HOST, PORT);
 
                 AdbCrypto crypto = setupCrypto();
                 if (crypto == null) {
-                    Log.e(TAG, "Failed to setup crypto");
+                    DebugLogger.e(TAG, "Failed to setup crypto");
                     isConnecting.set(false);
                     sendBroadcast("连接失败: 密钥生成错误");
                     return;
@@ -61,11 +61,11 @@ public class AdbShell {
                 connection.connect();
 
                 isConnected.set(true);
-                Log.i(TAG, "ADB Connected successfully");
+                DebugLogger.i(TAG, "ADB Connected successfully");
                 sendBroadcast("已连接");
 
             } catch (Throwable e) {
-                Log.e(TAG, "ADB Connection failed", e);
+                DebugLogger.e(TAG, "ADB Connection failed", e);
                 isConnected.set(false);
                 sendBroadcast("连接失败: " + e.getMessage());
             } finally {
@@ -95,14 +95,14 @@ public class AdbShell {
                 return AdbCrypto.loadAdbKeyPair(new AdbBase64Impl(), privateKeyFile, publicKeyFile);
             }
         } catch (Exception e) {
-            Log.e(TAG, "Crypto setup error", e);
+            DebugLogger.e(TAG, "Crypto setup error", e);
             return null;
         }
     }
 
     public void exec(String command) {
         if (!isConnected.get() || connection == null) {
-            Log.w(TAG, "Not connected, trying to connect...");
+            DebugLogger.w(TAG, "Not connected, trying to connect...");
             connect();
             // TODO: Queue command or wait? For now just return.
             return;
@@ -121,10 +121,10 @@ public class AdbShell {
                         break;
                     }
                 }
-                Log.d(TAG, "Executed: " + command);
+                DebugLogger.d(TAG, "Executed: " + command);
             } catch (Throwable e) {
                 // Log but don't crash
-                Log.e(TAG, "Command execution error (safe to ignore if successful): " + e.getMessage());
+                DebugLogger.e(TAG, "Command execution error (safe to ignore if successful): " + e.getMessage());
             } finally {
                 if (stream != null) {
                     try {

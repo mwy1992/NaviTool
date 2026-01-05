@@ -296,10 +296,11 @@ public class MediaNotificationListener extends NotificationListenerService {
                 if (artUriStr != null) {
                     try {
                         android.net.Uri uri = android.net.Uri.parse(artUriStr);
-                        java.io.InputStream is = getContentResolver().openInputStream(uri);
-                        albumArt = android.graphics.BitmapFactory.decodeStream(is);
-                        if (is != null)
-                            is.close();
+                        try (java.io.InputStream is = getContentResolver().openInputStream(uri)) {
+                            if (is != null) {
+                                albumArt = android.graphics.BitmapFactory.decodeStream(is);
+                            }
+                        }
                     } catch (Exception e) {
                         DebugLogger.w(TAG, "Failed URI load: " + e.getMessage());
                     }
@@ -378,6 +379,9 @@ public class MediaNotificationListener extends NotificationListenerService {
                         ByteArrayOutputStream baos = new ByteArrayOutputStream();
                         scaled.compress(Bitmap.CompressFormat.PNG, 100, baos);
                         intent.putExtra("artwork", baos.toByteArray());
+                        if (scaled != albumArt) {
+                            scaled.recycle();
+                        }
                     } catch (Exception e) {
                     }
                 } else {

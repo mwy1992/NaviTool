@@ -63,79 +63,76 @@ public class ClusterHudPresentation extends Presentation {
         mCurrentTheme = theme;
         DebugLogger.d("ClusterHudPresentation", "setClusterTheme: " + theme);
 
-        if (theme == THEME_AUDI_RS) {
-            // 初始化奥迪RS主题
-            DebugLogger.d("ClusterHudPresentation",
-                    "[AUDI] mAudiRsLayout is " + (mAudiRsLayout == null ? "NULL" : "NOT NULL"));
-            DebugLogger.d("ClusterHudPresentation", "[AUDI] mLayoutCluster is "
-                    + (mLayoutCluster == null ? "NULL" : mLayoutCluster.getClass().getSimpleName()));
-
-            if (mAudiRsLayout == null && mLayoutCluster != null) {
-                android.view.LayoutInflater inflater = android.view.LayoutInflater.from(getContext());
-                mAudiRsLayout = inflater.inflate(R.layout.layout_cluster_audi_rs, null);
-                DebugLogger.d("ClusterHudPresentation", "[AUDI] Inflated mAudiRsLayout: " + mAudiRsLayout);
-            }
-
-            // Ensure added to parent (fix for switching back from default which clears
-            // views)
-            if (mAudiRsLayout != null && mLayoutCluster instanceof android.view.ViewGroup) {
-                android.view.ViewGroup container = (android.view.ViewGroup) mLayoutCluster;
+        try {
+            if (theme == THEME_AUDI_RS) {
+                // 初始化奥迪RS主题
                 DebugLogger.d("ClusterHudPresentation",
-                        "[AUDI] Container child count BEFORE: " + container.getChildCount());
-                DebugLogger.d("ClusterHudPresentation", "[AUDI] mAudiRsLayout.getParent() is "
-                        + (mAudiRsLayout.getParent() == null ? "NULL" : "NOT NULL"));
+                        "[AUDI] mAudiRsLayout is " + (mAudiRsLayout == null ? "NULL" : "NOT NULL"));
+                DebugLogger.d("ClusterHudPresentation", "[AUDI] mLayoutCluster is "
+                        + (mLayoutCluster == null ? "NULL" : mLayoutCluster.getClass().getSimpleName()));
 
-                if (mAudiRsLayout.getParent() == null) {
-                    container.addView(mAudiRsLayout,
-                            new android.view.ViewGroup.LayoutParams(
-                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT));
-                    DebugLogger.d("ClusterHudPresentation", "[AUDI] Added mAudiRsLayout to container");
-                } else {
-                    DebugLogger.d("ClusterHudPresentation",
-                            "[AUDI] mAudiRsLayout already has parent, skipping addView");
-                }
-                DebugLogger.d("ClusterHudPresentation",
-                        "[AUDI] Container child count AFTER: " + container.getChildCount());
-            }
-
-            if (mAudiRsController == null) {
-                mAudiRsController = new AudiRsThemeController();
-                DebugLogger.d("ClusterHudPresentation", "[AUDI] Created new AudiRsThemeController");
-            }
-
-            if (mAudiRsLayout != null) {
-                // 使用 View.post() 确保布局完全渲染后再绑定视图
-                DebugLogger.d("ClusterHudPresentation", "[AUDI] Scheduling post() callback for bindViews");
-                mAudiRsLayout.post(() -> {
-                    DebugLogger.d("ClusterHudPresentation", "[AUDI-POST] Executing post() callback");
-                    DebugLogger.d("ClusterHudPresentation",
-                            "[AUDI-POST] mAudiRsLayout visibility: " + mAudiRsLayout.getVisibility());
-                    DebugLogger.d("ClusterHudPresentation", "[AUDI-POST] mAudiRsLayout.getParent(): "
-                            + (mAudiRsLayout.getParent() == null ? "NULL" : "NOT NULL"));
-
-                    if (mAudiRsController != null && mAudiRsLayout != null) {
-                        mAudiRsController.bindViews(mAudiRsLayout);
-                        mAudiRsLayout.setVisibility(View.VISIBLE);
-                        DebugLogger.d("ClusterHudPresentation", "[AUDI-POST] Set mAudiRsLayout VISIBLE");
-
-                        // 隐藏默认元素
-                        hideDefaultClusterElements();
-                        DebugLogger.d("ClusterHudPresentation", "[AUDI-POST] Called hideDefaultClusterElements()");
+                if (mAudiRsLayout == null && mLayoutCluster != null) {
+                    try {
+                        android.view.LayoutInflater inflater = android.view.LayoutInflater.from(getContext());
+                        mAudiRsLayout = inflater.inflate(R.layout.layout_cluster_audi_rs, null);
+                        DebugLogger.d("ClusterHudPresentation", "[AUDI] Inflated mAudiRsLayout: " + mAudiRsLayout);
+                    } catch (Exception e) {
+                        DebugLogger.e("ClusterHudPresentation", "[AUDI] FATAL: Failed to inflate layout", e);
+                        // Fallback to default if inflation fails
+                        enableClusterDashboard();
+                        return;
                     }
-                });
+                }
+
+                // Ensure added to parent (fix for switching back from default which clears
+                // views)
+                if (mAudiRsLayout != null && mLayoutCluster instanceof android.view.ViewGroup) {
+                    android.view.ViewGroup container = (android.view.ViewGroup) mLayoutCluster;
+                    if (mAudiRsLayout.getParent() == null) {
+                        container.addView(mAudiRsLayout,
+                                new android.view.ViewGroup.LayoutParams(
+                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+                        DebugLogger.d("ClusterHudPresentation", "[AUDI] Added mAudiRsLayout to container");
+                    }
+                }
+
+                if (mAudiRsController == null) {
+                    mAudiRsController = new AudiRsThemeController();
+                    DebugLogger.d("ClusterHudPresentation", "[AUDI] Created new AudiRsThemeController");
+                }
+
+                if (mAudiRsLayout != null) {
+                    // 使用 View.post() 确保布局完全渲染后再绑定视图
+                    mAudiRsLayout.post(() -> {
+                        try {
+                            if (mAudiRsController != null && mAudiRsLayout != null) {
+                                mAudiRsController.bindViews(mAudiRsLayout);
+                                mAudiRsLayout.setVisibility(View.VISIBLE);
+                                DebugLogger.d("ClusterHudPresentation", "[AUDI-POST] Set mAudiRsLayout VISIBLE");
+
+                                // 隐藏默认元素
+                                hideDefaultClusterElements();
+                            }
+                        } catch (Exception e) {
+                            DebugLogger.e("ClusterHudPresentation", "[AUDI-POST] Error binding views", e);
+                        }
+                    });
+                }
+            } else {
+                // 切回默认主题
+                if (mAudiRsLayout != null) {
+                    mAudiRsLayout.setVisibility(View.GONE);
+                }
+                if (mAudiRsController != null) {
+                    mAudiRsController.release();
+                }
+                // 重新加载默认仪表布局
+                enableClusterDashboard();
+                DebugLogger.d("ClusterHudPresentation", "Switched to default theme, enableClusterDashboard called");
             }
-        } else {
-            // 切回默认主题
-            if (mAudiRsLayout != null) {
-                mAudiRsLayout.setVisibility(View.GONE);
-            }
-            if (mAudiRsController != null) {
-                mAudiRsController.release();
-            }
-            // 重新加载默认仪表布局
-            enableClusterDashboard();
-            DebugLogger.d("ClusterHudPresentation", "Switched to default theme, enableClusterDashboard called");
+        } catch (Exception e) {
+            DebugLogger.e("ClusterHudPresentation", "Error setting cluster theme: " + theme, e);
         }
     }
 
@@ -161,6 +158,21 @@ public class ClusterHudPresentation extends Presentation {
 
     public int getCurrentTheme() {
         return mCurrentTheme;
+    }
+
+    /**
+     * 更新日夜模式
+     */
+    public void updateDayNightMode(boolean isDay) {
+        if (mAudiRsController != null) {
+            mAudiRsController.setDayMode(isDay);
+        }
+    }
+
+    public void updateTireData(int index, float pressure, float temp) {
+        if (mAudiRsController != null) {
+            mAudiRsController.updateTireData(index, pressure, temp);
+        }
     }
 
     private java.util.List<View> mRealHudComponents = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -674,12 +686,12 @@ public class ClusterHudPresentation extends Presentation {
         }
 
         // Dynamic Gauge Update
-        android.util.Log.e("ClusterHudPresentation",
+        DebugLogger.e("ClusterHudPresentation",
                 "updateSpeed(" + speed + ") - mRealClusterComponents.size=" + mRealClusterComponents.size());
         if (!mRealClusterComponents.isEmpty()) {
             for (View v : mRealClusterComponents) {
                 Object tag = v.getTag();
-                android.util.Log.d("ClusterHudPresentation", "  View: " + v.getClass().getSimpleName() + ", Tag: "
+                DebugLogger.d("ClusterHudPresentation", "  View: " + v.getClass().getSimpleName() + ", Tag: "
                         + (tag != null ? tag.getClass().getSimpleName() : "null"));
                 if (tag instanceof ClusterHudManager.HudComponentData) {
                     ClusterHudManager.HudComponentData data = (ClusterHudManager.HudComponentData) tag;
@@ -710,7 +722,7 @@ public class ClusterHudPresentation extends Presentation {
                         }
                     } else if ("path_gauge".equals(data.type) && "speed".equals(data.text)) {
                         if (v instanceof PathGaugeView) {
-                            android.util.Log.e("ClusterHudPresentation",
+                            DebugLogger.e("ClusterHudPresentation",
                                     "    -> Found SPEED PathGaugeView, setting progress=" + speed);
                             ((PathGaugeView) v).setProgress(speed);
                         }
@@ -919,23 +931,33 @@ public class ClusterHudPresentation extends Presentation {
             String[] tokens = clean.trim().split("\\s+");
 
             int i = 0;
-            while (i < tokens.length) {
-                String cmd = tokens[i];
-                if ("M".equalsIgnoreCase(cmd)) {
-                    float x = Float.parseFloat(tokens[i + 1]);
-                    float y = Float.parseFloat(tokens[i + 2]);
-                    path.moveTo(x, y);
-                    i += 3;
-                } else if ("L".equalsIgnoreCase(cmd)) {
-                    float x = Float.parseFloat(tokens[i + 1]);
-                    float y = Float.parseFloat(tokens[i + 2]);
-                    path.lineTo(x, y);
-                    i += 3;
-                } else {
-                    // Try to parse implicit command if it's numbers? SVG repeats last cmd.
-                    // But our strings are explicit.
-                    i++;
+            try {
+                while (i < tokens.length) {
+                    String cmd = tokens[i];
+                    if ("M".equalsIgnoreCase(cmd)) {
+                        if (i + 2 >= tokens.length)
+                            break;
+                        float x = Float.parseFloat(tokens[i + 1]);
+                        float y = Float.parseFloat(tokens[i + 2]);
+                        path.moveTo(x, y);
+                        i += 3;
+                    } else if ("L".equalsIgnoreCase(cmd)) {
+                        if (i + 2 >= tokens.length)
+                            break;
+                        float x = Float.parseFloat(tokens[i + 1]);
+                        float y = Float.parseFloat(tokens[i + 2]);
+                        path.lineTo(x, y);
+                        i += 3;
+                    } else if ("Z".equalsIgnoreCase(cmd)) {
+                        path.close();
+                        i += 1;
+                    } else {
+                        // Forward compatibility: skip 1 token
+                        i++;
+                    }
                 }
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Path parse error for: " + d, e);
             }
             return path;
         } catch (Exception e) {
