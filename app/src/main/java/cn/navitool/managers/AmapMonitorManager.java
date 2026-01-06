@@ -94,41 +94,69 @@ public class AmapMonitorManager {
         }
     };
 
+    // Listener Interface for Broadcast Updates
+    public interface OnBroadcastListener {
+        void onTrafficLightUpdate(com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel info);
+    }
+
+    private OnBroadcastListener mListener;
+
+    public void setListener(OnBroadcastListener listener) {
+        this.mListener = listener;
+    }
+
     private void parseAndLogBroadcast(Intent intent) {
         Bundle extras = intent.getExtras();
         if (extras == null) {
             return;
         }
 
-        StringBuilder logBuilder = new StringBuilder();
-        logBuilder.append("--- Broadcast Received ---\n");
-
         int keyType = -1;
         if (extras.containsKey("KEY_TYPE")) {
             keyType = extras.getInt("KEY_TYPE", -1);
         }
 
-        // Special handling for Traffic Light Info
+        // [OPTIMIZATION] Handle Traffic Light FIRST with minimal processing
+        // UI update is dispatched before any logging to minimize delay
         if (keyType == 60073) {
-            logBuilder.append(">>> TARGET FOUND: TRAFFIC LIGHT INFO (60073) <<<\n");
             int status = extras.getInt("trafficLightStatus", -1);
             int redCount = extras.getInt("redLightCountDownSeconds", -1);
             int greenLast = extras.getInt("greenLightLastSecond", -1);
             int dir = extras.getInt("dir", -1);
             int waitRound = extras.getInt("waitRound", -1);
 
-            logBuilder.append("Status: ").append(status).append("\n");
-            logBuilder.append("Red Count: ").append(redCount).append("\n");
-            logBuilder.append("Green Last: ").append(greenLast).append("\n");
-            logBuilder.append("Direction: ").append(dir).append("\n");
-            logBuilder.append("Wait Round: ").append(waitRound).append("\n");
-            logBuilder.append("--------------------------\n");
+            // Dispatch to Listener IMMEDIATELY (before any logging)
+            if (mListener != null) {
+                com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel model = new com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel();
+                model.trafficLightStatus = status;
+                model.redLightCountDownSeconds = redCount;
+                model.greenLightLastSecond = greenLast;
+                model.dir = dir;
+                model.waitRound = waitRound;
+                mListener.onTrafficLightUpdate(model);
+            }
 
-            // Also log to Logcat for immediate visibility
-            DebugLogger.e(TAG, "Captured Traffic Light: Status=" + status + ", Red=" + redCount);
+            // Log AFTER dispatch (non-blocking for UI)
+            System.out.println(
+                    "Captured Traffic Light (Broadcast): Status=" + status + ", Red=" + redCount + ", Dir=" + dir);
         }
 
-        // Log all keys as before
+        // [DEBUG] Print other broadcast KEY_TYPEs to console (only for non-60073)
+        if (keyType != 60073) {
+            StringBuilder consoleLog = new StringBuilder();
+            consoleLog.append("[AMAP_BROADCAST] KEY_TYPE=").append(keyType).append(" | ");
+            Set<String> allKeys = extras.keySet();
+            for (String key : allKeys) {
+                Object value = extras.get(key);
+                consoleLog.append(key).append("=").append(value).append(", ");
+            }
+            System.out.println(consoleLog.toString());
+        }
+
+        // File logging is async (via mLogHandler), so it won't block
+        StringBuilder logBuilder = new StringBuilder();
+        logBuilder.append("--- Broadcast Received ---\n");
+        logBuilder.append("KEY_TYPE: ").append(keyType).append("\n");
         Set<String> keys = extras.keySet();
         for (String key : keys) {
             Object value = extras.get(key);
@@ -137,7 +165,7 @@ public class AmapMonitorManager {
         }
         logBuilder.append("--------------------------\n");
 
-        // Write to file
+        // Write to file (async)
         logToFile(logBuilder.toString());
     }
 

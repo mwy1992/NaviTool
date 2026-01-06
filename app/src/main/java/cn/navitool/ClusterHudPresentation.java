@@ -3,13 +3,25 @@ package cn.navitool;
 import android.app.Presentation;
 import android.content.Context;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Display;
 import android.view.View;
+import android.view.WindowManager;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import cn.navitool.managers.CustomThemeManager;
+import com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel;
 
 public class ClusterHudPresentation extends Presentation {
     private static final String TAG = "ClusterHudPresentation";
     private View mLayoutCluster;
     private View mLayoutHud;
+    private AudiRsThemeController mThemeController;
+    private View mAudiRsLayout;
+    private android.view.View mDefaultDashboardRoot; // Keep track of default layout
+    private int mCurrentTheme = -1; // THEME_DEFAULT
 
     public ClusterHudPresentation(Context outerContext, Display display) {
         super(outerContext, display);
@@ -97,8 +109,8 @@ public class ClusterHudPresentation extends Presentation {
                     }
                 }
 
-                if (mAudiRsController == null) {
-                    mAudiRsController = new AudiRsThemeController();
+                if (mThemeController == null) {
+                    mThemeController = new AudiRsThemeController();
                     DebugLogger.d("ClusterHudPresentation", "[AUDI] Created new AudiRsThemeController");
                 }
 
@@ -106,8 +118,8 @@ public class ClusterHudPresentation extends Presentation {
                     // 使用 View.post() 确保布局完全渲染后再绑定视图
                     mAudiRsLayout.post(() -> {
                         try {
-                            if (mAudiRsController != null && mAudiRsLayout != null) {
-                                mAudiRsController.bindViews(mAudiRsLayout);
+                            if (mThemeController != null && mAudiRsLayout != null) {
+                                ((AudiRsThemeController) mThemeController).bindViews(mAudiRsLayout);
                                 mAudiRsLayout.setVisibility(View.VISIBLE);
                                 DebugLogger.d("ClusterHudPresentation", "[AUDI-POST] Set mAudiRsLayout VISIBLE");
 
@@ -124,8 +136,8 @@ public class ClusterHudPresentation extends Presentation {
                 if (mAudiRsLayout != null) {
                     mAudiRsLayout.setVisibility(View.GONE);
                 }
-                if (mAudiRsController != null) {
-                    mAudiRsController.release();
+                if (mThemeController != null) {
+                    mThemeController.release();
                 }
                 // 重新加载默认仪表布局
                 enableClusterDashboard();
@@ -164,14 +176,20 @@ public class ClusterHudPresentation extends Presentation {
      * 更新日夜模式
      */
     public void updateDayNightMode(boolean isDay) {
-        if (mAudiRsController != null) {
-            mAudiRsController.setDayMode(isDay);
+        if (mThemeController != null) {
+            mThemeController.setDayMode(isDay);
         }
     }
 
     public void updateTireData(int index, float pressure, float temp) {
-        if (mAudiRsController != null) {
-            mAudiRsController.updateTireData(index, pressure, temp);
+        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
+            ((AudiRsThemeController) mThemeController).updateTireData(index, pressure, temp);
+        }
+    }
+
+    public void updateTrafficLight(RspTrafficLightsCountdownInfoModel info) {
+        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
+            ((AudiRsThemeController) mThemeController).updateTrafficLight(info);
         }
     }
 
@@ -179,11 +197,10 @@ public class ClusterHudPresentation extends Presentation {
     private java.util.List<View> mRealClusterComponents = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     // Theme Support
+    // Theme Support
     public static final int THEME_DEFAULT = 0;
     public static final int THEME_AUDI_RS = 1;
-    private int mCurrentTheme = THEME_DEFAULT;
-    private AudiRsThemeController mAudiRsController;
-    private View mAudiRsLayout;
+    // Duplicates removed (mCurrentTheme, mAudiRsController, mAudiRsLayout)
 
     public void syncHudLayout(java.util.List<ClusterHudManager.HudComponentData> components) {
         syncLayoutGeneric(mLayoutHud, mRealHudComponents, components, 728, 190);
@@ -647,10 +664,11 @@ public class ClusterHudPresentation extends Presentation {
     }
 
     // --- Cluster Dashboard Mode ---
+    // --- Cluster Dashboard Mode ---
     private View mClusterSpeedPointer;
     private View mClusterRpmPointer;
 
-    private View mDefaultDashboardRoot;
+    // mDefaultDashboardRoot removed (duplicate)
 
     public void enableClusterDashboard() {
         if (mLayoutCluster instanceof android.view.ViewGroup) {
@@ -671,8 +689,8 @@ public class ClusterHudPresentation extends Presentation {
 
     public void updateSpeed(int speed) {
         // 如果是奥迪RS主题，使用专用控制器
-        if (mCurrentTheme == THEME_AUDI_RS && mAudiRsController != null) {
-            mAudiRsController.updateSpeed(speed);
+        if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null) {
+            mThemeController.updateSpeed(speed);
             return;
         }
 
@@ -745,8 +763,8 @@ public class ClusterHudPresentation extends Presentation {
 
     public void updateRpm(float rpm) {
         // 如果是奥迪RS主题，使用专用控制器
-        if (mCurrentTheme == THEME_AUDI_RS && mAudiRsController != null) {
-            mAudiRsController.updateRpm((int) rpm);
+        if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null) {
+            mThemeController.updateRpm((int) rpm);
             return;
         }
 
@@ -760,27 +778,45 @@ public class ClusterHudPresentation extends Presentation {
     }
 
     public void cycleGear() {
-        if (mCurrentTheme == THEME_AUDI_RS && mAudiRsController != null) {
-            mAudiRsController.cycleGear();
+        if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null) {
+            mThemeController.cycleGear();
+        }
+    }
+
+    public void setDayMode(boolean isDay) {
+        if (mThemeController != null) {
+            mThemeController.setDayMode(isDay);
         }
     }
 
     public void updateAudiRsSpeed(int speed) {
-        if (mCurrentTheme == THEME_AUDI_RS && mAudiRsController != null) {
-            mAudiRsController.updateSpeed(speed);
+        if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null) {
+            mThemeController.updateSpeed(speed);
+        }
+    }
+
+    public void updateGuideInfo(com.autonavi.amapauto.protocol.model.service.GuideInfoModel info) {
+        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
+            ((AudiRsThemeController) mThemeController).updateGuideInfo(info);
         }
     }
 
     public void updateGear(int gearValue) {
         // Update Audi RS theme gear
-        if (mCurrentTheme == THEME_AUDI_RS && mAudiRsController != null) {
-            mAudiRsController.setGear(gearValue);
+        if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null) {
+            mThemeController.setGear(gearValue);
         }
 
         // [FIX] Also update HUD gear components
         String gearStr = convertGearValueToString(gearValue);
         if (gearStr != null) {
             updateComponentGeneric(mRealHudComponents, "gear", gearStr, null);
+        }
+    }
+
+    public void updateTurnSignal(boolean isLeft, boolean isOn) {
+        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
+            ((AudiRsThemeController) mThemeController).updateTurnSignal(isLeft, isOn);
         }
     }
 

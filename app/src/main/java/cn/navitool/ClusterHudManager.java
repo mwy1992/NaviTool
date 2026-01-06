@@ -21,9 +21,15 @@ import com.ecarx.xui.adaptapi.car.sensor.ISensorEvent;
 import com.ecarx.xui.adaptapi.FunctionStatus;
 import com.ecarx.xui.adaptapi.car.base.ICarFunction;
 
-import cn.navitool.managers.VehicleSensorManager; // Added missing import
+import android.content.ComponentCallbacks;
+import android.content.res.Configuration;
+import android.content.res.Configuration;
+import cn.navitool.managers.VehicleSensorManager;
+import cn.navitool.managers.AmapAidlManager;
+import com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel;
 
-public class ClusterHudManager implements VehicleSensorManager.Listener {
+public class ClusterHudManager
+        implements VehicleSensorManager.Listener, ComponentCallbacks, AmapAidlManager.OnTrafficLightListener {
     private static final String TAG = "ClusterHudManager";
 
     private static volatile ClusterHudManager instance;
@@ -45,7 +51,6 @@ public class ClusterHudManager implements VehicleSensorManager.Listener {
     private android.media.session.MediaSessionManager mMediaSessionManager;
     private android.media.AudioManager mAudioManager;
     private VolumeReceiver mVolumeReceiver;
-    private NotificationConnectionReceiver mNotifReceiver;
 
     // Cached values for combined fuel_range component
     private float mCachedFuelLiters = 0f;
@@ -114,7 +119,6 @@ public class ClusterHudManager implements VehicleSensorManager.Listener {
             DebugLogger.e(TAG, "FATAL: Failed to init MediaListener in Constructor", e);
         }
         initVolumeListener();
-        initNotificationReceiver();
 
         // Initialize Car Service (Backgroundable, takes ~500ms)
         initCarService();
@@ -122,7 +126,27 @@ public class ClusterHudManager implements VehicleSensorManager.Listener {
         registerDisplayListener();
 
         // Cold Boot Robustness: Check for presentation after init
+        // Cold Boot Robustness: Check for presentation after init
         mMainHandler.post(this::checkAndShowPresentation);
+
+        // Register for System Theme Changes
+        mContext.registerComponentCallbacks(this);
+
+        // Register Traffic Light Listener
+        AmapAidlManager.getInstance(mContext).setListener(this);
+
+        // [FIX] Register Broadcast Monitor Listener for reliable Traffic Light Data
+        cn.navitool.managers.AmapMonitorManager.getInstance(mContext)
+                .setListener(new cn.navitool.managers.AmapMonitorManager.OnBroadcastListener() {
+                    @Override
+                    public void onTrafficLightUpdate(
+                            com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel info) {
+                        if (mPresentation != null) {
+                            mPresentation.updateTrafficLight(info);
+                        }
+                    }
+                });
+
     }
 
     public static ClusterHudManager getInstance(Context context) {
@@ -155,6 +179,27 @@ public class ClusterHudManager implements VehicleSensorManager.Listener {
             if (mPresentation != null) {
                 mPresentation.updateDayNightMode(isDay);
             }
+        }
+    }
+
+    // --- Traffic Light Listener (AIDL) ---
+    @Override
+    public void onTrafficLightUpdate(RspTrafficLightsCountdownInfoModel info) {
+        // [FIX] Ignore AIDL Traffic Light data as it has status mismatch (Broadcast is
+        // truth).
+        // User confirmed Broadcast Status=4 (Green) is correct, while AIDL sends 1
+        // (Red).
+        DebugLogger.d(TAG, "Ignored AIDL Traffic Light Update (using Broadcast instead)");
+
+        // if (mPresentation != null) {
+        // mPresentation.updateTrafficLight(info);
+        // }
+    }
+
+    @Override
+    public void onGuideInfoUpdate(com.autonavi.amapauto.protocol.model.service.GuideInfoModel info) {
+        if (mPresentation != null) {
+            mPresentation.updateGuideInfo(info);
         }
     }
 
@@ -377,6 +422,11 @@ public class ClusterHudManager implements VehicleSensorManager.Listener {
                 mBlinkVisible = false;
                 updateTurnSignal(); // Immediate Update (to clear)
             }
+        }
+
+        // [FIX] Forward Turn Signal State to Presentation (for Traffic Light filtering)
+        if (mPresentation != null) {
+            mPresentation.updateTurnSignal(isLeft, isOn);
         }
     }
 
@@ -892,12 +942,6 @@ public class ClusterHudManager implements VehicleSensorManager.Listener {
             filter.addAction(cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE);
             mContext.registerReceiver(mMediaReceiver, filter, null, new Handler(Looper.getMainLooper()));
             DebugLogger.i(TAG, "Registered Media Receiver for Service Updates");
-
-            mNotificationConnectionReceiver = new NotificationConnectionReceiver();
-            android.content.IntentFilter notificationFilter = new android.content.IntentFilter(
-                    "android.service.notification.NotificationListenerService");
-            mContext.registerReceiver(mNotificationConnectionReceiver, notificationFilter, null,
-                    new Handler(Looper.getMainLooper()));
 
             // Request Initial Media State immediately (in case Service is already running)
             android.content.Intent requestIntent = new android.content.Intent(
@@ -1424,6 +1468,46 @@ public class ClusterHudManager implements VehicleSensorManager.Listener {
                 mPresentation.setClusterVisible(mIsClusterEnabled);
                 mPresentation.setHudVisible(mIsHudEnabled);
                 mPresentation.setMediaPlaying(mIsMediaPlaying); // Sync initial state
+
+                // [FIX Initial State] Sync Day/Night Mode using System Global Configuration
+                // mContext.getResources().getConfiguration() can be stale or default on some
+                // head units.
+                // Resources.getSystem() provides the current system-wide configuration.
+                int uiMode = android.content.res.Resources.getSystem().getConfiguration().uiMode
+                        & Configuration.UI_MODE_NIGHT_MASK;
+                boolean isDay = (uiMode != Configuration.UI_MODE_NIGHT_YES);
+
+                // Double check with Context resources for debugging
+                int contextUiMode = mContext.getResources().getConfiguration().uiMode
+                        & Configuration.UI_MODE_NIGHT_MASK;
+                DebugLogger.i(TAG, "Initial DayMode Check: SystemUI=" + uiMode + ", ContextUI=" + contextUiMode);
+
+                DebugLogger.i(TAG, "Applied initial DayMode (System) on show: " + isDay);
+
+                // [FIX] Delayed Re-check (2000ms)
+                // Sometimes both System and Context are stale at precise startup moment.
+                // We re-check after 2 seconds to ensure we catch the correct state.
+                mMainHandler.postDelayed(() -> {
+                    try {
+                        int delayedUiMode = android.content.res.Resources.getSystem().getConfiguration().uiMode
+                                & Configuration.UI_MODE_NIGHT_MASK;
+                        boolean delayedIsDay = (delayedUiMode != Configuration.UI_MODE_NIGHT_YES);
+                        int presUiMode = 0;
+                        if (mPresentation != null && mPresentation.getContext() != null) {
+                            presUiMode = mPresentation.getContext().getResources().getConfiguration().uiMode
+                                    & Configuration.UI_MODE_NIGHT_MASK;
+                        }
+                        DebugLogger.i(TAG, "Delayed (2s) DayMode Re-Check: SystemUI=" + delayedUiMode + ", PresUI="
+                                + presUiMode + " -> isDay=" + delayedIsDay);
+
+                        if (mPresentation != null) {
+                            mPresentation.setDayMode(delayedIsDay);
+                        }
+                    } catch (Exception e) {
+                        DebugLogger.e(TAG, "Error in Delayed DayMode Check", e);
+                    }
+                }, 2000);
+
                 DebugLogger.i(TAG, "ClusterHudPresentation SHOWN on Display 2");
             } catch (Exception e) {
                 DebugLogger.e(TAG, "Failed to show presentation", e);
@@ -1681,32 +1765,35 @@ public class ClusterHudManager implements VehicleSensorManager.Listener {
         mContext.sendBroadcast(intent);
     }
 
-    // --- Notification Service Connection Listener ---
-    private void initNotificationReceiver() {
-        try {
-            mNotifReceiver = new NotificationConnectionReceiver();
-            android.content.IntentFilter filter = new android.content.IntentFilter(
-                    "cn.navitool.NOTIFICATION_LISTENER_CONNECTED");
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                mContext.registerReceiver(mNotifReceiver, filter, Context.RECEIVER_EXPORTED);
-            } else {
-                mContext.registerReceiver(mNotifReceiver, filter);
-            }
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to register Notification Receiver", e);
+    @Override
+    public void onDayNightChanged(int mode) {
+        // Disabled per user request: "Amap checks system dark/light theme, not car
+        // sensor parameters"
+        // We now rely on onConfigurationChanged
+        DebugLogger.d(TAG, "Ignored VehicleSensor Event onDayNightChanged: " + mode);
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        int uiMode = newConfig.uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        boolean isDay = (uiMode != Configuration.UI_MODE_NIGHT_YES);
+        DebugLogger.i(TAG, "System Configuration Changed! uiMode=" + uiMode + " -> isDay=" + isDay);
+
+        if (mPresentation != null) {
+            mMainHandler.post(() -> {
+                if (mPresentation != null) {
+                    mPresentation.setDayMode(isDay);
+                }
+            });
         }
     }
 
-    private class NotificationConnectionReceiver extends android.content.BroadcastReceiver {
-        @Override
-        public void onReceive(Context context, android.content.Intent intent) {
-            if ("cn.navitool.NOTIFICATION_LISTENER_CONNECTED".equals(intent.getAction())) {
-                DebugLogger.i(TAG, "Received Notification Service Connected Broadcast! Retrying Media Init...");
-                DebugLogger.i(TAG, "Received Notification Service Connected Broadcast!");
-                // No need to reinit locally, Service is running.
-            }
-        }
+    @Override
+    public void onLowMemory() {
+        // Optional: Handle low memory
     }
+
+    // --- Notification Service Connection Listener ---
 
     // --- Media Persistence ---
     // --- Media Visibility ---

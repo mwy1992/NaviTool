@@ -16,6 +16,8 @@ import android.util.Log;
 import com.autonavi.amapauto.protocol.connector.IProtocolAidlInterface;
 import com.autonavi.amapauto.protocol.connector.IProtocolCallBackInterface;
 import com.autonavi.amapauto.protocol.model.base.ProtocolModel;
+import com.autonavi.amapauto.protocol.model.service.GuideInfoModel;
+import com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel;
 import com.autonavi.amapauto.protocol.model.service.ProtocolErrorModel;
 
 import java.io.File;
@@ -35,6 +37,15 @@ public class AmapAidlManager {
 
     // Hardcoded auth key found in analysis
     private static final String AUTH_KEY = "AlSimulate";
+
+    // Listener Interface
+    public interface OnTrafficLightListener {
+        void onTrafficLightUpdate(RspTrafficLightsCountdownInfoModel info);
+
+        void onGuideInfoUpdate(GuideInfoModel info);
+    }
+
+    private OnTrafficLightListener mListener;
 
     private static volatile AmapAidlManager instance;
     private Context mContext;
@@ -88,6 +99,10 @@ public class AmapAidlManager {
             }
         }
         return instance;
+    }
+
+    public void setListener(OnTrafficLightListener listener) {
+        this.mListener = listener;
     }
 
     public void connect() {
@@ -244,6 +259,50 @@ public class AmapAidlManager {
                 String msg = "AIDL onReceiveProtocolModel received: " + model.data.getClass().getName();
                 DebugLogger.e(TAG, msg);
                 logToFile(msg + "\nData: " + model.data.toString());
+
+                if (model.data instanceof RspTrafficLightsCountdownInfoModel) {
+                    RspTrafficLightsCountdownInfoModel trafficInfo = (RspTrafficLightsCountdownInfoModel) model.data;
+                    StringBuilder sb = new StringBuilder("[TRAFFIC LIGHT] ");
+                    sb.append("Dir:").append(trafficInfo.dir).append(", ");
+                    sb.append("Status:").append(trafficInfo.trafficLightStatus).append(", ");
+                    sb.append("Red:").append(trafficInfo.redLightCountDownSeconds).append("s, ");
+                    sb.append("Green:").append(trafficInfo.greenLightLastSecond).append("s");
+                    String logMsg = sb.toString();
+                    DebugLogger.action(TAG, logMsg);
+                    System.out.println("AIDL_LOG: " + logMsg); // Explicit Console Output
+                    logToFile(logMsg);
+
+                    // Dispatch to Listener (Main Thread)
+                    if (mListener != null) {
+                        mMainHandler.post(() -> {
+                            if (mListener != null) {
+                                mListener.onTrafficLightUpdate(trafficInfo);
+                            }
+                        });
+                    }
+                } else if (model.data instanceof GuideInfoModel) {
+                    GuideInfoModel guideInfo = (GuideInfoModel) model.data;
+                    StringBuilder sb = new StringBuilder("[GuideInfo] ");
+                    sb.append("Road:").append(guideInfo.c).append(", ");
+                    sb.append("Next:").append(guideInfo.d).append(", ");
+                    sb.append("Icon:").append(guideInfo.a).append(", ");
+                    sb.append("Dist:").append(guideInfo.e).append("m");
+
+                    String logMsg = sb.toString();
+                    DebugLogger.action(TAG, logMsg);
+                    System.out.println("AIDL_LOG: " + logMsg); // Explicit Console Output
+                    logToFile(logMsg);
+
+                    // Dispatch
+
+                    if (mListener != null) {
+                        mMainHandler.post(() -> {
+                            if (mListener != null) {
+                                mListener.onGuideInfoUpdate(guideInfo);
+                            }
+                        });
+                    }
+                }
             } else {
                 String msg = "AIDL onReceiveProtocolModel received null or empty model";
                 DebugLogger.e(TAG, msg);
@@ -267,6 +326,20 @@ public class AmapAidlManager {
                 String msg = "AIDL onReceiveProtocolModelE received: " + model.data.getClass().getName();
                 DebugLogger.e(TAG, msg);
                 logToFile(msg + "\nData: " + model.data.toString());
+
+                // [FIX] Dispatch Traffic Light Data from E callback as well
+                if (model.data instanceof RspTrafficLightsCountdownInfoModel) {
+                    RspTrafficLightsCountdownInfoModel trafficInfo = (RspTrafficLightsCountdownInfoModel) model.data;
+
+                    // Dispatch to Listener (Main Thread)
+                    if (mListener != null) {
+                        mMainHandler.post(() -> {
+                            if (mListener != null) {
+                                mListener.onTrafficLightUpdate(trafficInfo);
+                            }
+                        });
+                    }
+                }
             }
         }
 

@@ -9,6 +9,9 @@ import android.view.animation.LinearInterpolator;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import cn.navitool.view.TrafficLightView;
+import com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel;
+
 /**
  * 奥迪RS转速表主题控制器
  * 控制彩灯显示和红色闪烁条效果
@@ -40,6 +43,11 @@ public class AudiRsThemeController {
     private TextView mSpeedText;
     private TextView mGearText;
     private ImageView mBackground; // New Background View
+
+    // Traffic Light
+    private TrafficLightView mTrafficLightLeft;
+    private TrafficLightView mTrafficLightStraight;
+    private TrafficLightView mTrafficLightRight;
 
     // 档位状态
     private static final String[] GEARS = { "P", "R", "N", "D" };
@@ -103,6 +111,25 @@ public class AudiRsThemeController {
         mSpeedText = rootView.findViewById(R.id.audiRsSpeedText);
         mGearText = rootView.findViewById(R.id.audiRsGearText);
 
+        // Traffic Lights - Bind 3 views
+        mTrafficLightLeft = rootView.findViewById(R.id.audiRsTrafficLightLeft);
+        mTrafficLightStraight = rootView.findViewById(R.id.audiRsTrafficLightStraight);
+        mTrafficLightRight = rootView.findViewById(R.id.audiRsTrafficLightRight);
+
+        // Initial Config
+        if (mTrafficLightLeft != null) {
+            mTrafficLightLeft.setOverrideDirection(1); // Left Arrow
+            mTrafficLightLeft.setVisibility(View.INVISIBLE);
+        }
+        if (mTrafficLightStraight != null) {
+            mTrafficLightStraight.setOverrideDirection(0); // Straight/Round
+            mTrafficLightStraight.setVisibility(View.INVISIBLE);
+        }
+        if (mTrafficLightRight != null) {
+            mTrafficLightRight.setOverrideDirection(2); // Right Arrow
+            mTrafficLightRight.setVisibility(View.INVISIBLE);
+        }
+
         // TPMS Binding
         mPresFL = rootView.findViewById(R.id.audiRsPresFL);
         mTempFL = rootView.findViewById(R.id.audiRsTempFL);
@@ -117,6 +144,84 @@ public class AudiRsThemeController {
 
         // Initial sync
         updateDayMode();
+    }
+
+    /**
+     * Update Traffic Light Status
+     */
+    /**
+     * Update Turn Signal (Legacy/Unused for filtering now)
+     */
+    public void updateTurnSignal(boolean isLeft, boolean isOn) {
+        // Logic removed as user requested SIMULTANEOUS display of all lights
+    }
+
+    /**
+     * Update Traffic Light Status
+     */
+    public void updateTrafficLight(RspTrafficLightsCountdownInfoModel info) {
+        if (info == null)
+            return;
+
+        // Route to correct view
+        TrafficLightView targetView = null;
+        if (info.dir == 1)
+            targetView = mTrafficLightLeft;
+        else if (info.dir == 2)
+            targetView = mTrafficLightRight;
+        else if (info.dir == 0)
+            targetView = mTrafficLightStraight;
+
+        if (targetView == null)
+            return;
+
+        // Only show the latest direction - hide all other lights (minimal operations)
+        if (mTrafficLightLeft != null && mTrafficLightLeft != targetView) {
+            mTrafficLightLeft.setVisibility(View.INVISIBLE);
+        }
+        if (mTrafficLightStraight != null && mTrafficLightStraight != targetView) {
+            mTrafficLightStraight.setVisibility(View.INVISIBLE);
+        }
+        if (mTrafficLightRight != null && mTrafficLightRight != targetView) {
+            mTrafficLightRight.setVisibility(View.INVISIBLE);
+        }
+
+        int status = info.trafficLightStatus;
+        int time = info.redLightCountDownSeconds;
+
+        // Status mapping: User defined Red=1, Green=4, Yellow=-1
+        // TrafficLightView constants: Red=2, Green=1, Yellow=3
+        if (status == 1) {
+            status = 2; // STATUS_RED
+        } else if (status == 4) {
+            status = 1; // STATUS_GREEN
+        } else if (status == -1) {
+            status = 3; // STATUS_YELLOW
+        } else if (status != 0) {
+            status = 0; // Unknown -> hide
+        }
+
+        // Auto-hide when countdown reaches 0 (except green)
+        if (time <= 0 && status != 1) {
+            status = 0;
+        }
+
+        // Update view
+        if (status == 0) {
+            targetView.setVisibility(View.INVISIBLE);
+        } else {
+            targetView.setVisibility(View.VISIBLE);
+            targetView.updateState(status, time, info.dir);
+        }
+    }
+
+    private int mCurrentManeuverIcon = -1;
+
+    public void updateGuideInfo(com.autonavi.amapauto.protocol.model.service.GuideInfoModel info) {
+        if (info == null)
+            return;
+        mCurrentManeuverIcon = info.a;
+        DebugLogger.d(TAG, "GuideInfo Updated: Icon=" + info.a + " Road=" + info.c + " Next=" + info.d);
     }
 
     public void updateTireData(int index, float pressure, float temp) {
@@ -174,16 +279,23 @@ public class AudiRsThemeController {
     }
 
     public void setDayMode(boolean isDay) {
+        DebugLogger.d(TAG, "setDayMode calling: " + isDay + " (Current: " + mIsDayMode + ")");
         if (mIsDayMode != isDay) {
             mIsDayMode = isDay;
+            updateDayMode();
+        } else {
+            // Force update just in case view state is out of sync
             updateDayMode();
         }
     }
 
     private void updateDayMode() {
         if (mBackground != null) {
+            DebugLogger.d(TAG, "Updating Background Image to: " + (mIsDayMode ? "DAY" : "NIGHT"));
             // Day: audi_rs_bg_day, Night: audi_rs_bg_night
             mBackground.setImageResource(mIsDayMode ? R.drawable.audi_rs_bg_day : R.drawable.audi_rs_bg_night);
+        } else {
+            DebugLogger.w(TAG, "mBackground is null during updateDayMode");
         }
     }
 
