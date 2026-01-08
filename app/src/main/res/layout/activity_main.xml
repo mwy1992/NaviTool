@@ -30,15 +30,7 @@
                 android:layout_alignParentStart="true"
                 android:layout_centerVertical="true"/>
 
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switchDebug"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/debug_mode"
-                android:textColor="@android:color/white"
-                android:theme="@style/ThemeOverlay.AppCompat.Dark"
-                android:layout_alignParentEnd="true"
-                android:layout_centerVertical="true"/>
+
         </RelativeLayout>
 
         <TextView
@@ -378,66 +370,9 @@
                             android:layout_marginTop="4dp"/>
                     </LinearLayout>
 
-                    <!-- Speed Comparison Display -->
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical"
-                        android:layout_marginTop="16dp"
-                        android:padding="12dp"
-                        android:background="@drawable/rounded_bg_secondary">
-                        
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="车速对比"
-                            android:textStyle="bold"
-                            android:textSize="14sp"
-                            android:layout_marginEnd="16dp"/>
-                        
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="实际:"
-                            android:textColor="#888888"
-                            android:textSize="14sp"/>
-                        
-                        <TextView
-                            android:id="@+id/txtActualSpeed"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="0"
-                            android:textColor="#FF5555"
-                            android:textSize="18sp"
-                            android:textStyle="bold"
-                            android:layout_marginStart="4dp"
-                            android:layout_marginEnd="16dp"/>
-                        
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="仪表:"
-                            android:textColor="#888888"
-                            android:textSize="14sp"/>
-                        
-                        <TextView
-                            android:id="@+id/txtDIMSpeed"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="0"
-                            android:textColor="#55FF55"
-                            android:textSize="18sp"
-                            android:textStyle="bold"
-                            android:layout_marginStart="4dp"/>
-                        
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text=" km/h"
-                            android:textColor="#888888"
-                            android:textSize="14sp"/>
-                    </LinearLayout>
+
+
+
 
                     <!-- 模拟发动机启动按钮 -->
                     <com.google.android.material.button.MaterialButton

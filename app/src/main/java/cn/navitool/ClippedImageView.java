@@ -2,14 +2,24 @@ package cn.navitool;
 
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.Region;
+import android.graphics.Shader;
 import android.util.AttributeSet;
+// [FIX] Use standard ImageView for better compatibility (doesn't require AppCompat Theme)
+import android.widget.ImageView;
+import androidx.annotation.Nullable;
 
 /**
  * 支持斜向裁剪的ImageView
  * 用于奥迪RS转速进度条效果
  */
-public class ClippedImageView extends androidx.appcompat.widget.AppCompatImageView {
+// [FIX] Extends ImageView instead of AppCompatImageView to avoid "You need to
+// use a Theme.AppCompat theme" crash
+public class ClippedImageView extends ImageView {
 
     // 裁剪参数
     private float mClipProgress = 1.0f; // 0-1，裁剪进度

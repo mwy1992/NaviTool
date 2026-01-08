@@ -183,20 +183,29 @@ public class DebugLogger {
         }
     }
 
-    private static void writeToFile(String fileName, String message) {
-        File dir = new File(Environment.getExternalStorageDirectory(), "NaviTool");
-        if (!dir.exists()) {
-            dir.mkdirs();
-        }
-        File file = new File(dir, fileName);
-        String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(new Date());
-        String logMessage = timestamp + " " + message + "\n";
+    private static final java.util.concurrent.ExecutorService sLogExecutor = java.util.concurrent.Executors
+            .newSingleThreadExecutor();
 
-        try (FileOutputStream fos = new FileOutputStream(file, true)) {
-            fos.write(logMessage.getBytes());
-        } catch (IOException e) {
-            Log.e("DebugLogger", "Failed to write to log file: " + fileName, e);
-        }
+    private static void writeToFile(String fileName, String message) {
+        sLogExecutor.execute(() -> {
+            try {
+                File dir = new File(Environment.getExternalStorageDirectory(), "NaviTool");
+                if (!dir.exists()) {
+                    dir.mkdirs();
+                }
+                File file = new File(dir, fileName);
+                String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
+                        .format(new Date());
+                String logMessage = timestamp + " " + message + "\n";
+
+                try (FileOutputStream fos = new FileOutputStream(file, true)) {
+                    fos.write(logMessage.getBytes());
+                }
+            } catch (Exception e) {
+                // Look, if logging fails, we can't really log it to file, so just Logcat it
+                Log.e("DebugLogger", "Failed to write to log file: " + fileName, e);
+            }
+        });
     }
 
     public static void logBootEvent(Context context) {

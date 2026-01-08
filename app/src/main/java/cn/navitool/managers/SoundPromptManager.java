@@ -241,9 +241,15 @@ public class SoundPromptManager {
             }
 
             mMediaPlayer.setDataSource(filePath);
-            mMediaPlayer.prepare();
-            mMediaPlayer.start();
-            DebugLogger.d(TAG, "Playing sound: " + filePath);
+
+            // [CRITICAL FIX] Use Async Prepare and set listener
+            mMediaPlayer.setOnPreparedListener(mp -> {
+                DebugLogger.d(TAG, "MediaPlayer Prepared (Async). Starting playback...");
+                mp.start();
+            });
+
+            mMediaPlayer.prepareAsync(); // Async to avoid blocking Main Thread
+            DebugLogger.d(TAG, "Preparing sound async: " + filePath);
 
             final android.media.AudioFocusRequest finalRequest = focusRequest;
             mMediaPlayer.setOnCompletionListener(mediaPlayer -> {
@@ -262,6 +268,7 @@ public class SoundPromptManager {
 
             // Clean up on error too
             mMediaPlayer.setOnErrorListener((mp, what, extra) -> {
+                DebugLogger.e(TAG, "MediaPlayer Error: what=" + what + ", extra=" + extra);
                 if (am != null) {
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && finalRequest != null) {
                         am.abandonAudioFocusRequest(finalRequest);
@@ -269,7 +276,7 @@ public class SoundPromptManager {
                         am.abandonAudioFocus(finalFocusListener);
                     }
                 }
-                return false;
+                return true;
             });
 
         } catch (Exception e) {

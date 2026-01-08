@@ -14,7 +14,7 @@ import android.widget.TextView;
 import cn.navitool.managers.CustomThemeManager;
 import com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel;
 
-public class ClusterHudPresentation extends Presentation {
+public class ClusterHudPresentation extends android.app.Dialog {
     private static final String TAG = "ClusterHudPresentation";
     private View mLayoutCluster;
     private View mLayoutHud;
@@ -23,8 +23,8 @@ public class ClusterHudPresentation extends Presentation {
     private android.view.View mDefaultDashboardRoot; // Keep track of default layout
     private int mCurrentTheme = -1; // THEME_DEFAULT
 
-    public ClusterHudPresentation(Context outerContext, Display display) {
-        super(outerContext, display);
+    public ClusterHudPresentation(Context context) {
+        super(context, R.style.Theme_NaviTool); // Use Theme directly
     }
 
     @Override
@@ -39,6 +39,21 @@ public class ClusterHudPresentation extends Presentation {
         if (getWindow() != null) {
             getWindow().setBackgroundDrawable(
                     new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
+            
+            // [FIX] Z-Order Correction: Use TYPE_APPLICATION_OVERLAY
+            // Since we are now a raw Dialog (not Presentation class), we can strictly enforce 
+            // the overlay type to ensure we cover system UI elements on the secondary display.
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
+            } else {
+                getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
+            }
+            
+            // Critical Flags for Overlay
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE 
+                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN 
+                    | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                    | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
         }
 
         // Apply initial debug state
@@ -181,11 +196,7 @@ public class ClusterHudPresentation extends Presentation {
         }
     }
 
-    public void updateTireData(int index, float pressure, float temp) {
-        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
-            ((AudiRsThemeController) mThemeController).updateTireData(index, pressure, temp);
-        }
-    }
+
 
     public void updateTrafficLight(RspTrafficLightsCountdownInfoModel info) {
         if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
@@ -225,7 +236,7 @@ public class ClusterHudPresentation extends Presentation {
             // Add new
             for (ClusterHudManager.HudComponentData data : components) {
                 View view;
-                boolean isSong = "song".equals(data.type) || "test_media".equals(data.type);
+                boolean isSong = "song".equals(data.type) || "test_media".equals(data.type) || "song_1line".equals(data.type);
                 boolean isTurnSignal = "turn_signal".equals(data.type);
                 boolean isVolume = "volume".equals(data.type);
                 boolean isMediaCover = "media_cover".equals(data.type) || "test_media_cover".equals(data.type);
@@ -507,7 +518,7 @@ public class ClusterHudPresentation extends Presentation {
                 // view.setTag(data) is already set at line 297
 
                 // Update boolean flags for visibility check
-                isSong = "song".equals(data.type) || "test_media".equals(data.type);
+                isSong = "song".equals(data.type) || "test_media".equals(data.type) || "song_1line".equals(data.type);
                 isMediaCover = "media_cover".equals(data.type) || "test_media_cover".equals(data.type);
 
                 // Apply Media/Volume Visibility Rule immediately
@@ -564,7 +575,7 @@ public class ClusterHudPresentation extends Presentation {
             if (viewType != null) {
                 if ("media".equals(group)) {
                     if (viewType.equals("song") || viewType.equals("media_cover") || viewType.equals("test_media")
-                            || viewType.equals("test_media_cover")) {
+                            || viewType.equals("test_media_cover") || viewType.equals("song_1line")) {
                         v.setVisibility(visible ? View.VISIBLE : View.GONE);
                     }
                 } else if ("volume".equals(group)) {
@@ -817,6 +828,18 @@ public class ClusterHudPresentation extends Presentation {
     public void updateTurnSignal(boolean isLeft, boolean isOn) {
         if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
             ((AudiRsThemeController) mThemeController).updateTurnSignal(isLeft, isOn);
+        }
+    }
+
+    public void updateTirePressure(int index, float pressure) {
+        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
+            ((AudiRsThemeController) mThemeController).updateTirePressure(index, pressure);
+        }
+    }
+
+    public void updateTireTemp(int index, float temp) {
+        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
+            ((AudiRsThemeController) mThemeController).updateTireTemp(index, temp);
         }
     }
 

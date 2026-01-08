@@ -32,10 +32,25 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private static final String TAG = "KeepAliveService";
     private static final String AUTONAVI_PKG = "com.autonavi.amapauto";
 
+    private static KeepAliveAccessibilityService instance;
+
+    public static KeepAliveAccessibilityService getInstance() {
+        return instance;
+    }
+
+    // ... existing fields ...
     private ICarFunction iCarFunction;
-
     private ISensor iSensor;
+    // ...
 
+    private boolean mAmapDetected = false; // Gate for Amap Services
+    private boolean mIsAmapServicesStarted = false;
+
+    // Dynamic Receiver for ADB Simulation (Avoids Android 8+ Background Execution
+    // Limits)
+    private SimulateIgnitionReceiver mSimulateReceiver;
+
+    // ... existing fields ...
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (sharedPreferences, key) -> {
         if ("force_auto_day_night".equals(key) || "enable_24_25_light_sensor".equals(key)) {
             cn.navitool.managers.ThemeBrightnessManager.getInstance(this).checkMonitoringRequirement();
@@ -63,49 +78,29 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }
     };
 
-    // private KeepAlivePresentation mPsdPresentation; // Removed
-    private cn.navitool.verifier.LightSensorVerifier mLightVerifier;
-
-    // initPsdKeepAlive and showKeepAliveOnDisplay Removed
-
     @Override
     public void onCreate() {
         super.onCreate();
-        DebugLogger.init(this); // [Fix Cold Boot] Init logger early
-        ConfigManager.init(this); // [Fix Cold Boot] Init config early so triggers in onCreate can read prefs
+        instance = this; // Set Singleton
+        DebugLogger.init(this);
+        ConfigManager.init(this);
         DebugLogger.i(TAG, "Service Created");
         DebugLogger.createDirectories();
 
-        // 启动光照传感器验证器
-        try {
-            mLightVerifier = new cn.navitool.verifier.LightSensorVerifier(this);
-            mLightVerifier.start();
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to start LightSensorVerifier", e);
-        }
-
-        // 启动副驾屏保活
         cn.navitool.managers.PsdManager.getInstance(this).init();
-
-        // [BUG 3 FIX] KeyHandlerManager 移到 onServiceConnected 中初始化
-        // 避免在 Service 完全连接前调用
-
-        // [新增] 初始化车辆控制接口 (监听发动机、档位、车门等)
         initCar();
     }
 
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
-        // DebugLogger.init(this); // Moved to onCreate
-        // ConfigManager.init(this); // Moved to onCreate
         DebugLogger.action(TAG, "无障碍服务已连接");
         DebugLogger.i(TAG, "Service Connected");
 
         SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
         prefs.registerOnSharedPreferenceChangeListener(prefsListener);
 
-        // Initialize ThemeBrightnessManager
+        // Initialize Managers
         cn.navitool.managers.ThemeBrightnessManager.getInstance(this).init();
         cn.navitool.managers.SoundPromptManager.getInstance(this).init();
         cn.navitool.managers.KeyHandlerManager.getInstance(this).init();
@@ -126,20 +121,17 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             AdbShell.getInstance(this).connect();
         }
 
-        // Log boot event (with cooldown check)
         DebugLogger.logBootEvent(this);
 
-        // Register receiver for config changes
         DebugLogger.i(TAG, "Build.VERSION.SDK_INT: " + Build.VERSION.SDK_INT);
-        // Register receiver for config changes
         IntentFilter filter = new IntentFilter();
-        filter.addAction(Intent.ACTION_CONFIGURATION_CHANGED);
         filter.addAction(Intent.ACTION_CONFIGURATION_CHANGED);
         filter.addAction("cn.navitool.ACTION_REQUEST_ONEOS_STATUS");
         filter.addAction("cn.navitool.ACTION_REQUEST_DAY_NIGHT_STATUS");
-        filter.addAction("cn.navitool.ACTION_SIMULATE_ENGINE_START"); // 模拟发动机启动
+        // filter.addAction("cn.navitool.ACTION_SIMULATE_ENGINE_START"); // Now handled
+        // by Manifest Receiver
         try {
-            if (Build.VERSION.SDK_INT >= 33) { // Android 13+ (Tiramisu)
+            if (Build.VERSION.SDK_INT >= 33) {
                 registerReceiver(configChangeReceiver, filter, Context.RECEIVER_EXPORTED);
             } else {
                 registerReceiver(configChangeReceiver, filter);
@@ -148,12 +140,108 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             DebugLogger.e(TAG, "Failed to register configChangeReceiver", e);
         }
 
-        // Initialize and start Amap Broadcast Monitor (Silent Logger)
+        // Removed Early Amap Monitor Start (User Request: Gate behind Ignition +
+        // Running)
+
+        // Register Simulation Receiver dynamically
         try {
-            cn.navitool.managers.AmapMonitorManager.getInstance(this).startMonitoring();
+            mSimulateReceiver = new SimulateIgnitionReceiver();
+            IntentFilter simFilter = new IntentFilter("cn.navitool.ACTION_SIMULATE_ENGINE_START");
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(mSimulateReceiver, simFilter, Context.RECEIVER_EXPORTED);
+            } else {
+                registerReceiver(mSimulateReceiver, simFilter);
+            }
+            DebugLogger.i(TAG, "Dynamic SimulateIgnitionReceiver Registered");
         } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to start AmapMonitorManager", e);
+            DebugLogger.e(TAG, "Failed to register SimulateIgnitionReceiver", e);
         }
+    }
+
+    // ... onDestroy ...
+
+    @Override
+    public void onAccessibilityEvent(AccessibilityEvent event) {
+        if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            CharSequence packageName = event.getPackageName();
+            if (packageName != null && AUTONAVI_PKG.equals(packageName.toString())) {
+                boolean wasDetected = mAmapDetected;
+                mAmapDetected = true;
+
+                if (!wasDetected) {
+                    DebugLogger.i(TAG, "Amap Auto Detected (" + packageName + "). Checking service requirements...");
+                }
+
+                // Sync Theme
+                DebugLogger.d(TAG, "AutoNavi foreground. Syncing theme...");
+                cn.navitool.managers.ThemeBrightnessManager.getInstance(this).syncAutoNaviTheme();
+
+                // Check if we can start Amap Services now
+                checkAndStartAmapServices();
+            }
+        }
+    }
+
+    private void checkAndStartAmapServices() {
+        if (mIsAmapServicesStarted)
+            return;
+
+        // Double Gate: Ignition DRIVING + Amap Detected
+        if (mIgnitionReady && mAmapDetected) {
+            DebugLogger.i(TAG, "Conditions Met (Ignition + Amap). Starting Amap Services...");
+            mIsAmapServicesStarted = true;
+            try {
+                // Start Monitor
+                cn.navitool.managers.AmapMonitorManager.getInstance(this).startMonitoring();
+                // Aidl might be handled by monitor or separate manager, ensure it's connected
+                // if needed
+                // cn.navitool.managers.AmapAidlManager.getInstance(this).connect(); // Usually
+                // called by Monitor or Activity
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Failed to start Amap Services", e);
+            }
+        } else {
+            DebugLogger.d(TAG, "Amap Services Gated: Ignition=" + mIgnitionReady + ", AmapDetected=" + mAmapDetected);
+        }
+    }
+
+    // ...
+
+    public void resetIgnitionState() {
+        mIgnitionReady = false;
+        mEngineStarted = false; // [FIX] Reset engine start flag
+        mHeavySensorsRegistered = false; // Allow re-registration
+        DebugLogger.i(TAG, "Ignition State Reset for Simulation");
+    }
+
+    public void handleIgnitionDriving() { // Made Public for Receiver
+        if (mIgnitionReady) {
+            DebugLogger.w(TAG,
+                    "Ignition already READY. Skipping handleIgnitionDriving. (Use resetIgnitionState() to force)");
+            return;
+        }
+        mIgnitionReady = true;
+        mEngineStarted = true; // [FIX] Ensure flag is set so gear sounds can play
+
+        DebugLogger.i(TAG, "Ignition DRIVING detected! triggering AutoStart and scheduling Heavy Sensors...");
+
+        // 1. Trigger Lightweight Auto Start
+        triggerAutoStart();
+
+        // 2. Schedule Heavy Sensor Audio/Logic
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            if (!mHeavySensorsRegistered) {
+                registerHeavySensors();
+                // [FIX] Direct UI Activation from Service (Headless Support)
+                // Instead of broadcasting to Activity (which might not exist), we call Manager
+                // directly.
+                DebugLogger.i(TAG, "Ignition + 3s: Calling ensureUiVisible() directly");
+                cn.navitool.ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).ensureUiVisible();
+            }
+        }, 3000);
+
+        // 3. Check Amap Services
+        checkAndStartAmapServices();
     }
 
     @Override
@@ -161,10 +249,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         super.onDestroy();
         DebugLogger.i(TAG, "Service destroying, cleaning up resources...");
 
-        if (mLightVerifier != null) {
-            mLightVerifier.stop();
-            mLightVerifier = null;
-        }
+        // LightVerifier stop logic removed
 
         // Stop Amap Monitor
         try {
@@ -179,6 +264,17 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         cn.navitool.managers.PsdManager.getInstance(this).destroy();
         cn.navitool.ClusterHudManager.getInstance(this).destroy();
         cn.navitool.managers.VehicleSensorManager.getInstance(this).destroy();
+
+        // Unregister Dynamic Simulation Receiver
+        try {
+            if (mSimulateReceiver != null) {
+                unregisterReceiver(mSimulateReceiver);
+                mSimulateReceiver = null;
+            }
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error unregistering SimulateIgnitionReceiver", e);
+        }
+
         // The following catch block and assignment were part of the mPsdPresentation
         // logic.
         // Since mPsdPresentation dismissal is commented out, these lines are also
@@ -203,17 +299,6 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             // Ignore
         }
 
-    }
-
-    @Override
-    public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            CharSequence packageName = event.getPackageName();
-            if (packageName != null && AUTONAVI_PKG.equals(packageName.toString())) {
-                DebugLogger.d(TAG, "AutoNavi detected in foreground. Syncing theme...");
-                cn.navitool.managers.ThemeBrightnessManager.getInstance(this).syncAutoNaviTheme();
-            }
-        }
     }
 
     @Override
@@ -265,7 +350,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     // Sound Prompt Sensors
     private static final int SENSOR_TYPE_GEAR = 2097664; // 0x200200
     // [BUG 4 FIX] 车速传感器 (from ecarx.adaptapi.jar.src -> ISensor.java)
-    private static final int SENSOR_TYPE_CAR_SPEED = 1048832; // 0x100100 - 实际车速
+
     private static final int SENSOR_TYPE_DIM_CAR_SPEED = 1055232; // 仪表盘显示速度 (与原车仪表一致)
     private static final int BCM_FUNC_DOOR = 553779456; // 0x21020000
     private boolean mAutoStartPending = false; // Debounce flag for triggerAutoStart
@@ -317,40 +402,23 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }
     }
 
+    private boolean mIgnitionReady = false;
+    private boolean mHeavySensorsRegistered = false;
+
     private void registerSensorListeners() {
+        // [New Logic] Only register Ignition listener initially
         try {
             if (iSensor != null) {
                 ISensor.ISensorListener listener = new ISensor.ISensorListener() {
                     @Override
                     public void onSensorValueChanged(int sensorType, float value) {
                         try {
-                            if (sensorType == SENSOR_TYPE_LIGHT) {
-                                cn.navitool.managers.ThemeBrightnessManager
-                                        .getInstance(KeepAliveAccessibilityService.this)
-                                        .onSensorChanged(sensorType, value);
-                            }
-                            // [BUG 2 FIX] 有些车型通过 float 回调报告点火状态
-                            else if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
+                            if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
                                 int val = (int) value;
                                 DebugLogger.d(TAG, "Ignition State Changed (float): " + val);
                                 if (val == ISensorEvent.IGNITION_STATE_DRIVING) {
-                                    DebugLogger.i(TAG, "Ignition DRIVING (float) - Triggering Auto Start");
-                                    triggerAutoStart();
+                                    handleIgnitionDriving();
                                 }
-                            }
-                            // [BUG 4 FIX] 实际车速传感器 - 用于状态页面对比显示
-                            else if (sensorType == SENSOR_TYPE_CAR_SPEED) {
-                                // 转换因子 3.6 (1 m/s = 3.6 km/h)
-                                int speedKmh = (int) (value * 3.6f);
-                                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
-                                        .updateActualSpeed(speedKmh);
-                            }
-                            // DIM车速传感器 - 用于仪表盘显示（与原车仪表一致）
-                            else if (sensorType == SENSOR_TYPE_DIM_CAR_SPEED) {
-                                // DIM速度与实际车速格式相同，都需要乘以3.6转换为km/h
-                                int speedKmh = (int) (value * 3.6f);
-                                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
-                                        .updateSpeed(speedKmh);
                             }
                         } catch (Exception e) {
                             DebugLogger.e(TAG, "Error in onSensorValueChanged", e);
@@ -363,39 +431,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                             if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
                                 DebugLogger.d(TAG, "Ignition State Changed (int): " + value);
                                 mLastIgnition = value;
-
-                                // User Request: Only trigger on DRIVING (2097415)
                                 if (value == ISensorEvent.IGNITION_STATE_DRIVING) {
-                                    mEngineStarted = true; // Bug 7: 标记发动机已启动，允许播放档位声音
-                                    DebugLogger.i(TAG,
-                                            "Ignition DRIVING detected - Triggering Auto Start Sequence");
-                                    triggerAutoStart(); // Extracted method
+                                    handleIgnitionDriving();
                                 }
-                            } else if (sensorType == SENSOR_TYPE_GEAR) {
-                                DebugLogger.d(TAG, "Gear Changed (int): " + value);
-                                // Bug 7: 只有发动机启动后才播放档位声音
-                                if (mLastGear != value) {
-                                    // Bug 7: 忽略启动时的第一次P档事件
-                                    boolean isInitialP = !mInitialGearSkipped &&
-                                            (value == cn.navitool.managers.SoundPromptManager.GEAR_PARK ||
-                                                    value == cn.navitool.managers.SoundPromptManager.TRSM_GEAR_PARK);
-                                    if (isInitialP) {
-                                        mInitialGearSkipped = true;
-                                        DebugLogger.d(TAG, "Skipping initial P gear sound");
-                                    } else if (mEngineStarted) {
-                                        cn.navitool.managers.SoundPromptManager
-                                                .getInstance(KeepAliveAccessibilityService.this)
-                                                .playGearSound(value);
-                                    }
-                                    // 不管是否播放声音，仪表盘显示始终更新
-                                    ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
-                                            .updateGear(value);
-                                    mLastGear = value;
-                                }
-                            } else if (sensorType == ISensor.SENSOR_TYPE_DAY_NIGHT) {
-                                cn.navitool.managers.ThemeBrightnessManager
-                                        .getInstance(KeepAliveAccessibilityService.this)
-                                        .onSensorEventChanged(sensorType, value);
                             }
                         } catch (Exception e) {
                             DebugLogger.e(TAG, "Error in onSensorEventChanged", e);
@@ -407,36 +445,109 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     }
                 };
 
-                // Register for Sensors
+                // Only Register Ignition initially
                 iSensor.registerListener(listener, ISensor.SENSOR_TYPE_IGNITION_STATE);
-                iSensor.registerListener(listener, ISensor.SENSOR_TYPE_DAY_NIGHT);
-                iSensor.registerListener(listener, SENSOR_TYPE_GEAR);
-                iSensor.registerListener(listener, SENSOR_TYPE_LIGHT);
-                // 注册车速传感器（实际车速和DIM仪表速度）
-                iSensor.registerListener(listener, SENSOR_TYPE_CAR_SPEED);
-                iSensor.registerListener(listener, SENSOR_TYPE_DIM_CAR_SPEED);
+                DebugLogger.i(TAG, "Ignition Listener Registered. Waiting for DRIVING state...");
 
-                DebugLogger.i(TAG, "Sensor listeners registered (Ignition, DayNight, Gear, Light, Speed, DIMSpeed)");
-
-                // [Auto Start Fix] Poll Ignition immediately in case we missed the event
+                // Poll once immediately
                 try {
                     int currentIgnition = iSensor.getSensorEvent(ISensor.SENSOR_TYPE_IGNITION_STATE);
                     DebugLogger.i(TAG, "Initial Ignition Poll: " + currentIgnition);
-                    if (currentIgnition == ISensorEvent.IGNITION_STATE_DRIVING ||
-                            currentIgnition == ISensorEvent.IGNITION_STATE_ON) {
-                        DebugLogger.i(TAG, "Ignition already ON/DRIVING. Triggering Auto Start...");
-                        triggerAutoStart();
+                    if (currentIgnition == ISensorEvent.IGNITION_STATE_DRIVING) {
+                        handleIgnitionDriving();
                     }
                 } catch (Exception e) {
                     DebugLogger.e(TAG, "Failed to poll initial ignition state", e);
                 }
 
-                // [HUD/Cluster Fix] Active Polling for Sensor Data to prevent delay
-                pollInitialSensorData();
-
             }
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to register sensor listeners", e);
+        }
+    }
+
+    // handleIgnitionDriving moved to line 166
+
+    private void registerHeavySensors() {
+        if (mHeavySensorsRegistered || iSensor == null)
+            return;
+        mHeavySensorsRegistered = true;
+
+        DebugLogger.i(TAG, "Registering HEAVY Sensors (Gear, Light, Speed)...");
+        try {
+            ISensor.ISensorListener heavyListener = new ISensor.ISensorListener() {
+                @Override
+                public void onSensorValueChanged(int sensorType, float value) {
+                    try {
+                        if (sensorType == SENSOR_TYPE_LIGHT) {
+                            cn.navitool.managers.ThemeBrightnessManager
+                                    .getInstance(KeepAliveAccessibilityService.this)
+                                    .onSensorChanged(sensorType, value);
+
+                        } else if (sensorType == SENSOR_TYPE_DIM_CAR_SPEED) {
+                            // DIM速度与实际车速格式相同，都需要乘以3.6转换为km/h
+                            int speedKmh = (int) (value * 3.6f);
+                            ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
+                                    .updateSpeed(speedKmh);
+                        }
+                    } catch (Exception e) {
+                        DebugLogger.e(TAG, "Error in Heavy onSensorValueChanged", e);
+                    }
+                }
+
+                @Override
+                public void onSensorEventChanged(int sensorType, int value) {
+                    try {
+                        if (sensorType == SENSOR_TYPE_GEAR) {
+                            DebugLogger.d(TAG, "Gear Changed (int): " + value);
+                            if (mLastGear != value) {
+                                // Bug 7: 忽略启动时的第一次P档事件
+                                boolean isInitialP = !mInitialGearSkipped &&
+                                        (value == cn.navitool.managers.SoundPromptManager.GEAR_PARK ||
+                                                value == cn.navitool.managers.SoundPromptManager.TRSM_GEAR_PARK);
+                                if (isInitialP) {
+                                    mInitialGearSkipped = true;
+                                    DebugLogger.d(TAG, "Skipping initial P gear sound");
+                                } else if (mEngineStarted) {
+                                    cn.navitool.managers.SoundPromptManager
+                                            .getInstance(KeepAliveAccessibilityService.this)
+                                            .playGearSound(value);
+                                }
+                                // 不管是否播放声音，仪表盘显示始终更新
+                                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
+                                        .updateGear(value);
+                                mLastGear = value;
+                            }
+                        } else if (sensorType == ISensor.SENSOR_TYPE_DAY_NIGHT) {
+                            cn.navitool.managers.ThemeBrightnessManager
+                                    .getInstance(KeepAliveAccessibilityService.this)
+                                    .onSensorEventChanged(sensorType, value);
+                        }
+                    } catch (Exception e) {
+                        DebugLogger.e(TAG, "Error in Heavy onSensorEventChanged", e);
+                    }
+                }
+
+                @Override
+                public void onSensorSupportChanged(int sensorType, com.ecarx.xui.adaptapi.FunctionStatus status) {
+                }
+            };
+
+            // Register for Heavy Sensors
+            iSensor.registerListener(heavyListener, ISensor.SENSOR_TYPE_DAY_NIGHT);
+            iSensor.registerListener(heavyListener, SENSOR_TYPE_GEAR);
+            iSensor.registerListener(heavyListener, SENSOR_TYPE_LIGHT);
+
+            iSensor.registerListener(heavyListener, SENSOR_TYPE_DIM_CAR_SPEED);
+
+            DebugLogger.i(TAG, "Heavy Sensors Registered Successfully (DayNight, Gear, Light, Speed).");
+
+            // Poll Initial Data for these sensors (Delayed 500ms to allow AdaptAPI to
+            // fetch)
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this::pollInitialSensorData, 500);
+
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to register heavy sensors", e);
         }
     }
 
@@ -446,11 +557,14 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         DebugLogger.i(TAG, "Polling initial sensor data (Fuel, Range, Temp, Gear)...");
         try {
             // 1. Gear (Event Type)
-            // Use local constant or VehicleSensorManager constant
             int gear = iSensor.getSensorEvent(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_GEAR);
             DebugLogger.d(TAG, "Polled Gear: " + gear);
-            ClusterHudManager.getInstance(this).updateGear(gear);
-            mLastGear = gear;
+            if (gear != 0) {
+                ClusterHudManager.getInstance(this).updateGear(gear);
+                mLastGear = gear;
+            } else {
+                DebugLogger.w(TAG, "Polled Invalid Gear (0) - Ignoring to prevent default 'P' overwrite");
+            }
 
             // 2. Fuel Level (Value Type - Float)
             float fuel = iSensor.getSensorLatestValue(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_FUEL);
@@ -474,61 +588,39 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     }
 
     private void triggerAutoStart() {
-        // Debounce: Prevent multiple calls during the 3-second delay period
         if (mAutoStartPending) {
-            DebugLogger.i(TAG, "triggerAutoStart: Already pending, skipping duplicate call");
             return;
         }
         mAutoStartPending = true;
 
-        // 1. Repair Permissions (Fixes Auto Repair bug)
+        // 1. Repair Permissions
         checkAndRepairPermissions();
 
-        // 2. Launch Apps
-        AppLaunchManager.executeLaunch(KeepAliveAccessibilityService.this);
-
-        // 3. Play Sound
+        // 2. Play Sound (Async)
         cn.navitool.managers.SoundPromptManager
                 .getInstance(KeepAliveAccessibilityService.this)
                 .playStartSound();
 
-        // 4. 立即激活 UI (不需要等待 3 秒)
-        boolean isClusterEnabled = ConfigManager.getInstance().getBoolean("switch_cluster", false);
-        boolean isHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", false);
+        DebugLogger.i(TAG, "triggerAutoStart: Launching Logic (Headless Mode)...");
 
-        DebugLogger.i(TAG, "triggerAutoStart: Activating UI immediately (Cluster=" + isClusterEnabled + ", HUD="
-                + isHudEnabled + ")");
+        // [FIX] Reverted forced MainActivity launch.
+        // User requested Presentation to start WITHOUT MainActivity.
+        // We rely on ClusterHudManager to show Presentation from Service Context.
 
-        if (isClusterEnabled || isHudEnabled) {
-            // 立即显示 UI
-            ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
-                    .showUiOnly(isClusterEnabled, isHudEnabled);
+        // 3. Launch configured third-party apps (if enabled)
+        cn.navitool.managers.AppLaunchManager.executeLaunch(KeepAliveAccessibilityService.this);
 
-            // 同时发送广播以便 MainActivity 也能更新 UI
-            android.content.Intent intent = new android.content.Intent("cn.navitool.ACTION_ACTIVATE_CLUSTER_HUD");
-            sendBroadcast(intent);
-        }
-
-        // 5. 延迟 3 秒后切换导航模式 (如果是仪表模式)
-        // 只有开启了仪表才需要切换模式，HUD 不需要
-        if (isClusterEnabled) {
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                DebugLogger.i(TAG, "3s delay passed - Switching Navi Mode to 3");
-                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).applyNaviMode(3);
-
-                // Reset debounce flag after activation completes
-                mAutoStartPending = false;
-            }, 3000);
-        } else {
-            // 如果没开启仪表，直接重置标志
+        // Reset pending flag
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             mAutoStartPending = false;
-        }
+        }, 5000);
     }
 
     private void registerFunctionListeners() {
         try {
             if (iCarFunction != null) {
                 ICarFunction.IFunctionValueWatcher watcher = new ICarFunction.IFunctionValueWatcher() {
+
                     @Override
                     public void onFunctionValueChanged(int functionId, int zone, int value) {
                         try {
@@ -551,14 +643,6 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                 DebugLogger.d(TAG, "Right Turn Signal Changed: " + value);
                                 ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
                                         .updateTurnSignal(false, value == 1);
-                                /*
-                                 * } else if (functionId == BCM_FUNC_LIGHT_MAIN_BEAM) {
-                                 * DebugLogger.d(TAG, "Main Beam Changed: " + value);
-                                 * Intent intent = new Intent("cn.navitool.ACTION_HEADLIGHT_STATUS");
-                                 * intent.putExtra("type", "main");
-                                 * intent.putExtra("status", value);
-                                 * sendBroadcast(intent);
-                                 */
                             } else if (functionId == FUNC_PSD_SCREEN_SWITCH) {
                                 DebugLogger.d(TAG, "PSD Screen Status Changed: " + value);
                                 cn.navitool.managers.PsdManager.getInstance(KeepAliveAccessibilityService.this)
@@ -602,11 +686,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 iCarFunction.registerFunctionValueWatcher(FUNC_BRIGHTNESS_DAY, watcher);
                 iCarFunction.registerFunctionValueWatcher(FUNC_BRIGHTNESS_NIGHT, watcher);
                 iCarFunction.registerFunctionValueWatcher(BCM_FUNC_DOOR, watcher);
-
-                // iCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_MAIN_BEAM, watcher);
                 iCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_LEFT_TRUN_SIGNAL, watcher);
                 iCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_RIGHT_TRUN_SIGNAL, watcher);
-                // Also PSD if needed
                 iCarFunction.registerFunctionValueWatcher(FUNC_PSD_SCREEN_SWITCH, watcher);
                 iCarFunction.registerFunctionValueWatcher(FUNC_DAYMODE_SETTING, watcher);
 
@@ -667,10 +748,6 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 DebugLogger.d(TAG, "Request Day/Night Status Received");
                 cn.navitool.managers.ThemeBrightnessManager.getInstance(KeepAliveAccessibilityService.this)
                         .checkDayNightStatus(true);
-            } else if ("cn.navitool.ACTION_SIMULATE_ENGINE_START".equals(action)) {
-                // 模拟发动机启动 - 执行完整的 triggerAutoStart 流程
-                DebugLogger.i(TAG, "Simulate Engine Start Received - Triggering full auto start sequence");
-                triggerAutoStart();
             }
         }
     };

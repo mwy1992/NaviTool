@@ -148,7 +148,21 @@ public class MainActivity extends AppCompatActivity {
         // Doing so caused race conditions with KeepAliveService/BootReceiver.
 
         // Just ensure instance is created (which triggers self-init)
-        ClusterHudManager.getInstance(getApplicationContext());
+        // Just ensure instance is created (which triggers self-init)
+        ClusterHudManager cm = ClusterHudManager.getInstance(this);
+
+        // [FIX] Activity Injection
+        // Immediately upgrade the Manager's context to this Activity.
+        // This ensures subsequent UI operations use the Theme-aware Activity Context.
+        cm.updateContext(this);
+
+        // Try to show UI again (in case Service failed or wasn't ready)
+        // Now it will use the Activity Context we just injected.
+        // Try to show UI again (in case Service failed or wasn't ready)
+        // Now it will use the Activity Context we just injected.
+        // [FIX] Delayed UI - Do NOT show immediately on Create
+        // cm.ensureUiVisible(); 
+        DebugLogger.i("MainActivity", "UI Initialization deferred. Waiting for ACTION_ACTIVATE_CLUSTER_HUD...");
     }
 
     @Override
@@ -308,7 +322,11 @@ public class MainActivity extends AppCompatActivity {
         // [NEW] 注册仪表/HUD激活广播接收器 (延迟3秒后由KeepAliveService发送)
         android.content.IntentFilter clusterHudFilter = new android.content.IntentFilter(
                 "cn.navitool.ACTION_ACTIVATE_CLUSTER_HUD");
-        registerReceiver(mClusterHudActivationReceiver, clusterHudFilter);
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(mClusterHudActivationReceiver, clusterHudFilter, Context.RECEIVER_EXPORTED);
+        } else {
+            registerReceiver(mClusterHudActivationReceiver, clusterHudFilter);
+        }
 
         // [FIX] Request initial status after registering receiver
         ThemeBrightnessManager.getInstance(this).broadcastStatus();
@@ -502,7 +520,9 @@ public class MainActivity extends AppCompatActivity {
 
     private void initUI() {
         // --- Header / Debug ---
-        setupDebugSwitch();
+        boolean isDebug = DebugLogger.isDebugEnabled(this);
+        updateDebugViewsVisibility(isDebug);
+        ClusterHudManager.getInstance(this).setDebugMode(isDebug);
         setVersionInfo();
 
         // --- ADB Tab (System Info & Permissions & Default Tab) ---
@@ -511,7 +531,7 @@ public class MainActivity extends AppCompatActivity {
         setupAdbWireless();
 
         // Speed comparison display receivers (for status page)
-        registerSpeedDisplayReceivers();
+
 
         updateAutoModeStatus(0, -1);
 
@@ -554,50 +574,11 @@ public class MainActivity extends AppCompatActivity {
         // setupClusterThemeSelector() is called from there
     }
 
-    private android.content.BroadcastReceiver mActualSpeedReceiver;
-    private android.content.BroadcastReceiver mDIMSpeedReceiver;
 
-    private void registerSpeedDisplayReceivers() {
-        TextView txtActualSpeed = findViewById(R.id.txtActualSpeed);
-        TextView txtDIMSpeed = findViewById(R.id.txtDIMSpeed);
 
-        // Actual speed receiver
-        mActualSpeedReceiver = new android.content.BroadcastReceiver() {
-            @Override
-            public void onReceive(android.content.Context context, android.content.Intent intent) {
-                int speed = intent.getIntExtra("speed", 0);
-                if (txtActualSpeed != null) {
-                    txtActualSpeed.setText(String.valueOf(speed));
-                }
-            }
-        };
 
-        // DIM speed receiver
-        mDIMSpeedReceiver = new android.content.BroadcastReceiver() {
-            @Override
-            public void onReceive(android.content.Context context, android.content.Intent intent) {
-                int speed = intent.getIntExtra("speed", 0);
-                if (txtDIMSpeed != null) {
-                    txtDIMSpeed.setText(String.valueOf(speed));
-                }
-            }
-        };
 
-        // Register receivers
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(mActualSpeedReceiver,
-                    new android.content.IntentFilter("cn.navitool.ACTUAL_SPEED_UPDATE"),
-                    android.content.Context.RECEIVER_NOT_EXPORTED);
-            registerReceiver(mDIMSpeedReceiver,
-                    new android.content.IntentFilter("cn.navitool.DIM_SPEED_UPDATE"),
-                    android.content.Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            registerReceiver(mActualSpeedReceiver,
-                    new android.content.IntentFilter("cn.navitool.ACTUAL_SPEED_UPDATE"));
-            registerReceiver(mDIMSpeedReceiver,
-                    new android.content.IntentFilter("cn.navitool.DIM_SPEED_UPDATE"));
-        }
-    }
+
 
     // Called from setupClusterThemeSelector() to setup Audi RS specific handlers
     private void setupAudiRsThemeHandlers() {
@@ -1324,26 +1305,67 @@ public class MainActivity extends AppCompatActivity {
         android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(this);
         builder.setTitle("选择组件类型");
 
-        android.widget.GridLayout grid = new android.widget.GridLayout(this);
-        grid.setColumnCount(3);
-        grid.setPadding(32, 16, 32, 16);
+        // Root Container: Horizontal
+        android.widget.LinearLayout root = new android.widget.LinearLayout(this);
+        root.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        root.setPadding(32, 16, 32, 16);
+
+        // Sub-containers (Columns)
+        android.widget.LinearLayout colBasic = new android.widget.LinearLayout(this);
+        colBasic.setOrientation(android.widget.LinearLayout.VERTICAL);
+        android.widget.LinearLayout.LayoutParams lpBasic = new android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        lpBasic.weight = 1;
+        colBasic.setLayoutParams(lpBasic);
+
+        android.widget.LinearLayout colDrive = new android.widget.LinearLayout(this);
+        colDrive.setOrientation(android.widget.LinearLayout.VERTICAL);
+        android.widget.LinearLayout.LayoutParams lpDrive = new android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        lpDrive.weight = 1;
+        colDrive.setLayoutParams(lpDrive);
+
+        // New Column: Navigation
+        android.widget.LinearLayout colNavi = new android.widget.LinearLayout(this);
+        colNavi.setOrientation(android.widget.LinearLayout.VERTICAL);
+        android.widget.LinearLayout.LayoutParams lpNavi = new android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        lpNavi.weight = 1;
+        colNavi.setLayoutParams(lpNavi);
+
+        android.widget.LinearLayout colMedia = new android.widget.LinearLayout(this);
+        colMedia.setOrientation(android.widget.LinearLayout.VERTICAL);
+        android.widget.LinearLayout.LayoutParams lpMedia = new android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        lpMedia.weight = 1;
+        colMedia.setLayoutParams(lpMedia);
+
+        // Add Headers
+        android.widget.TextView h1 = new android.widget.TextView(this); h1.setText("基本信息"); h1.setTypeface(null, android.graphics.Typeface.BOLD); h1.setPadding(0,0,0,16); colBasic.addView(h1);
+        android.widget.TextView h2 = new android.widget.TextView(this); h2.setText("行驶数据"); h2.setTypeface(null, android.graphics.Typeface.BOLD); h2.setPadding(0,0,0,16); colDrive.addView(h2);
+        android.widget.TextView h4 = new android.widget.TextView(this); h4.setText("导航信息"); h4.setTypeface(null, android.graphics.Typeface.BOLD); h4.setPadding(0,0,0,16); colNavi.addView(h4);
+        android.widget.TextView h3 = new android.widget.TextView(this); h3.setText("媒体信息"); h3.setTypeface(null, android.graphics.Typeface.BOLD); h3.setPadding(0,0,0,16); colMedia.addView(h3);
+
+        root.addView(colBasic);
+        root.addView(colDrive);
+        root.addView(colNavi);
+        root.addView(colMedia);
 
         final android.app.AlertDialog[] dialogHolder = new android.app.AlertDialog[1];
 
-        // Helper to add button with duplicate check
-        java.util.function.BiConsumer<String, String> addButtonWithType = (text, type) -> {
+        // Helper to add button
+        TriConsumer<android.widget.LinearLayout, String, String> addButton = (parent, text, type) -> {
             Button btn = new Button(this);
             btn.setText(text);
             btn.setTextSize(12);
             btn.setPadding(8, 8, 8, 8);
-            android.widget.GridLayout.LayoutParams params = new android.widget.GridLayout.LayoutParams();
-            params.width = 0;
-            params.height = android.widget.GridLayout.LayoutParams.WRAP_CONTENT;
-            params.columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f);
-            params.setMargins(8, 8, 8, 8);
+            android.widget.LinearLayout.LayoutParams params = new android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+            params.setMargins(4, 4, 4, 4);
             btn.setLayoutParams(params);
 
             btn.setOnClickListener(v -> {
+                // Special handling for placeholders
+                if ("traffic_light".equals(type) || "navi_arrival_time".equals(type) || "navi_distance_remaining".equals(type)) {
+                    DebugLogger.toast(this, "该功能暂未开发");
+                    return;
+                }
+
                 if (isHudComponentAdded(type)) {
                     DebugLogger.toast(this, "该组件已存在，请勿重复添加");
                     return;
@@ -1352,8 +1374,6 @@ public class MainActivity extends AppCompatActivity {
                 // Logic based on type
                 if ("time".equals(type))
                     addHudTimeComponent();
-                // else if ("song".equals(type)) Removed
-                // createAndAddHudComponent("song", "暂无歌词\n歌曲名 - 歌手", 0, 0);
                 else if ("fuel".equals(type))
                     createAndAddHudComponent("fuel", "油量: --L", 0, 0);
                 else if ("temp_in".equals(type))
@@ -1370,15 +1390,16 @@ public class MainActivity extends AppCompatActivity {
                     createAndAddHudComponent("turn_signal", "←      →", 0, 0);
                 else if ("volume".equals(type))
                     createAndAddHudComponent("volume", "音量: --", 0, 0);
-                // else if ("media_cover".equals(type)) Removed
-                // createAndAddHudComponent("media_cover", "", 0, 0);
                 else if ("test_media_cover".equals(type))
                     createAndAddHudComponent("test_media_cover", "", 0, 0);
                 else if ("test_media".equals(type)) {
                     createAndAddHudComponent("test_media", "等待通知数据...", 0, 0);
-                    // Request the Notification Service to resend current media info if available
-                    // This ensures the user sees data immediately if a song is already playing
                     sendBroadcast(new android.content.Intent(
+                            cn.navitool.service.MediaNotificationListener.ACTION_REQUEST_MEDIA_REBROADCAST));
+                } else if ("song_1line".equals(type)) {
+                    createAndAddHudComponent("song_1line", "歌曲标题", 0, 0);
+                    // Trigger update
+                     sendBroadcast(new android.content.Intent(
                             cn.navitool.service.MediaNotificationListener.ACTION_REQUEST_MEDIA_REBROADCAST));
                 }
 
@@ -1386,28 +1407,43 @@ public class MainActivity extends AppCompatActivity {
                 if (dialogHolder[0] != null)
                     dialogHolder[0].dismiss();
             });
-            grid.addView(btn);
+            parent.addView(btn);
         };
 
-        addButtonWithType.accept("系统时间", "time");
-        // addButtonWithType.accept("歌曲信息", "song");
-        addButtonWithType.accept("测试歌曲信息", "test_media");
-        addButtonWithType.accept("剩余油量", "fuel");
-        addButtonWithType.accept("车内温度", "temp_in");
-        addButtonWithType.accept("车外温度", "temp_out");
-        addButtonWithType.accept("续航里程", "range");
-        addButtonWithType.accept("油量续航", "fuel_range");
-        addButtonWithType.accept("档位信息", "gear");
-        addButtonWithType.accept("转向信号", "turn_signal");
-        addButtonWithType.accept("系统音量", "volume");
-        // addButtonWithType.accept("媒体封面", "media_cover");
-        addButtonWithType.accept("测试封面", "test_media_cover");
+        // Group 1: Basic
+        addButton.accept(colBasic, "系统时间", "time");
+        addButton.accept(colBasic, "车内温度", "temp_in");
+        addButton.accept(colBasic, "车外温度", "temp_out");
 
-        // All buttons added above
+        // Group 2: Driving
+        addButton.accept(colDrive, "剩余油量", "fuel");
+        addButton.accept(colDrive, "续航里程", "range");
+        addButton.accept(colDrive, "油量续航", "fuel_range");
+        addButton.accept(colDrive, "档位信息", "gear");
+        addButton.accept(colDrive, "转向信号", "turn_signal");
 
-        builder.setView(grid);
+        // Group 3: Navigation (New)
+        addButton.accept(colNavi, "导航红绿灯", "traffic_light");
+        addButton.accept(colNavi, "到达时间", "navi_arrival_time");
+        addButton.accept(colNavi, "剩余里程", "navi_distance_remaining");
+
+        // Group 4: Media
+        addButton.accept(colMedia, "歌曲信息（2行）", "test_media");
+        addButton.accept(colMedia, "歌曲信息（1行）", "song_1line");
+        addButton.accept(colMedia, "歌曲封面", "test_media_cover");
+        addButton.accept(colMedia, "系统音量", "volume");
+
+        builder.setView(root);
         dialogHolder[0] = builder.create();
         dialogHolder[0].show();
+    }
+
+    // Helper Interface for TriConsumer (since Java 8 doesn't have it standard, and I can't easily rely on external libs)
+    // Actually, I can just define a functional interface here or use a class.
+    // Or just use a local class.
+    @FunctionalInterface
+    interface TriConsumer<T, U, V> {
+        void accept(T t, U u, V v);
     }
 
     // Check if component already exists in Preview
@@ -1896,37 +1932,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void setupDebugSwitch() {
-        SwitchMaterial switchDebug = findViewById(R.id.switchDebug);
 
-        if (!BuildConfig.DEBUG) {
-            if (switchDebug != null)
-                switchDebug.setVisibility(View.GONE);
-            return;
-        }
-
-        if (switchDebug != null) {
-            boolean isDebug = DebugLogger.isDebugEnabled(this);
-            switchDebug.setChecked(isDebug);
-            updateDebugViewsVisibility(isDebug);
-
-            // Init label
-            switchDebug.setText(isDebug ? "Debug Mode (ON)" : "Debug Mode (OFF)");
-
-            switchDebug.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                DebugLogger.setDebugEnabled(this, isChecked);
-                updateDebugViewsVisibility(isChecked);
-                switchDebug.setText(isChecked ? "Debug Mode (ON)" : "Debug Mode (OFF)");
-                // Sync to ClusterHudManager for green background
-                ClusterHudManager.getInstance(this).setDebugMode(isChecked);
-                if (isChecked) {
-                    DebugLogger.toast(this, getString(R.string.debug_mode_enabled));
-                } else {
-                    Toast.makeText(this, R.string.debug_mode_disabled, Toast.LENGTH_SHORT).show();
-                }
-            });
-        }
-    }
 
     private void updateDebugViewsVisibility(boolean isDebug) {
         // Strictly enforce that these views are ONLY visible in Debug builds
@@ -3530,6 +3536,8 @@ public class MainActivity extends AppCompatActivity {
 
         // Setup engine start simulation button
         setupSimulateEngineStartButton();
+
+
     }
 
     private void setupDeleteLogsButton() {
@@ -3542,17 +3550,17 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+
+
     private void setupSimulateEngineStartButton() {
         View btnSimulate = findViewById(R.id.btnSimulateEngineStart);
         if (btnSimulate != null) {
             btnSimulate.setOnClickListener(v -> {
-                DebugLogger.i("MainActivity", "Simulating Engine Start - Sending broadcast to service");
+                DebugLogger.i("MainActivity", "Simulating Engine Start - Sending broadcast");
                 DebugLogger.toast(this, "模拟发动机启动");
-
-                // 发送广播让 KeepAliveAccessibilityService 执行完整的 triggerAutoStart 流程
-                // 包括: 自启动应用、播放声音、延迟3秒激活仪表/HUD
-                android.content.Intent intent = new android.content.Intent(
-                        "cn.navitool.ACTION_SIMULATE_ENGINE_START");
+                android.content.Intent intent = new android.content.Intent("cn.navitool.ACTION_SIMULATE_ENGINE_START");
+                // Use explicit package/component if needed, or just standard broadcast
+                intent.setPackage(getPackageName()); 
                 sendBroadcast(intent);
             });
         }

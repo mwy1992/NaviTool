@@ -39,6 +39,8 @@ public class ClusterHudManager
     private boolean mIsHudEnabled = false;
     private boolean mIsDashboardMode = false;
     private int mPendingTheme = ClusterHudPresentation.THEME_DEFAULT; // 保存待应用的主题
+    // [Fix Cold Boot] Retry counter for Display id 2 discovery
+    private int mRetryCount = 0;
 
     // ECarX Car API
     private ICar mCar;
@@ -88,7 +90,17 @@ public class ClusterHudManager
 
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
 
+    // [New] Allow MainActivity to inject a "Better" Context (Activity Context)
+    // This allows the manager to upgrade from a Service Context to an Activity Context
+    public void updateContext(Context context) {
+        this.mContext = context;
+        DebugLogger.i(TAG, "ClusterHudManager Context updated to: " + context.getClass().getName());
+    }
+
     private ClusterHudManager(Context context) {
+        // [FIX] Ensure Context is Application Context to avoid memory leaks,
+        // BUT we might need Activity Context for Themes.
+        // We will Wrap it later if needed.
         this.mContext = context.getApplicationContext();
 
         // [HUD FIX] 初始化缓存列表，避免 "Cache not ready" 错误
@@ -127,7 +139,8 @@ public class ClusterHudManager
 
         // Cold Boot Robustness: Check for presentation after init
         // Cold Boot Robustness: Check for presentation after init
-        mMainHandler.post(this::checkAndShowPresentation);
+        // Cold Boot Robustness: Check for presentation after init
+        mMainHandler.post(this::ensureUiVisible);
 
         // Register for System Theme Changes
         mContext.registerComponentCallbacks(this);
@@ -290,8 +303,13 @@ public class ClusterHudManager
         }
     }
 
+    // --- Traffic Light Listener (AIDL) ---
+
+
     // --- ECarX Sensor Listener ---
     private class ECarSensorListener implements ISensor.ISensorListener {
+        private long mLastTireUpdateTime = 0;
+
         @Override
         public void onSensorEventChanged(int sensorType, int eventValue) {
             // Handle Integer Events (Gear, etc.)
@@ -315,8 +333,10 @@ public class ClusterHudManager
                     updateComponentText("fuel", String.format("%.0fL", liters));
                     updateFuelRangeComponent();
                 } else if (sensorType == ISensor.SENSOR_TYPE_TEMPERATURE_AMBIENT) {
+                    // [FIX] Formatting: Integer + Unit, no text prefix
                     updateComponentText("temp_out", String.format("%.0f°C", value));
                 } else if (sensorType == ISensor.SENSOR_TYPE_TEMPERATURE_INDOOR) {
+                    // [FIX] Formatting: Integer + Unit, no text prefix
                     updateComponentText("temp_in", String.format("%.0f°C", value));
                 } else if (sensorType == ISensor.SENSOR_TYPE_ENDURANCE_MILEAGE) {
                     mCachedRangeKm = value;
@@ -333,22 +353,39 @@ public class ClusterHudManager
                     updateComponentText("fuel_inst", String.format("%.1fL/100km", value));
                 } else if (sensorType == TYPE_AVG_FUEL_CONSUMPTION) {
                     updateComponentText("fuel_avg", String.format("%.1fL/100km", value));
-                } else if (sensorType == TIRE_PRESSURE_FRONT_LEFT) {
-                    updateComponentText("tire_p_fl", String.format("%.1fbar", value));
-                } else if (sensorType == TIRE_PRESSURE_FRONT_RIGHT) {
-                    updateComponentText("tire_p_fr", String.format("%.1fbar", value));
-                } else if (sensorType == TIRE_PRESSURE_REAR_LEFT) {
-                    updateComponentText("tire_p_rl", String.format("%.1fbar", value));
-                } else if (sensorType == TIRE_PRESSURE_REAR_RIGHT) {
-                    updateComponentText("tire_p_rr", String.format("%.1fbar", value));
-                } else if (sensorType == TIRE_TEMPERATURE_FRONT_LEFT) {
-                    updateComponentText("tire_t_fl", String.format("%.0f°C", value));
-                } else if (sensorType == TIRE_TEMPERATURE_FRONT_RIGHT) {
-                    updateComponentText("tire_t_fr", String.format("%.0f°C", value));
-                } else if (sensorType == TIRE_TEMPERATURE_REAR_LEFT) {
-                    updateComponentText("tire_t_rl", String.format("%.0f°C", value));
-                } else if (sensorType == TIRE_TEMPERATURE_REAR_RIGHT) {
-                    updateComponentText("tire_t_rr", String.format("%.0f°C", value));
+                } else {
+                    // [FIX] Throttling for Tire Pressure Messages (1s interval)
+                    long now = System.currentTimeMillis();
+                    if (now - mLastTireUpdateTime < 1000) {
+                        return; // Skip if too fast
+                    }
+                    mLastTireUpdateTime = now;
+
+                    if (sensorType == TIRE_PRESSURE_FRONT_LEFT) {
+                        updateComponentText("tire_p_fl", String.format("%.1fbar", value));
+                        if(mPresentation != null) mPresentation.updateTirePressure(0, value);
+                    } else if (sensorType == TIRE_PRESSURE_FRONT_RIGHT) {
+                        updateComponentText("tire_p_fr", String.format("%.1fbar", value));
+                        if(mPresentation != null) mPresentation.updateTirePressure(1, value);
+                    } else if (sensorType == TIRE_PRESSURE_REAR_LEFT) {
+                        updateComponentText("tire_p_rl", String.format("%.1fbar", value));
+                        if(mPresentation != null) mPresentation.updateTirePressure(2, value);
+                    } else if (sensorType == TIRE_PRESSURE_REAR_RIGHT) {
+                        updateComponentText("tire_p_rr", String.format("%.1fbar", value));
+                        if(mPresentation != null) mPresentation.updateTirePressure(3, value);
+                    } else if (sensorType == TIRE_TEMPERATURE_FRONT_LEFT) {
+                        updateComponentText("tire_t_fl", String.format("%.0f°C", value));
+                        if(mPresentation != null) mPresentation.updateTireTemp(0, value);
+                    } else if (sensorType == TIRE_TEMPERATURE_FRONT_RIGHT) {
+                        updateComponentText("tire_t_fr", String.format("%.0f°C", value));
+                        if(mPresentation != null) mPresentation.updateTireTemp(1, value);
+                    } else if (sensorType == TIRE_TEMPERATURE_REAR_LEFT) {
+                        updateComponentText("tire_t_rl", String.format("%.0f°C", value));
+                        if(mPresentation != null) mPresentation.updateTireTemp(2, value);
+                    } else if (sensorType == TIRE_TEMPERATURE_REAR_RIGHT) {
+                        updateComponentText("tire_t_rr", String.format("%.0f°C", value));
+                        if(mPresentation != null) mPresentation.updateTireTemp(3, value);
+                    }
                 }
             } catch (Exception e) {
                 DebugLogger.e(TAG, "Error handling sensor value changed", e);
@@ -915,6 +952,7 @@ public class ClusterHudManager
                         }
                         updateComponentText("song", display);
                         updateComponentText("test_media", display);
+                        updateComponentText("song_1line", title == null ? "" : title);
 
                         // Update Playing State
                         updateMediaPlayingState(isPlaying);
@@ -985,6 +1023,7 @@ public class ClusterHudManager
                 }
                 updateComponentText("song", display);
                 updateComponentText("test_media", display);
+                updateComponentText("song_1line", title == null ? "" : title);
 
                 // Update Playing State
                 updateMediaPlayingState(isPlaying);
@@ -1379,6 +1418,23 @@ public class ClusterHudManager
         }
     }
 
+    // [New] Public method for Activity to trigger UI check
+    public void ensureUiVisible() {
+        DebugLogger.d(TAG, "ensureUiVisible: Request received. Current Thread: " + Thread.currentThread().getName());
+        if (mContext == null) {
+            DebugLogger.e(TAG, "ensureUiVisible: Context is null! Cannot show UI.");
+            return;
+        }
+        // Use post to ensure we are on main thread (redundant but safe)
+        if (Thread.currentThread() == Looper.getMainLooper().getThread()) {
+            DebugLogger.d(TAG, "ensureUiVisible: Already on Main Thread, showing now.");
+            showPresentation();
+        } else {
+            DebugLogger.d(TAG, "ensureUiVisible: Posting to Main Thread handler.");
+            mMainHandler.post(this::showPresentation);
+        }
+    }
+
     private void updatePresentation() {
         // Fix: Decoupled Cluster and HUD. Presentation should only stay alive if AT
         // LEAST ONE is enabled.
@@ -1396,39 +1452,60 @@ public class ClusterHudManager
         }
     }
 
+    // [New] Allow Service to configure and trigger UI directly
+    public void configureAndShowUi(boolean showCluster, boolean showHud) {
+        this.mIsClusterEnabled = showCluster;
+        this.mIsHudEnabled = showHud;
+        DebugLogger.i(TAG, "configureAndShowUi: Cluster=" + showCluster + ", HUD=" + showHud);
+        ensureUiVisible();
+    }
+
     private void showPresentation() {
+        DebugLogger.d(TAG, "showPresentation: [Step 1] Getting DisplayManager");
         DisplayManager dm = (DisplayManager) mContext.getSystemService(Context.DISPLAY_SERVICE);
         if (dm == null) {
-            DebugLogger.e(TAG, "Failed to get DisplayManager for showPresentation");
+            DebugLogger.e(TAG, "showPresentation: Failed to get DisplayManager");
             return;
         }
         Display[] displays = dm.getDisplays();
-        DebugLogger.d(TAG, "Found " + displays.length + " displays");
-
+        DebugLogger.d(TAG, "showPresentation: [Step 2] Found " + displays.length + " displays total");
+        
         Display targetDisplay = null;
         for (Display d : displays) {
+            DebugLogger.d(TAG, "  - Checking Display ID: " + d.getDisplayId() + ", Name: " + d.getName() + ", State: " + d.getState());
             if (d.getDisplayId() == 2) {
                 targetDisplay = d;
+                DebugLogger.i(TAG, "  -> FOUND TARGET DISPLAY (ID 2)");
                 break;
             }
         }
 
         if (targetDisplay != null) {
-            mPresentation = new ClusterHudPresentation(mContext, targetDisplay);
-
-            if (android.os.Build.VERSION.SDK_INT >= 31) {
-                DebugLogger.i(TAG, "Android 12+: Using default Presentation Window Type (2037)");
-            } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                if (mPresentation.getWindow() != null) {
-                    mPresentation.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
-                }
-            } else {
-                if (mPresentation.getWindow() != null) {
-                    mPresentation.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_PHONE);
-                }
-            }
-
+            mRetryCount = 0; // Reset retry counter on success
+            DebugLogger.d(TAG, "showPresentation: [Step 3] Creating Presentation Window");
             try {
+                // [FIX] Z-Order Correction: Manually create Display Context
+                // To allow TYPE_APPLICATION_OVERLAY (2038) on Android 12+, we MUST create 
+                // a WindowContext associated with that type.
+                Context displayContext;
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                     displayContext = mContext.createWindowContext(targetDisplay, android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null);
+                } else {
+                     displayContext = mContext.createDisplayContext(targetDisplay);
+                }
+
+                // Wrap in Theme (Styling)
+                Context themeContext = new android.view.ContextThemeWrapper(displayContext, R.style.Theme_NaviTool);
+                
+                // Instantiate as Dialog (Single argument constructor)
+                mPresentation = new ClusterHudPresentation(themeContext);
+                DebugLogger.d(TAG, "showPresentation: [Step 4] Dialog Object Created (Type: APPLICATION_OVERLAY)");
+                
+                // Logging for verification
+                if (mPresentation.getWindow() != null) {
+                    DebugLogger.d(TAG, "Dialog Window Type: " + mPresentation.getWindow().getAttributes().type);
+                }
+
                 mPresentation.setOnShowListener(dialog -> {
                     // Logic Fix: Apply Persistence Mode (Dashboard vs List)
                     if (mIsDashboardMode) {
@@ -1470,9 +1547,6 @@ public class ClusterHudManager
                 mPresentation.setMediaPlaying(mIsMediaPlaying); // Sync initial state
 
                 // [FIX Initial State] Sync Day/Night Mode using System Global Configuration
-                // mContext.getResources().getConfiguration() can be stale or default on some
-                // head units.
-                // Resources.getSystem() provides the current system-wide configuration.
                 int uiMode = android.content.res.Resources.getSystem().getConfiguration().uiMode
                         & Configuration.UI_MODE_NIGHT_MASK;
                 boolean isDay = (uiMode != Configuration.UI_MODE_NIGHT_YES);
@@ -1485,8 +1559,6 @@ public class ClusterHudManager
                 DebugLogger.i(TAG, "Applied initial DayMode (System) on show: " + isDay);
 
                 // [FIX] Delayed Re-check (2000ms)
-                // Sometimes both System and Context are stale at precise startup moment.
-                // We re-check after 2 seconds to ensure we catch the correct state.
                 mMainHandler.postDelayed(() -> {
                     try {
                         int delayedUiMode = android.content.res.Resources.getSystem().getConfiguration().uiMode
@@ -1514,7 +1586,18 @@ public class ClusterHudManager
                 mPresentation = null;
             }
         } else {
-            DebugLogger.w(TAG, "Display ID 2 not found yet, waiting for it...");
+            // [Fix Cold Boot] Retry Logic for Display 2
+            // The HDMI display might take longer to initialize than the app.
+            // We retry every 1 second for up to 30 seconds.
+            if (mRetryCount < 30) {
+                 mRetryCount++;
+                 DebugLogger.w(TAG, "Display ID 2 not found yet. Retrying in 1s... (Attempt " + mRetryCount + "/30)");
+                 mMainHandler.postDelayed(this::showPresentation, 1000);
+            } else {
+                 DebugLogger.e(TAG, "Display ID 2 check timed out after 30s. Background UI start failed.");
+                 // Optionally reset retry count here if we want to allow manual retries later
+                 mRetryCount = 0; 
+            }
         }
     }
 
@@ -1727,31 +1810,11 @@ public class ClusterHudManager
         }
     }
 
-    // 实际车速（用于状态页面对比显示）
-    private int mActualSpeed = 0;
 
-    public void updateActualSpeed(int speed) {
-        mActualSpeed = speed;
-        // 可以通过广播或回调通知状态页面更新
-        android.content.Intent intent = new android.content.Intent("cn.navitool.ACTUAL_SPEED_UPDATE");
-        intent.putExtra("speed", speed);
-        mContext.sendBroadcast(intent);
-    }
 
-    public int getActualSpeed() {
-        return mActualSpeed;
-    }
 
-    // DIM仪表速度（用于状态页面对比显示）
-    private int mDIMSpeed = 0;
 
-    public int getDIMSpeed() {
-        return mDIMSpeed;
-    }
-
-    // 存储DIM速度供查询
     public void updateSpeed(int speed) {
-        mDIMSpeed = speed;
         if (mPresentation != null) {
             mMainHandler.post(() -> {
                 if (mPresentation != null) {
@@ -1759,10 +1822,7 @@ public class ClusterHudManager
                 }
             });
         }
-        // 广播DIM速度更新
-        android.content.Intent intent = new android.content.Intent("cn.navitool.DIM_SPEED_UPDATE");
-        intent.putExtra("speed", speed);
-        mContext.sendBroadcast(intent);
+
     }
 
     @Override
@@ -1936,8 +1996,8 @@ public class ClusterHudManager
     private void loadSavedState() {
         try {
             // 1. Load Enabled States
-            mIsClusterEnabled = ConfigManager.getInstance().getBoolean("switch_cluster", false);
-            mIsHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", false);
+            mIsClusterEnabled = ConfigManager.getInstance().getBoolean("switch_cluster", true);
+            mIsHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", true);
             DebugLogger.i(TAG, "Self-Init: Loaded State -> Cluster=" + mIsClusterEnabled + ", HUD=" + mIsHudEnabled);
 
             // 2. Load Theme

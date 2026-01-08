@@ -224,44 +224,29 @@ public class AudiRsThemeController {
         DebugLogger.d(TAG, "GuideInfo Updated: Icon=" + info.a + " Road=" + info.c + " Next=" + info.d);
     }
 
-    public void updateTireData(int index, float pressure, float temp) {
+    public void updateTirePressure(int index, float pressure) {
         TextView presView = null;
-        TextView tempView = null;
-
         switch (index) {
             case 0:
                 presView = mPresFL;
-                tempView = mTempFL;
                 break;
             case 1:
                 presView = mPresFR;
-                tempView = mTempFR;
                 break;
             case 2:
                 presView = mPresRL;
-                tempView = mTempRL;
                 break;
             case 3:
                 presView = mPresRR;
-                tempView = mTempRR;
                 break;
         }
 
-        if (presView == null || tempView == null)
+        if (presView == null)
             return;
 
         // Pressure logic: Assume KPa from sensor. Convert to Bar.
-        // Usually 100 KPa = 1 Bar.
-        // Sometimes raw value is already Bar * 10 or similar?
-        // Assuming raw unit is KPa based on common automotive standards (e.g. 240 KPa =
-        // 2.4 Bar).
-
         float bar = pressure / 100.0f;
 
-        // Safety check: if value is tiny (e.g. < 10) it might already be bar?
-        // But user provided standard "2.4 bar".
-        // Let's assume standard input is KPa like ~240.
-        // If input is 2.4, then bar becomes 0.024 which is wrong.
         // Adaptive logic: if val < 10, treat as Bar directly.
         if (pressure < 10.0f) {
             bar = pressure;
@@ -272,10 +257,30 @@ public class AudiRsThemeController {
 
         presView.setText(String.format(java.util.Locale.US, "%.1f bar", bar));
         presView.setTextColor(isNormal ? 0xFF00FF00 : 0xFFFF0000); // Green or Red
+    }
+
+    public void updateTireTemp(int index, float temp) {
+        TextView tempView = null;
+        switch (index) {
+            case 0:
+                tempView = mTempFL;
+                break;
+            case 1:
+                tempView = mTempFR;
+                break;
+            case 2:
+                tempView = mTempRL;
+                break;
+            case 3:
+                tempView = mTempRR;
+                break;
+        }
+
+        if (tempView == null)
+            return;
 
         // Temp Unit: °C
         tempView.setText(String.format(java.util.Locale.US, "%.0f°C", temp));
-        // Temp always Gray (set in XML, but we can enforce if needed)
     }
 
     public void setDayMode(boolean isDay) {
