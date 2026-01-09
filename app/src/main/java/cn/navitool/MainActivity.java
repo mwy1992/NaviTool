@@ -119,7 +119,8 @@ public class MainActivity extends AppCompatActivity {
         // [Fix Cold Boot] Initialize Amap Services AFTER UI is set
         // These calls might be blocking or slow, so we do them after setContentView
         cn.navitool.managers.AmapMonitorManager.getInstance(this).startMonitoring();
-        cn.navitool.managers.AmapAidlManager.getInstance(this).connect();
+        // AmapAidlManager removed
+        // cn.navitool.managers.AmapAidlManager.getInstance(this).connect();
 
         // Initialize Managers (assuming these are new additions based on the
         // instruction's snippet)
@@ -161,7 +162,7 @@ public class MainActivity extends AppCompatActivity {
         // Try to show UI again (in case Service failed or wasn't ready)
         // Now it will use the Activity Context we just injected.
         // [FIX] Delayed UI - Do NOT show immediately on Create
-        // cm.ensureUiVisible(); 
+        // cm.ensureUiVisible();
         DebugLogger.i("MainActivity", "UI Initialization deferred. Waiting for ACTION_ACTIVATE_CLUSTER_HUD...");
     }
 
@@ -532,7 +533,6 @@ public class MainActivity extends AppCompatActivity {
 
         // Speed comparison display receivers (for status page)
 
-
         updateAutoModeStatus(0, -1);
 
         // --- Auto-Initialize Cluster ---
@@ -573,12 +573,6 @@ public class MainActivity extends AppCompatActivity {
         // Theme Selection - Audi RS handler is in the main setupClusterThemeSelector
         // setupClusterThemeSelector() is called from there
     }
-
-
-
-
-
-
 
     // Called from setupClusterThemeSelector() to setup Audi RS specific handlers
     private void setupAudiRsThemeHandlers() {
@@ -1313,34 +1307,54 @@ public class MainActivity extends AppCompatActivity {
         // Sub-containers (Columns)
         android.widget.LinearLayout colBasic = new android.widget.LinearLayout(this);
         colBasic.setOrientation(android.widget.LinearLayout.VERTICAL);
-        android.widget.LinearLayout.LayoutParams lpBasic = new android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        android.widget.LinearLayout.LayoutParams lpBasic = new android.widget.LinearLayout.LayoutParams(0,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
         lpBasic.weight = 1;
         colBasic.setLayoutParams(lpBasic);
 
         android.widget.LinearLayout colDrive = new android.widget.LinearLayout(this);
         colDrive.setOrientation(android.widget.LinearLayout.VERTICAL);
-        android.widget.LinearLayout.LayoutParams lpDrive = new android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        android.widget.LinearLayout.LayoutParams lpDrive = new android.widget.LinearLayout.LayoutParams(0,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
         lpDrive.weight = 1;
         colDrive.setLayoutParams(lpDrive);
 
         // New Column: Navigation
         android.widget.LinearLayout colNavi = new android.widget.LinearLayout(this);
         colNavi.setOrientation(android.widget.LinearLayout.VERTICAL);
-        android.widget.LinearLayout.LayoutParams lpNavi = new android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        android.widget.LinearLayout.LayoutParams lpNavi = new android.widget.LinearLayout.LayoutParams(0,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
         lpNavi.weight = 1;
         colNavi.setLayoutParams(lpNavi);
 
         android.widget.LinearLayout colMedia = new android.widget.LinearLayout(this);
         colMedia.setOrientation(android.widget.LinearLayout.VERTICAL);
-        android.widget.LinearLayout.LayoutParams lpMedia = new android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+        android.widget.LinearLayout.LayoutParams lpMedia = new android.widget.LinearLayout.LayoutParams(0,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
         lpMedia.weight = 1;
         colMedia.setLayoutParams(lpMedia);
 
         // Add Headers
-        android.widget.TextView h1 = new android.widget.TextView(this); h1.setText("基本信息"); h1.setTypeface(null, android.graphics.Typeface.BOLD); h1.setPadding(0,0,0,16); colBasic.addView(h1);
-        android.widget.TextView h2 = new android.widget.TextView(this); h2.setText("行驶数据"); h2.setTypeface(null, android.graphics.Typeface.BOLD); h2.setPadding(0,0,0,16); colDrive.addView(h2);
-        android.widget.TextView h4 = new android.widget.TextView(this); h4.setText("导航信息"); h4.setTypeface(null, android.graphics.Typeface.BOLD); h4.setPadding(0,0,0,16); colNavi.addView(h4);
-        android.widget.TextView h3 = new android.widget.TextView(this); h3.setText("媒体信息"); h3.setTypeface(null, android.graphics.Typeface.BOLD); h3.setPadding(0,0,0,16); colMedia.addView(h3);
+        android.widget.TextView h1 = new android.widget.TextView(this);
+        h1.setText("基本信息");
+        h1.setTypeface(null, android.graphics.Typeface.BOLD);
+        h1.setPadding(0, 0, 0, 16);
+        colBasic.addView(h1);
+        android.widget.TextView h2 = new android.widget.TextView(this);
+        h2.setText("行驶数据");
+        h2.setTypeface(null, android.graphics.Typeface.BOLD);
+        h2.setPadding(0, 0, 0, 16);
+        colDrive.addView(h2);
+        android.widget.TextView h4 = new android.widget.TextView(this);
+        h4.setText("导航信息");
+        h4.setTypeface(null, android.graphics.Typeface.BOLD);
+        h4.setPadding(0, 0, 0, 16);
+        colNavi.addView(h4);
+        android.widget.TextView h3 = new android.widget.TextView(this);
+        h3.setText("媒体信息");
+        h3.setTypeface(null, android.graphics.Typeface.BOLD);
+        h3.setPadding(0, 0, 0, 16);
+        colMedia.addView(h3);
 
         root.addView(colBasic);
         root.addView(colDrive);
@@ -1355,22 +1369,13 @@ public class MainActivity extends AppCompatActivity {
             btn.setText(text);
             btn.setTextSize(12);
             btn.setPadding(8, 8, 8, 8);
-            android.widget.LinearLayout.LayoutParams params = new android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
+            android.widget.LinearLayout.LayoutParams params = new android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT);
             params.setMargins(4, 4, 4, 4);
             btn.setLayoutParams(params);
 
             btn.setOnClickListener(v -> {
-                // Special handling for placeholders
-                if ("traffic_light".equals(type) || "navi_arrival_time".equals(type) || "navi_distance_remaining".equals(type)) {
-                    DebugLogger.toast(this, "该功能暂未开发");
-                    return;
-                }
-
-                if (isHudComponentAdded(type)) {
-                    DebugLogger.toast(this, "该组件已存在，请勿重复添加");
-                    return;
-                }
-
                 // Logic based on type
                 if ("time".equals(type))
                     addHudTimeComponent();
@@ -1399,8 +1404,14 @@ public class MainActivity extends AppCompatActivity {
                 } else if ("song_1line".equals(type)) {
                     createAndAddHudComponent("song_1line", "歌曲标题", 0, 0);
                     // Trigger update
-                     sendBroadcast(new android.content.Intent(
+                    sendBroadcast(new android.content.Intent(
                             cn.navitool.service.MediaNotificationListener.ACTION_REQUEST_MEDIA_REBROADCAST));
+                } else if ("traffic_light".equals(type)) {
+                    createAndAddHudComponent("traffic_light", "红绿灯组件", 0, 0);
+                } else if ("navi_arrival_time".equals(type)) {
+                    createAndAddHudComponent("navi_arrival_time", "12:30", 0, 0);
+                } else if ("navi_distance_remaining".equals(type)) {
+                    createAndAddHudComponent("navi_distance_remaining", "8.5km", 0, 0);
                 }
 
                 syncAllHudComponents();
@@ -1438,7 +1449,8 @@ public class MainActivity extends AppCompatActivity {
         dialogHolder[0].show();
     }
 
-    // Helper Interface for TriConsumer (since Java 8 doesn't have it standard, and I can't easily rely on external libs)
+    // Helper Interface for TriConsumer (since Java 8 doesn't have it standard, and
+    // I can't easily rely on external libs)
     // Actually, I can just define a functional interface here or use a class.
     // Or just use a local class.
     @FunctionalInterface
@@ -1475,6 +1487,8 @@ public class MainActivity extends AppCompatActivity {
         // Save current layout to Config
         saveCurrentHudLayout(mHudMode);
         mIsHudComponentLocked = true;
+        // [FIX] Sync to real HUD after save
+        reloadHudConfigToManager(mHudMode);
         DebugLogger.toast(this, "布局已保存");
     }
 
@@ -1931,8 +1945,6 @@ public class MainActivity extends AppCompatActivity {
                 checkmark.setVisibility(View.GONE);
         }
     }
-
-
 
     private void updateDebugViewsVisibility(boolean isDebug) {
         // Strictly enforce that these views are ONLY visible in Debug builds
@@ -3537,7 +3549,6 @@ public class MainActivity extends AppCompatActivity {
         // Setup engine start simulation button
         setupSimulateEngineStartButton();
 
-
     }
 
     private void setupDeleteLogsButton() {
@@ -3550,8 +3561,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-
-
     private void setupSimulateEngineStartButton() {
         View btnSimulate = findViewById(R.id.btnSimulateEngineStart);
         if (btnSimulate != null) {
@@ -3560,7 +3569,7 @@ public class MainActivity extends AppCompatActivity {
                 DebugLogger.toast(this, "模拟发动机启动");
                 android.content.Intent intent = new android.content.Intent("cn.navitool.ACTION_SIMULATE_ENGINE_START");
                 // Use explicit package/component if needed, or just standard broadcast
-                intent.setPackage(getPackageName()); 
+                intent.setPackage(getPackageName());
                 sendBroadcast(intent);
             });
         }

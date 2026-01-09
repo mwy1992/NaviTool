@@ -131,31 +131,78 @@
             android:visibility="invisible" />
     </FrameLayout>
 
+    <!-- Navi Info Layout (Distance & ETA) - Below Traffic Lights, Single Row -->
+    <LinearLayout
+        android:id="@+id/audiRsNaviInfoContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="50dp"
+        android:layout_marginTop="210dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/audiRsNaviDistance"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="12.5 km"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/audiRsNaviEta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:text="ETA 10:30"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
     <!-- TPMS Layout: Front Left (Top Inner) -->
     <LinearLayout
         android:id="@+id/audiRsTpmsFL"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|end"
-        android:layout_marginEnd="210dp"
-        android:layout_marginTop="110dp"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="710dp"
+        android:layout_marginTop="120dp"
         android:orientation="vertical"
         android:gravity="center">
 
-        <TextView
-            android:id="@+id/audiRsPresFL"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="#00FF00"
-            android:textSize="24sp"
-            android:textStyle="bold" />
+            android:orientation="horizontal"
+            android:gravity="bottom">
+            <TextView
+                android:id="@+id/audiRsPresFL_val"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="250"
+                android:textColor="#00FF00"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/audiRsPresFL_unit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" kPa"
+                android:textColor="#00FF00"
+                android:textSize="11sp"
+                android:layout_marginStart="2dp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/audiRsTempFL"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:text="35°C"
             android:textColor="#AAAAAA"
-            android:textSize="18sp" />
+            android:textSize="12sp" />
     </LinearLayout>
 
     <!-- TPMS Layout: Front Right (Top Outer) -->
@@ -164,25 +211,41 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|end"
-        android:layout_marginEnd="89dp"
-        android:layout_marginTop="110dp"
+        android:layout_marginEnd="83dp"
+        android:layout_marginTop="120dp"
         android:orientation="vertical"
         android:gravity="center">
 
-        <TextView
-            android:id="@+id/audiRsPresFR"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="#00FF00"
-            android:textSize="24sp"
-            android:textStyle="bold" />
+            android:orientation="horizontal"
+            android:gravity="bottom">
+            <TextView
+                android:id="@+id/audiRsPresFR_val"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="250"
+                android:textColor="#00FF00"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/audiRsPresFR_unit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" kPa"
+                android:textColor="#00FF00"
+                android:textSize="11sp"
+                android:layout_marginStart="2dp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/audiRsTempFR"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:text="35°C"
             android:textColor="#AAAAAA"
-            android:textSize="18sp" />
+            android:textSize="12sp" />
     </LinearLayout>
 
     <!-- TPMS Layout: Rear Left (Bottom Inner) -->
@@ -190,26 +253,42 @@
         android:id="@+id/audiRsTpmsRL"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_marginEnd="210dp"
-        android:layout_marginBottom="110dp"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="710dp"
+        android:layout_marginBottom="120dp"
         android:orientation="vertical"
         android:gravity="center">
 
-        <TextView
-            android:id="@+id/audiRsPresRL"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="#00FF00"
-            android:textSize="24sp"
-            android:textStyle="bold" />
+            android:orientation="horizontal"
+            android:gravity="bottom">
+            <TextView
+                android:id="@+id/audiRsPresRL_val"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="250"
+                android:textColor="#00FF00"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/audiRsPresRL_unit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" kPa"
+                android:textColor="#00FF00"
+                android:textSize="11sp"
+                android:layout_marginStart="2dp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/audiRsTempRL"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:text="35°C"
             android:textColor="#AAAAAA"
-            android:textSize="18sp" />
+            android:textSize="12sp" />
     </LinearLayout>
 
     <!-- TPMS Layout: Rear Right (Bottom Outer) -->
@@ -218,25 +297,41 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
-        android:layout_marginEnd="89dp"
-        android:layout_marginBottom="110dp"
+        android:layout_marginEnd="83dp"
+        android:layout_marginBottom="120dp"
         android:orientation="vertical"
         android:gravity="center">
 
-        <TextView
-            android:id="@+id/audiRsPresRR"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="#00FF00"
-            android:textSize="24sp"
-            android:textStyle="bold" />
+            android:orientation="horizontal"
+            android:gravity="bottom">
+            <TextView
+                android:id="@+id/audiRsPresRR_val"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="250"
+                android:textColor="#00FF00"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+            <TextView
+                android:id="@+id/audiRsPresRR_unit"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" kPa"
+                android:textColor="#00FF00"
+                android:textSize="11sp"
+                android:layout_marginStart="2dp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/audiRsTempRR"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:text="35°C"
             android:textColor="#AAAAAA"
-            android:textSize="18sp" />
+            android:textSize="12sp" />
     </LinearLayout>
 
 </FrameLayout>

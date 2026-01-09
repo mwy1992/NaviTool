@@ -78,8 +78,9 @@ public class DebugLogger {
     public static void deleteAllLogs() {
         try {
             File dir = new File(Environment.getExternalStorageDirectory(), "NaviTool");
-            // Delete all navitool log files
-            File[] logFiles = dir.listFiles((d, name) -> name.startsWith("navitool.") && name.endsWith(".txt"));
+            // Delete all navitool log files and amap records
+            File[] logFiles = dir.listFiles(
+                    (d, name) -> (name.startsWith("navitool.") || name.startsWith("amap_")) && name.endsWith(".txt"));
             if (logFiles != null) {
                 for (File f : logFiles) {
                     f.delete();

@@ -96,7 +96,11 @@ public class AmapMonitorManager {
 
     // Listener Interface for Broadcast Updates
     public interface OnBroadcastListener {
-        void onTrafficLightUpdate(com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel info);
+        void onTrafficLightUpdate(cn.navitool.NaviInfoController.TrafficLightInfo info);
+
+        void onGuideInfoUpdate(cn.navitool.NaviInfoController.GuideInfo info);
+
+        void onNaviStatusUpdate(int state);
     }
 
     private OnBroadcastListener mListener;
@@ -119,26 +123,53 @@ public class AmapMonitorManager {
         // [OPTIMIZATION] Handle Traffic Light FIRST with minimal processing
         // UI update is dispatched before any logging to minimize delay
         if (keyType == 60073) {
-            int status = extras.getInt("trafficLightStatus", -1);
-            int redCount = extras.getInt("redLightCountDownSeconds", -1);
-            int greenLast = extras.getInt("greenLightLastSecond", -1);
-            int dir = extras.getInt("dir", -1);
-            int waitRound = extras.getInt("waitRound", -1);
+            // Traffic Light
+            int status = getInt(extras, "trafficLightStatus");
+            int time = getInt(extras, "redLightCountDownSeconds");
+            int greenTime = getInt(extras, "greenLightLastSecond");
+            int dir = getInt(extras, "dir");
+            int wait = getInt(extras, "waitRound");
 
-            // Dispatch to Listener IMMEDIATELY (before any logging)
             if (mListener != null) {
-                com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel model = new com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel();
-                model.trafficLightStatus = status;
-                model.redLightCountDownSeconds = redCount;
-                model.greenLightLastSecond = greenLast;
-                model.dir = dir;
-                model.waitRound = waitRound;
-                mListener.onTrafficLightUpdate(model);
+                cn.navitool.NaviInfoController.TrafficLightInfo info = new cn.navitool.NaviInfoController.TrafficLightInfo();
+                info.status = status;
+                info.redCountdown = time;
+                info.greenCountdown = greenTime;
+                info.direction = dir;
+                info.waitRound = wait;
+                mListener.onTrafficLightUpdate(info);
             }
+        } else if (keyType == 10001) {
+            // Guide Info from Broadcast
+            String roadName = extras.getString("CUR_ROAD_NAME");
+            String nextRoadName = extras.getString("NEXT_ROAD_NAME");
+            int icon = getInt(extras, "ICON");
+            int routeRemainDis = getInt(extras, "ROUTE_REMAIN_DIS");
+            int routeRemainTime = getInt(extras, "ROUTE_REMAIN_TIME");
+            int segRemainDis = getInt(extras, "SEG_REMAIN_DIS");
 
-            // Log AFTER dispatch (non-blocking for UI)
+            if (mListener != null) {
+                cn.navitool.NaviInfoController.GuideInfo info = new cn.navitool.NaviInfoController.GuideInfo();
+                info.currentRoadName = roadName;
+                info.nextRoadName = nextRoadName;
+                info.iconType = icon;
+                info.routeRemainDis = routeRemainDis;
+                info.routeRemainTime = routeRemainTime;
+                info.segRemainDis = segRemainDis;
+                info.etaText = extras.getString("ETA_TEXT"); // Parse ETA Text
+
+                mListener.onGuideInfoUpdate(info);
+            }
             System.out.println(
-                    "Captured Traffic Light (Broadcast): Status=" + status + ", Red=" + redCount + ", Dir=" + dir);
+                    "Captured GuideInfo (Broadcast): Road=" + roadName + ", Next=" + nextRoadName + ", Dis="
+                            + routeRemainDis);
+        } else if (keyType == 10019) {
+            // [NEW] Navigation State Update (Start/Stop)
+            int state = getInt(extras, "EXTRA_STATE");
+            if (mListener != null) {
+                mListener.onNaviStatusUpdate(state);
+            }
+            System.out.println("Captured NaviStatus (Broadcast): State=" + state);
         }
 
         // [DEBUG] Print other broadcast KEY_TYPEs to console (only for non-60073)
@@ -167,6 +198,25 @@ public class AmapMonitorManager {
 
         // Write to file (async)
         logToFile(logBuilder.toString());
+    }
+
+    /**
+     * Helper to safely get Int from Bundle (handles String parsing)
+     */
+    private int getInt(Bundle extras, String key) {
+        Object val = extras.get(key);
+        if (val instanceof Integer) {
+            return (Integer) val;
+        } else if (val instanceof String) {
+            try {
+                return Integer.parseInt((String) val);
+            } catch (NumberFormatException e) {
+                return 0;
+            }
+        } else if (val instanceof Double) {
+            return ((Double) val).intValue();
+        }
+        return 0;
     }
 
     private void logToFile(String content) {

@@ -12,7 +12,6 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import cn.navitool.managers.CustomThemeManager;
-import com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel;
 
 public class ClusterHudPresentation extends android.app.Dialog {
     private static final String TAG = "ClusterHudPresentation";
@@ -39,19 +38,21 @@ public class ClusterHudPresentation extends android.app.Dialog {
         if (getWindow() != null) {
             getWindow().setBackgroundDrawable(
                     new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
-            
+
             // [FIX] Z-Order Correction: Use TYPE_APPLICATION_OVERLAY
-            // Since we are now a raw Dialog (not Presentation class), we can strictly enforce 
-            // the overlay type to ensure we cover system UI elements on the secondary display.
+            // Since we are now a raw Dialog (not Presentation class), we can strictly
+            // enforce
+            // the overlay type to ensure we cover system UI elements on the secondary
+            // display.
             if (android.os.Build.VERSION.SDK_INT >= 26) {
                 getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
             } else {
                 getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
             }
-            
+
             // Critical Flags for Overlay
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE 
-                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN 
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                     | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                     | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
         }
@@ -75,7 +76,7 @@ public class ClusterHudPresentation extends android.app.Dialog {
     public void updateDebugMode(boolean isDebug) {
         // [REMOVED] Debug green background - always transparent now
         if (mLayoutHud != null) {
-            mLayoutHud.setBackgroundColor(0x4400FF00); // Debug: Semi-transparent green
+            mLayoutHud.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         }
     }
 
@@ -196,11 +197,144 @@ public class ClusterHudPresentation extends android.app.Dialog {
         }
     }
 
-
-
-    public void updateTrafficLight(RspTrafficLightsCountdownInfoModel info) {
+    public void updateTrafficLight(cn.navitool.NaviInfoController.TrafficLightInfo info) {
         if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
             ((AudiRsThemeController) mThemeController).updateTrafficLight(info);
+        }
+
+        // Generic Component Update
+        updateTrafficLightGeneric(mRealHudComponents, info);
+        updateTrafficLightGeneric(mRealClusterComponents, info);
+    }
+
+    public void updateGuideInfo(cn.navitool.NaviInfoController.GuideInfo info) {
+        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
+            ((AudiRsThemeController) mThemeController).updateGuideInfo(info);
+        }
+
+        // Generic Component Update
+        updateGuideInfoGeneric(mRealHudComponents, info);
+        updateGuideInfoGeneric(mRealClusterComponents, info);
+    }
+
+    // Helper for Generic Traffic Light Update
+    private void updateTrafficLightGeneric(java.util.List<View> viewList,
+            cn.navitool.NaviInfoController.TrafficLightInfo info) {
+        if (info == null)
+            return;
+        for (View v : viewList) {
+            Object tag = v.getTag();
+            String viewType = null;
+            if (tag instanceof ClusterHudManager.HudComponentData) {
+                viewType = ((ClusterHudManager.HudComponentData) tag).type;
+            } else if (tag instanceof String) {
+                viewType = (String) tag;
+            }
+
+            if ("traffic_light".equals(viewType) && v instanceof cn.navitool.view.TrafficLightView) {
+                cn.navitool.view.TrafficLightView tlv = (cn.navitool.view.TrafficLightView) v;
+
+                // [FIX] Use shared status mapping from NaviInfoController
+                int mappedStatus = cn.navitool.NaviInfoController.mapStatus(info.status);
+
+                // Determine time - always use redCountdown (same as NaviInfoController)
+                int time = info.redCountdown;
+
+                // Only show if we have a valid status
+                if (mappedStatus == 0) {
+                    v.setVisibility(View.INVISIBLE);
+                } else {
+                    v.setVisibility(View.VISIBLE);
+                    tlv.updateState(mappedStatus, time, info.direction);
+                }
+            }
+        }
+    }
+
+    // Helper for Generic Guide Info Update
+    private void updateGuideInfoGeneric(java.util.List<View> viewList, cn.navitool.NaviInfoController.GuideInfo info) {
+        if (info == null)
+            return;
+        for (View v : viewList) {
+            Object tag = v.getTag();
+            String viewType = null;
+            if (tag instanceof ClusterHudManager.HudComponentData) {
+                viewType = ((ClusterHudManager.HudComponentData) tag).type;
+            } else if (tag instanceof String) {
+                viewType = (String) tag;
+            }
+
+            if ("navi_arrival_time".equals(viewType) && v instanceof android.widget.TextView) {
+                // Parse ETA using NaviInfoController logic
+                String etaText = info.etaText;
+                String displayText = cn.navitool.NaviInfoController.parseEta(etaText);
+                ((android.widget.TextView) v).setText(displayText);
+                // [FIX] Visibility management
+                v.setVisibility(displayText.isEmpty() ? View.GONE : View.VISIBLE);
+
+            } else if ("navi_distance_remaining".equals(viewType) && v instanceof android.widget.TextView) {
+                // Use NaviInfoController formatting
+                int dist = info.routeRemainDis;
+                String text = cn.navitool.NaviInfoController.formatDistance(dist);
+                ((android.widget.TextView) v).setText(text);
+                // [FIX] Visibility management
+                v.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
+            }
+        }
+    }
+
+    public void resetTrafficLights() {
+        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
+            ((AudiRsThemeController) mThemeController).resetTrafficLights();
+        }
+        // [FIX] Reset generic HUD traffic lights
+        resetTrafficLightsGeneric(mRealHudComponents);
+        resetTrafficLightsGeneric(mRealClusterComponents);
+    }
+
+    private void resetTrafficLightsGeneric(java.util.List<View> viewList) {
+        for (View v : viewList) {
+            Object tag = v.getTag();
+            String viewType = null;
+            if (tag instanceof ClusterHudManager.HudComponentData) {
+                viewType = ((ClusterHudManager.HudComponentData) tag).type;
+            } else if (tag instanceof String) {
+                viewType = (String) tag;
+            }
+
+            if ("traffic_light".equals(viewType)) {
+                v.setVisibility(View.INVISIBLE);
+            }
+        }
+    }
+
+    // [FIX] Reset navigation info (distance/ETA) when navigation ends
+    // [FIX] Reset navigation info (distance/ETA) when navigation ends
+    public void resetNaviInfo() {
+        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
+            ((AudiRsThemeController) mThemeController).resetNaviInfo();
+        }
+        // [FIX] Reset generic HUD navi info
+        resetNaviInfoGeneric(mRealHudComponents);
+        resetNaviInfoGeneric(mRealClusterComponents);
+    }
+
+    private void resetNaviInfoGeneric(java.util.List<View> viewList) {
+        for (View v : viewList) {
+            Object tag = v.getTag();
+            String viewType = null;
+            if (tag instanceof ClusterHudManager.HudComponentData) {
+                viewType = ((ClusterHudManager.HudComponentData) tag).type;
+            } else if (tag instanceof String) {
+                viewType = (String) tag;
+            }
+
+            if ("navi_arrival_time".equals(viewType) || "navi_distance_remaining".equals(viewType)) {
+                v.setVisibility(View.GONE); // Hide completely if no navi
+                if (v instanceof TextView) {
+                    ((TextView) v).setText("");
+                }
+            }
         }
     }
 
@@ -236,7 +370,8 @@ public class ClusterHudPresentation extends android.app.Dialog {
             // Add new
             for (ClusterHudManager.HudComponentData data : components) {
                 View view;
-                boolean isSong = "song".equals(data.type) || "test_media".equals(data.type) || "song_1line".equals(data.type);
+                boolean isSong = "song".equals(data.type) || "test_media".equals(data.type)
+                        || "song_1line".equals(data.type);
                 boolean isTurnSignal = "turn_signal".equals(data.type);
                 boolean isVolume = "volume".equals(data.type);
                 boolean isMediaCover = "media_cover".equals(data.type) || "test_media_cover".equals(data.type);
@@ -437,6 +572,26 @@ public class ClusterHudPresentation extends android.app.Dialog {
                     view = tv;
                     // Tag it so we can find it
                     // view.setTag("debug_status_view"); // REMOVED: Use generic data tag
+                } else if ("traffic_light".equals(data.type)) {
+                    // Traffic Light Component
+                    cn.navitool.view.TrafficLightView tlv = new cn.navitool.view.TrafficLightView(getContext());
+                    // Set fixed size or use data attributes
+                    // Default size for HUD traffic light
+                    params.width = 300;
+                    params.height = 150;
+
+                    // Mark tag so it can be updated
+                    // We'll trust the generic tag assignment below
+                    view = tlv;
+                } else if ("navi_arrival_time".equals(data.type) || "navi_distance_remaining".equals(data.type)) {
+                    // Navi Info Components
+                    android.widget.TextView tv = new android.widget.TextView(getContext());
+                    tv.setText(data.text);
+                    tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    tv.setTextColor(data.color);
+                    tv.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 32); // Slightly larger than default
+                    view = tv;
                 } else {
                     android.widget.TextView tv = new android.widget.TextView(getContext());
                     tv.setText(data.text);
@@ -803,12 +958,6 @@ public class ClusterHudPresentation extends android.app.Dialog {
     public void updateAudiRsSpeed(int speed) {
         if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null) {
             mThemeController.updateSpeed(speed);
-        }
-    }
-
-    public void updateGuideInfo(com.autonavi.amapauto.protocol.model.service.GuideInfoModel info) {
-        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
-            ((AudiRsThemeController) mThemeController).updateGuideInfo(info);
         }
     }
 

@@ -151,10 +151,16 @@ public class TrafficLightView extends android.view.View {
             arrowPath.lineTo(ax + arrowSize / 2 - 10, ay - 10);
             arrowPath.moveTo(ax + arrowSize / 2, ay);
             arrowPath.lineTo(ax + arrowSize / 2 - 10, ay + 10);
-        } else if (mDirection == 0) { // Straight / Generic
-            // [CHANGE] Do NOT draw arrow for 0.
-            // 0 often means "Round Light" or "Main Light" which applies to multiple
-            // directions.
+        } else if (mDirection == 0 || mDirection == 4) { // Straight
+            // ^ (Straight Arrow)
+            // Vertical Line
+            arrowPath.moveTo(ax, ay + arrowSize / 2); // Bottom
+            arrowPath.lineTo(ax, ay - arrowSize / 2); // Top
+
+            // Arrowhead
+            arrowPath.lineTo(ax - 15, ay - arrowSize / 2 + 15); // Left Wing
+            arrowPath.moveTo(ax, ay - arrowSize / 2);
+            arrowPath.lineTo(ax + 15, ay - arrowSize / 2 + 15); // Right Wing
         }
 
         if (!arrowPath.isEmpty()) {

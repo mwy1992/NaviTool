@@ -9,6 +9,7 @@ import android.view.Display;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Locale;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONException;
@@ -25,11 +26,9 @@ import android.content.ComponentCallbacks;
 import android.content.res.Configuration;
 import android.content.res.Configuration;
 import cn.navitool.managers.VehicleSensorManager;
-import cn.navitool.managers.AmapAidlManager;
-import com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel;
 
 public class ClusterHudManager
-        implements VehicleSensorManager.Listener, ComponentCallbacks, AmapAidlManager.OnTrafficLightListener {
+        implements VehicleSensorManager.Listener, ComponentCallbacks {
     private static final String TAG = "ClusterHudManager";
 
     private static volatile ClusterHudManager instance;
@@ -90,8 +89,33 @@ public class ClusterHudManager
 
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
 
+    // [FIX] Traffic Light Timeout - Auto-clear if Amap process exits without
+    // broadcast
+    private static final long TRAFFIC_LIGHT_TIMEOUT_MS = 10000; // 10 seconds
+    private final Runnable mTrafficLightTimeoutRunnable = new Runnable() {
+        @Override
+        public void run() {
+            DebugLogger.d(TAG, "Traffic Light Timeout - Auto-clearing");
+            if (mPresentation != null) {
+                mPresentation.resetTrafficLights();
+            }
+        }
+    };
+
+    // [FIX] Navi Info Timeout - Auto-clear distance/ETA if no updates
+    private final Runnable mNaviInfoTimeoutRunnable = new Runnable() {
+        @Override
+        public void run() {
+            DebugLogger.d(TAG, "Navi Info Timeout - Auto-clearing");
+            if (mPresentation != null) {
+                mPresentation.resetNaviInfo();
+            }
+        }
+    };
+
     // [New] Allow MainActivity to inject a "Better" Context (Activity Context)
-    // This allows the manager to upgrade from a Service Context to an Activity Context
+    // This allows the manager to upgrade from a Service Context to an Activity
+    // Context
     public void updateContext(Context context) {
         this.mContext = context;
         DebugLogger.i(TAG, "ClusterHudManager Context updated to: " + context.getClass().getName());
@@ -145,20 +169,52 @@ public class ClusterHudManager
         // Register for System Theme Changes
         mContext.registerComponentCallbacks(this);
 
-        // Register Traffic Light Listener
-        AmapAidlManager.getInstance(mContext).setListener(this);
+        // Register Traffic Light Listener - REMOVED (AIDL Deleted)
+        // AmapAidlManager.getInstance(mContext).setListener(this);
 
         // [FIX] Register Broadcast Monitor Listener for reliable Traffic Light Data
         cn.navitool.managers.AmapMonitorManager.getInstance(mContext)
                 .setListener(new cn.navitool.managers.AmapMonitorManager.OnBroadcastListener() {
                     @Override
                     public void onTrafficLightUpdate(
-                            com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel info) {
+                            cn.navitool.NaviInfoController.TrafficLightInfo info) {
+                        // [FIX] Reset timeout timer on each traffic light update
+                        mMainHandler.removeCallbacks(mTrafficLightTimeoutRunnable);
+                        mMainHandler.postDelayed(mTrafficLightTimeoutRunnable, TRAFFIC_LIGHT_TIMEOUT_MS);
+
                         if (mPresentation != null) {
                             mPresentation.updateTrafficLight(info);
                         }
                     }
+
+                    @Override
+                    public void onGuideInfoUpdate(
+                            cn.navitool.NaviInfoController.GuideInfo info) {
+                        // [FIX] Reset timeout timer on each guide info update
+                        mMainHandler.removeCallbacks(mNaviInfoTimeoutRunnable);
+                        mMainHandler.postDelayed(mNaviInfoTimeoutRunnable, TRAFFIC_LIGHT_TIMEOUT_MS);
+
+                        if (mPresentation != null) {
+                            mPresentation.updateGuideInfo(info);
+                        }
+                    }
+
+                    @Override
+                    public void onNaviStatusUpdate(int state) {
+                        DebugLogger.d(TAG, "Navi Status Update: " + state);
+                        // Reset lights on Stop (2), Start (9), Emulator (8), or Route Init (39)
+                        // EXCLUDING state 3 (Pause/Background) to prevent flicker
+                        if (state == 2 || state == 9 || state == 39 || state == 8) {
+                            if (mPresentation != null) {
+                                mPresentation.resetTrafficLights();
+                                mPresentation.resetNaviInfo();
+                            }
+                        }
+                    }
                 });
+
+        // [FIX] Start Monitoring immediately
+        cn.navitool.managers.AmapMonitorManager.getInstance(mContext).startMonitoring();
 
     }
 
@@ -195,26 +251,7 @@ public class ClusterHudManager
         }
     }
 
-    // --- Traffic Light Listener (AIDL) ---
-    @Override
-    public void onTrafficLightUpdate(RspTrafficLightsCountdownInfoModel info) {
-        // [FIX] Ignore AIDL Traffic Light data as it has status mismatch (Broadcast is
-        // truth).
-        // User confirmed Broadcast Status=4 (Green) is correct, while AIDL sends 1
-        // (Red).
-        DebugLogger.d(TAG, "Ignored AIDL Traffic Light Update (using Broadcast instead)");
-
-        // if (mPresentation != null) {
-        // mPresentation.updateTrafficLight(info);
-        // }
-    }
-
-    @Override
-    public void onGuideInfoUpdate(com.autonavi.amapauto.protocol.model.service.GuideInfoModel info) {
-        if (mPresentation != null) {
-            mPresentation.updateGuideInfo(info);
-        }
-    }
+    // --- Traffic Light Listener (AIDL) --- [REMOVED]
 
     private void initCarService() {
         // Use shared CarServiceManager to avoid multiple instances/connections
@@ -243,6 +280,12 @@ public class ClusterHudManager
     private void registerSensors() {
         if (mSensorManager == null)
             return;
+
+        // [FIX] Prevent duplicate registration
+        if (mSensorsRegistered) {
+            DebugLogger.w(TAG, "Sensors already registered, skipping duplicate registration.");
+            return;
+        }
 
         mSensorListener = new ECarSensorListener();
         try {
@@ -285,6 +328,12 @@ public class ClusterHudManager
             mSensorManager.registerListener(mSensorListener, TIRE_TEMPERATURE_REAR_RIGHT, ISensor.RATE_NORMAL);
 
             DebugLogger.i(TAG, "ECarX Sensors Registered");
+
+            // [FIX] Register Missing Sensors (Fuel & Outside Temp)
+            mSensorManager.registerListener(mSensorListener, SENSOR_TYPE_FUEL_LEVEL, ISensor.RATE_NORMAL);
+            mSensorManager.registerListener(mSensorListener, SENSOR_TYPE_ENV_OUTSIDE_TEMPERATURE, ISensor.RATE_NORMAL);
+
+            mSensorsRegistered = true;
         } catch (Exception e) {
             DebugLogger.e(TAG, "Error registering sensors", e);
         }
@@ -304,7 +353,6 @@ public class ClusterHudManager
     }
 
     // --- Traffic Light Listener (AIDL) ---
-
 
     // --- ECarX Sensor Listener ---
     private class ECarSensorListener implements ISensor.ISensorListener {
@@ -326,7 +374,7 @@ public class ClusterHudManager
         public void onSensorValueChanged(int sensorType, float value) {
             // Handle Float Values (Temp, Fuel, Range)
             try {
-                if (sensorType == ISensor.SENSOR_TYPE_FUEL_LEVEL) {
+                if (sensorType == SENSOR_TYPE_FUEL_LEVEL) {
                     // MConfig divides by 1000 for Liters
                     float liters = value / 1000f;
                     mCachedFuelLiters = liters;
@@ -353,6 +401,10 @@ public class ClusterHudManager
                     updateComponentText("fuel_inst", String.format("%.1fL/100km", value));
                 } else if (sensorType == TYPE_AVG_FUEL_CONSUMPTION) {
                     updateComponentText("fuel_avg", String.format("%.1fL/100km", value));
+                } else if (sensorType == SENSOR_TYPE_FUEL_LEVEL) {
+                    DebugLogger.d(TAG, "Fuel Level Raw Value (SENSOR_TYPE_FUEL_LEVEL): " + value);
+                    float liters = value / 1000f;
+                    updateComponentText("fuel_level", String.format(Locale.getDefault(), "%.0fL", liters));
                 } else {
                     // [FIX] Throttling for Tire Pressure Messages (1s interval)
                     long now = System.currentTimeMillis();
@@ -361,31 +413,49 @@ public class ClusterHudManager
                     }
                     mLastTireUpdateTime = now;
 
-                    if (sensorType == TIRE_PRESSURE_FRONT_LEFT) {
-                        updateComponentText("tire_p_fl", String.format("%.1fbar", value));
-                        if(mPresentation != null) mPresentation.updateTirePressure(0, value);
-                    } else if (sensorType == TIRE_PRESSURE_FRONT_RIGHT) {
-                        updateComponentText("tire_p_fr", String.format("%.1fbar", value));
-                        if(mPresentation != null) mPresentation.updateTirePressure(1, value);
-                    } else if (sensorType == TIRE_PRESSURE_REAR_LEFT) {
-                        updateComponentText("tire_p_rl", String.format("%.1fbar", value));
-                        if(mPresentation != null) mPresentation.updateTirePressure(2, value);
-                    } else if (sensorType == TIRE_PRESSURE_REAR_RIGHT) {
-                        updateComponentText("tire_p_rr", String.format("%.1fbar", value));
-                        if(mPresentation != null) mPresentation.updateTirePressure(3, value);
-                    } else if (sensorType == TIRE_TEMPERATURE_FRONT_LEFT) {
-                        updateComponentText("tire_t_fl", String.format("%.0f°C", value));
-                        if(mPresentation != null) mPresentation.updateTireTemp(0, value);
-                    } else if (sensorType == TIRE_TEMPERATURE_FRONT_RIGHT) {
-                        updateComponentText("tire_t_fr", String.format("%.0f°C", value));
-                        if(mPresentation != null) mPresentation.updateTireTemp(1, value);
-                    } else if (sensorType == TIRE_TEMPERATURE_REAR_LEFT) {
-                        updateComponentText("tire_t_rl", String.format("%.0f°C", value));
-                        if(mPresentation != null) mPresentation.updateTireTemp(2, value);
-                    } else if (sensorType == TIRE_TEMPERATURE_REAR_RIGHT) {
-                        updateComponentText("tire_t_rr", String.format("%.0f°C", value));
-                        if(mPresentation != null) mPresentation.updateTireTemp(3, value);
-                    }
+                    // [DEBUG] Log TPMS sensor data
+                    DebugLogger.d(TAG, "TPMS Sensor: type=" + sensorType + ", value=" + value);
+
+                    // [FIX] Post UI updates to Main Thread
+                    mMainHandler.post(() -> {
+                        try {
+                            if (sensorType == TIRE_PRESSURE_FRONT_LEFT) {
+                                updateComponentText("tire_p_fl", String.format("%.0f kPa", value));
+                                if (mPresentation != null)
+                                    mPresentation.updateTirePressure(0, value);
+                            } else if (sensorType == TIRE_PRESSURE_FRONT_RIGHT) {
+                                updateComponentText("tire_p_fr", String.format("%.0f kPa", value));
+                                if (mPresentation != null)
+                                    mPresentation.updateTirePressure(1, value);
+                            } else if (sensorType == TIRE_PRESSURE_REAR_LEFT) {
+                                updateComponentText("tire_p_rl", String.format("%.0f kPa", value));
+                                if (mPresentation != null)
+                                    mPresentation.updateTirePressure(2, value);
+                            } else if (sensorType == TIRE_PRESSURE_REAR_RIGHT) {
+                                updateComponentText("tire_p_rr", String.format("%.0f kPa", value));
+                                if (mPresentation != null)
+                                    mPresentation.updateTirePressure(3, value);
+                            } else if (sensorType == TIRE_TEMPERATURE_FRONT_LEFT) {
+                                updateComponentText("tire_t_fl", String.format("%.0f°C", value));
+                                if (mPresentation != null)
+                                    mPresentation.updateTireTemp(0, value);
+                            } else if (sensorType == TIRE_TEMPERATURE_FRONT_RIGHT) {
+                                updateComponentText("tire_t_fr", String.format("%.0f°C", value));
+                                if (mPresentation != null)
+                                    mPresentation.updateTireTemp(1, value);
+                            } else if (sensorType == TIRE_TEMPERATURE_REAR_LEFT) {
+                                updateComponentText("tire_t_rl", String.format("%.0f°C", value));
+                                if (mPresentation != null)
+                                    mPresentation.updateTireTemp(2, value);
+                            } else if (sensorType == TIRE_TEMPERATURE_REAR_RIGHT) {
+                                updateComponentText("tire_t_rr", String.format("%.0f°C", value));
+                                if (mPresentation != null)
+                                    mPresentation.updateTireTemp(3, value);
+                            }
+                        } catch (Exception e) {
+                            DebugLogger.e(TAG, "Error updating TPMS UI", e);
+                        }
+                    });
                 }
             } catch (Exception e) {
                 DebugLogger.e(TAG, "Error handling sensor value changed", e);
@@ -418,7 +488,11 @@ public class ClusterHudManager
             if (mLeftTurnOn || mRightTurnOn) {
                 mBlinkHandler.postDelayed(this, BLINK_INTERVAL);
             } else {
-                mBlinkVisible = false; // Reset to invisible or off when stopped
+                mBlinkVisible = false; // Reset to
+                                       // invisible
+                                       // or off
+                                       // when
+                                       // stopped
             }
         }
     };
@@ -666,6 +740,9 @@ public class ClusterHudManager
         mTransparentBitmap = null;
 
         dismissPresentation();
+
+        // Stop Broadcast Monitor
+        cn.navitool.managers.AmapMonitorManager.getInstance(mContext).stopMonitoring();
 
         // Unregister Receivers
         try {
@@ -1469,10 +1546,11 @@ public class ClusterHudManager
         }
         Display[] displays = dm.getDisplays();
         DebugLogger.d(TAG, "showPresentation: [Step 2] Found " + displays.length + " displays total");
-        
+
         Display targetDisplay = null;
         for (Display d : displays) {
-            DebugLogger.d(TAG, "  - Checking Display ID: " + d.getDisplayId() + ", Name: " + d.getName() + ", State: " + d.getState());
+            DebugLogger.d(TAG, "  - Checking Display ID: " + d.getDisplayId() + ", Name: " + d.getName() + ", State: "
+                    + d.getState());
             if (d.getDisplayId() == 2) {
                 targetDisplay = d;
                 DebugLogger.i(TAG, "  -> FOUND TARGET DISPLAY (ID 2)");
@@ -1485,22 +1563,23 @@ public class ClusterHudManager
             DebugLogger.d(TAG, "showPresentation: [Step 3] Creating Presentation Window");
             try {
                 // [FIX] Z-Order Correction: Manually create Display Context
-                // To allow TYPE_APPLICATION_OVERLAY (2038) on Android 12+, we MUST create 
+                // To allow TYPE_APPLICATION_OVERLAY (2038) on Android 12+, we MUST create
                 // a WindowContext associated with that type.
                 Context displayContext;
                 if (android.os.Build.VERSION.SDK_INT >= 30) {
-                     displayContext = mContext.createWindowContext(targetDisplay, android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null);
+                    displayContext = mContext.createWindowContext(targetDisplay,
+                            android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null);
                 } else {
-                     displayContext = mContext.createDisplayContext(targetDisplay);
+                    displayContext = mContext.createDisplayContext(targetDisplay);
                 }
 
                 // Wrap in Theme (Styling)
                 Context themeContext = new android.view.ContextThemeWrapper(displayContext, R.style.Theme_NaviTool);
-                
+
                 // Instantiate as Dialog (Single argument constructor)
                 mPresentation = new ClusterHudPresentation(themeContext);
                 DebugLogger.d(TAG, "showPresentation: [Step 4] Dialog Object Created (Type: APPLICATION_OVERLAY)");
-                
+
                 // Logging for verification
                 if (mPresentation.getWindow() != null) {
                     DebugLogger.d(TAG, "Dialog Window Type: " + mPresentation.getWindow().getAttributes().type);
@@ -1590,13 +1669,13 @@ public class ClusterHudManager
             // The HDMI display might take longer to initialize than the app.
             // We retry every 1 second for up to 30 seconds.
             if (mRetryCount < 30) {
-                 mRetryCount++;
-                 DebugLogger.w(TAG, "Display ID 2 not found yet. Retrying in 1s... (Attempt " + mRetryCount + "/30)");
-                 mMainHandler.postDelayed(this::showPresentation, 1000);
+                mRetryCount++;
+                DebugLogger.w(TAG, "Display ID 2 not found yet. Retrying in 1s... (Attempt " + mRetryCount + "/30)");
+                mMainHandler.postDelayed(this::showPresentation, 1000);
             } else {
-                 DebugLogger.e(TAG, "Display ID 2 check timed out after 30s. Background UI start failed.");
-                 // Optionally reset retry count here if we want to allow manual retries later
-                 mRetryCount = 0; 
+                DebugLogger.e(TAG, "Display ID 2 check timed out after 30s. Background UI start failed.");
+                // Optionally reset retry count here if we want to allow manual retries later
+                mRetryCount = 0;
             }
         }
     }
@@ -1810,10 +1889,6 @@ public class ClusterHudManager
         }
     }
 
-
-
-
-
     public void updateSpeed(int speed) {
         if (mPresentation != null) {
             mMainHandler.post(() -> {
@@ -1920,6 +1995,10 @@ public class ClusterHudManager
     }
 
     // --- Sensor Data Persistence ---
+    private boolean mSensorsRegistered = false; // [FIX] Prevent duplicate registration
+    private static final int SENSOR_TYPE_FUEL_LEVEL = 2101760; // Fuel Level
+    private static final int SENSOR_TYPE_ENV_OUTSIDE_TEMPERATURE = 2100992; // Outside Temp
+
     private String mCachedFuelText = "--L";
     private String mCachedRangeText = "--km";
     private String mCachedTempOutText = "--°C";

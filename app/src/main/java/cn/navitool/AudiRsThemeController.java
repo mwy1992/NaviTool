@@ -10,7 +10,6 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import cn.navitool.view.TrafficLightView;
-import com.autonavi.amapauto.protocol.model.service.RspTrafficLightsCountdownInfoModel;
 
 /**
  * 奥迪RS转速表主题控制器
@@ -91,10 +90,10 @@ public class AudiRsThemeController {
      * 绑定Views
      */
     // TPMS Views
-    private TextView mPresFL, mTempFL;
-    private TextView mPresFR, mTempFR;
-    private TextView mPresRL, mTempRL;
-    private TextView mPresRR, mTempRR;
+    private TextView mPresFL_Val, mPresFL_Unit, mTempFL;
+    private TextView mPresFR_Val, mPresFR_Unit, mTempFR;
+    private TextView mPresRL_Val, mPresRL_Unit, mTempRL;
+    private TextView mPresRR_Val, mPresRR_Unit, mTempRR;
 
     public void bindViews(View rootView) {
         if (rootView == null)
@@ -116,28 +115,32 @@ public class AudiRsThemeController {
         mTrafficLightStraight = rootView.findViewById(R.id.audiRsTrafficLightStraight);
         mTrafficLightRight = rootView.findViewById(R.id.audiRsTrafficLightRight);
 
-        // Initial Config
-        if (mTrafficLightLeft != null) {
-            mTrafficLightLeft.setOverrideDirection(1); // Left Arrow
-            mTrafficLightLeft.setVisibility(View.INVISIBLE);
+        // Navi Info Controller (Evolution of TrafficLightController)
+        if (mNaviInfoController == null) {
+            mNaviInfoController = new NaviInfoController();
         }
-        if (mTrafficLightStraight != null) {
-            mTrafficLightStraight.setOverrideDirection(0); // Straight/Round
-            mTrafficLightStraight.setVisibility(View.INVISIBLE);
-        }
-        if (mTrafficLightRight != null) {
-            mTrafficLightRight.setOverrideDirection(2); // Right Arrow
-            mTrafficLightRight.setVisibility(View.INVISIBLE);
-        }
+        mNaviInfoController.bindTrafficLightViews(mTrafficLightLeft, mTrafficLightStraight, mTrafficLightRight);
+
+        // Bind Navi Info Views (Distance & ETA)
+        TextView distView = rootView.findViewById(R.id.audiRsNaviDistance);
+        TextView etaView = rootView.findViewById(R.id.audiRsNaviEta);
+        mNaviInfoController.bindNaviInfoViews(distView, etaView);
 
         // TPMS Binding
-        mPresFL = rootView.findViewById(R.id.audiRsPresFL);
+        mPresFL_Val = rootView.findViewById(R.id.audiRsPresFL_val);
+        mPresFL_Unit = rootView.findViewById(R.id.audiRsPresFL_unit);
         mTempFL = rootView.findViewById(R.id.audiRsTempFL);
-        mPresFR = rootView.findViewById(R.id.audiRsPresFR);
+
+        mPresFR_Val = rootView.findViewById(R.id.audiRsPresFR_val);
+        mPresFR_Unit = rootView.findViewById(R.id.audiRsPresFR_unit);
         mTempFR = rootView.findViewById(R.id.audiRsTempFR);
-        mPresRL = rootView.findViewById(R.id.audiRsPresRL);
+
+        mPresRL_Val = rootView.findViewById(R.id.audiRsPresRL_val);
+        mPresRL_Unit = rootView.findViewById(R.id.audiRsPresRL_unit);
         mTempRL = rootView.findViewById(R.id.audiRsTempRL);
-        mPresRR = rootView.findViewById(R.id.audiRsPresRR);
+
+        mPresRR_Val = rootView.findViewById(R.id.audiRsPresRR_val);
+        mPresRR_Unit = rootView.findViewById(R.id.audiRsPresRR_unit);
         mTempRR = rootView.findViewById(R.id.audiRsTempRR);
 
         DebugLogger.d(TAG, "Views bound successfully");
@@ -159,104 +162,102 @@ public class AudiRsThemeController {
     /**
      * Update Traffic Light Status
      */
-    public void updateTrafficLight(RspTrafficLightsCountdownInfoModel info) {
-        if (info == null)
-            return;
-
-        // Route to correct view
-        TrafficLightView targetView = null;
-        if (info.dir == 1)
-            targetView = mTrafficLightLeft;
-        else if (info.dir == 2)
-            targetView = mTrafficLightRight;
-        else if (info.dir == 0)
-            targetView = mTrafficLightStraight;
-
-        if (targetView == null)
-            return;
-
-        // Only show the latest direction - hide all other lights (minimal operations)
-        if (mTrafficLightLeft != null && mTrafficLightLeft != targetView) {
-            mTrafficLightLeft.setVisibility(View.INVISIBLE);
+    public void updateTrafficLight(cn.navitool.NaviInfoController.TrafficLightInfo info) {
+        if (mNaviInfoController != null) {
+            mNaviInfoController.updateTrafficLight(info);
         }
-        if (mTrafficLightStraight != null && mTrafficLightStraight != targetView) {
-            mTrafficLightStraight.setVisibility(View.INVISIBLE);
-        }
-        if (mTrafficLightRight != null && mTrafficLightRight != targetView) {
-            mTrafficLightRight.setVisibility(View.INVISIBLE);
-        }
+    }
 
-        int status = info.trafficLightStatus;
-        int time = info.redLightCountDownSeconds;
+    // Navi Info Controller (Delegate)
+    private NaviInfoController mNaviInfoController;
 
-        // Status mapping: User defined Red=1, Green=4, Yellow=-1
-        // TrafficLightView constants: Red=2, Green=1, Yellow=3
-        if (status == 1) {
-            status = 2; // STATUS_RED
-        } else if (status == 4) {
-            status = 1; // STATUS_GREEN
-        } else if (status == -1) {
-            status = 3; // STATUS_YELLOW
-        } else if (status != 0) {
-            status = 0; // Unknown -> hide
+    public void resetTrafficLights() {
+        if (mNaviInfoController != null) {
+            mNaviInfoController.resetTrafficLights();
         }
+    }
 
-        // Auto-hide when countdown reaches 0 (except green)
-        if (time <= 0 && status != 1) {
-            status = 0;
-        }
-
-        // Update view
-        if (status == 0) {
-            targetView.setVisibility(View.INVISIBLE);
-        } else {
-            targetView.setVisibility(View.VISIBLE);
-            targetView.updateState(status, time, info.dir);
+    // [FIX] Reset navigation info (distance/ETA)
+    public void resetNaviInfo() {
+        if (mNaviInfoController != null) {
+            mNaviInfoController.reset(); // Resets navi info including ETA
         }
     }
 
     private int mCurrentManeuverIcon = -1;
 
-    public void updateGuideInfo(com.autonavi.amapauto.protocol.model.service.GuideInfoModel info) {
+    public void updateGuideInfo(cn.navitool.NaviInfoController.GuideInfo info) {
         if (info == null)
             return;
-        mCurrentManeuverIcon = info.a;
-        DebugLogger.d(TAG, "GuideInfo Updated: Icon=" + info.a + " Road=" + info.c + " Next=" + info.d);
+        mCurrentManeuverIcon = info.iconType;
+        DebugLogger.d(TAG, "GuideInfo Updated: Icon=" + info.iconType + " Road=" + info.currentRoadName + " Next="
+                + info.nextRoadName);
+
+        // Use NaviInfoController
+        if (mNaviInfoController != null) {
+            mNaviInfoController.updateGuideInfo(info);
+        }
     }
 
+    // Explicit Navi Info (Kept for compatibility if called, but uses GuideInfo now
+    // mostly)
+    // Actually, I can remove it if ClusterHudPresentation is updated to not call
+    // it.
+    // I updated ClusterHudPresentation to NOT call it.
+    // So I can remove it here too.
+    // But NaviInfoController still has it.
+    // I will remove it to be clean.
+
     public void updateTirePressure(int index, float pressure) {
-        TextView presView = null;
+        TextView valView = null;
+        TextView unitView = null;
+
         switch (index) {
             case 0:
-                presView = mPresFL;
+                valView = mPresFL_Val;
+                unitView = mPresFL_Unit;
                 break;
             case 1:
-                presView = mPresFR;
+                valView = mPresFR_Val;
+                unitView = mPresFR_Unit;
                 break;
             case 2:
-                presView = mPresRL;
+                valView = mPresRL_Val;
+                unitView = mPresRL_Unit;
                 break;
             case 3:
-                presView = mPresRR;
+                valView = mPresRR_Val;
+                unitView = mPresRR_Unit;
                 break;
         }
 
-        if (presView == null)
+        if (valView == null || unitView == null)
             return;
 
-        // Pressure logic: Assume KPa from sensor. Convert to Bar.
-        float bar = pressure / 100.0f;
+        // Color Logic: 2.0-2.8 Bar = 200-280 kPa is Green.
+        String valueStr;
+        String unitStr;
+        boolean isNormal;
 
-        // Adaptive logic: if val < 10, treat as Bar directly.
         if (pressure < 10.0f) {
-            bar = pressure;
+            // Still Bar?
+            valueStr = String.format(java.util.Locale.US, "%.1f", pressure);
+            unitStr = " bar";
+            isNormal = (pressure >= 2.0f && pressure <= 2.8f);
+        } else {
+            valueStr = String.format(java.util.Locale.US, "%.0f", pressure);
+            unitStr = " kPa";
+            isNormal = (pressure >= 200.0f && pressure <= 290.0f);
         }
 
-        // Color Logic: Ref User Request 2.0 - 2.8 Bar is Green
-        boolean isNormal = (bar >= 2.0f && bar <= 2.8f);
+        // Set Text Separately
+        valView.setText(valueStr);
+        unitView.setText(unitStr);
 
-        presView.setText(String.format(java.util.Locale.US, "%.1f bar", bar));
-        presView.setTextColor(isNormal ? 0xFF00FF00 : 0xFFFF0000); // Green or Red
+        // Apply Color to BOTH
+        int color = isNormal ? 0xFF00FF00 : 0xFFFF0000;
+        valView.setTextColor(color);
+        unitView.setTextColor(color);
     }
 
     public void updateTireTemp(int index, float temp) {

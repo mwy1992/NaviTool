@@ -29,7 +29,8 @@ public class BootReceiver extends BroadcastReceiver {
 
             // Start Amap AIDL Connection
             DebugLogger.log(context, TAG, "Connecting to Amap AIDL Service...");
-            cn.navitool.managers.AmapAidlManager.getInstance(context).connect();
+            // AmapAidlManager removed
+            // cn.navitool.managers.AmapAidlManager.getInstance(context).connect();
 
         }
     }

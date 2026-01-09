@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">车机助手</string>
-    <string name="debug_mode">调试模式</string>
-    <string name="app_credit">v%1$s by @马大师 Powered by Gemini</string>
+
+    <string name="app_credit">v%1$s by @马大师 Powered by Antigravity</string>
     <string name="tab_adb">状态</string>
     <string name="tab_theme">主题</string>
     <string name="tab_buttons">按键</string>
@@ -88,8 +88,7 @@
     <string name="boot_event_detected">检测到开机事件</string>
     <string name="msg_kill_app_success">已结束应用: %1$s</string>
     <string name="msg_kill_app_failed">结束应用失败: %1$s</string>
-    <string name="debug_mode_enabled">调试模式已开启</string>
-    <string name="debug_mode_disabled">调试模式已关闭</string>
+
     <string name="auto_theme_sync_enabled">自动主题同步已开启</string>
     <string name="auto_theme_sync_disabled">自动主题同步已关闭</string>
     <string name="status_auto_mode">车机主题模式: %1$s</string>

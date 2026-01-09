@@ -193,10 +193,6 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             try {
                 // Start Monitor
                 cn.navitool.managers.AmapMonitorManager.getInstance(this).startMonitoring();
-                // Aidl might be handled by monitor or separate manager, ensure it's connected
-                // if needed
-                // cn.navitool.managers.AmapAidlManager.getInstance(this).connect(); // Usually
-                // called by Monitor or Activity
             } catch (Exception e) {
                 DebugLogger.e(TAG, "Failed to start Amap Services", e);
             }
@@ -237,6 +233,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 // directly.
                 DebugLogger.i(TAG, "Ignition + 3s: Calling ensureUiVisible() directly");
                 cn.navitool.ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).ensureUiVisible();
+
+                // [FIX] Auto-Switch to Instrument Mode (NaviMode 3)
+                // Only depends on Ignition Driving, NOT Amap status.
+                DebugLogger.i(TAG, "Ignition + 3s: Auto-Switching to NaviMode 3 (Instrument Mode)");
+                cn.navitool.ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).applyNaviMode(3);
             }
         }, 3000);
 
