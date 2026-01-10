@@ -1003,6 +1003,22 @@ public class MainActivity extends AppCompatActivity {
                     android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
             view = ll;
             view.setLayoutParams(params);
+        } else if ("traffic_light".equals(type)) {
+            // Traffic Light Preview
+            cn.navitool.view.TrafficLightView tlv = new cn.navitool.view.TrafficLightView(this);
+            // Set Preview State: Red Light, 66s, Straight
+            tlv.updateState(cn.navitool.view.TrafficLightView.STATUS_RED, 66, 0);
+
+            android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
+            view = tlv;
+            view.setLayoutParams(params);
+
+            // [FIX] Scale 2x for Preview (matching other components)
+            // Real HUD: 1x (24px fonts), Preview: 2x (should appear as 48px)
+            // Use internal scaling method to ensure correct boundary detection
+            tlv.setPreviewScale(2.0f);
         } else if (isMediaCover || isTurnSignal || isVolume) {
             ImageView iv = new ImageView(this);
             iv.setBackgroundColor(android.graphics.Color.TRANSPARENT);

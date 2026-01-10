@@ -40,10 +40,18 @@ public class TrafficLightView extends View {
     public static final int STATUS_YELLOW = 3;
 
     // Fixed sizes in pixels (for 星越L fixed screen density)
-    private static final float CIRCLE_DIAMETER = 24f;
-    private static final float TEXT_SIZE = 24f;
-    private static final float OUTLINE_STROKE = 1.5f;
-    private static final float PADDING = 2f; // Tight wrap around text
+    // Fixed sizes in pixels (for 星越L fixed screen density)
+    private static final float BASE_CIRCLE_DIAMETER = 24f;
+    private static final float BASE_TEXT_SIZE = 24f;
+    private static final float BASE_OUTLINE_STROKE = 1.5f;
+    private static final float BASE_PADDING = 2f; // Tight wrap around text
+
+    // Scaled dimensions
+    private float mScale = 1.0f;
+    private float mCircleDiameter = BASE_CIRCLE_DIAMETER;
+    private float mTextSize = BASE_TEXT_SIZE;
+    private float mOutlineStroke = BASE_OUTLINE_STROKE;
+    private float mPadding = BASE_PADDING;
 
     public TrafficLightView(Context context) {
         super(context);
@@ -66,6 +74,32 @@ public class TrafficLightView extends View {
         invalidate();
     }
 
+    /**
+     * Set scale for preview mode (e.g. 2.0f for HUD preview)
+     * This ensures the component is physically larger for measuring boundaries
+     * correctly
+     */
+    public void setPreviewScale(float scale) {
+        this.mScale = scale;
+        updateScaledDimensions();
+        requestLayout();
+        invalidate();
+    }
+
+    private void updateScaledDimensions() {
+        mCircleDiameter = BASE_CIRCLE_DIAMETER * mScale;
+        mTextSize = BASE_TEXT_SIZE * mScale;
+        mOutlineStroke = BASE_OUTLINE_STROKE * mScale;
+        mPadding = BASE_PADDING * mScale;
+
+        if (mPaintText != null) {
+            mPaintText.setTextSize(mTextSize);
+        }
+        if (mPaintOutline != null) {
+            mPaintOutline.setStrokeWidth(mOutlineStroke);
+        }
+    }
+
     private void init() {
         // Light circle paint
         mPaintLight = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -74,7 +108,7 @@ public class TrafficLightView extends View {
         // Text paint - fixed px size
         mPaintText = new Paint(Paint.ANTI_ALIAS_FLAG);
         mPaintText.setColor(Color.WHITE);
-        mPaintText.setTextSize(TEXT_SIZE);
+        mPaintText.setTextSize(mTextSize);
         mPaintText.setTextAlign(Paint.Align.CENTER);
         mPaintText.setFakeBoldText(true);
 
@@ -82,7 +116,7 @@ public class TrafficLightView extends View {
         mPaintOutline = new Paint(Paint.ANTI_ALIAS_FLAG);
         mPaintOutline.setColor(Color.WHITE);
         mPaintOutline.setStyle(Paint.Style.STROKE);
-        mPaintOutline.setStrokeWidth(OUTLINE_STROKE);
+        mPaintOutline.setStrokeWidth(mOutlineStroke);
         mPaintOutline.setStrokeCap(Paint.Cap.ROUND);
 
         // Load arrow drawable
@@ -111,7 +145,8 @@ public class TrafficLightView extends View {
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         // Calculate height based on text size + minimal padding for tight wrap
         // Use TEXT_SIZE directly as height basis with small padding
-        float capsuleHeight = TEXT_SIZE + 8; // 24 + 8 = 32px height
+        // Scale the gap (8 becomes 8 * scale)
+        float capsuleHeight = mTextSize + (8 * mScale);
         float radius = capsuleHeight / 2f;
         float textWidth = measureTextWidth();
 
@@ -129,8 +164,9 @@ public class TrafficLightView extends View {
         if (mTime > 0) {
             String timeStr = String.valueOf(mTime);
             float textActualWidth = mPaintText.measureText(timeStr);
-            // gap (4px) + text + extra padding (4px for right side)
-            return 4 + textActualWidth + 4;
+            // gap (4px) + text + extra padding (4px for right side) -> Scale fixed values
+            float gap = 4 * mScale;
+            return gap + textActualWidth + gap;
         }
         return 0; // No text, just circle in left semicircle
     }
@@ -155,8 +191,9 @@ public class TrafficLightView extends View {
         int color = getStatusColor();
 
         // 3. Draw circle with arrow in left semicircle area
+        // 3. Draw circle with arrow in left semicircle area
         float circleCenterX = radius;
-        float circleRadius = CIRCLE_DIAMETER / 2f;
+        float circleRadius = mCircleDiameter / 2f;
 
         // Draw colored circle
         mPaintLight.setColor(color);
@@ -176,7 +213,8 @@ public class TrafficLightView extends View {
             Paint.FontMetrics fm = mPaintText.getFontMetrics();
             float textY = centerY - (fm.top + fm.bottom) / 2f;
             // Position text after circle with gap: circle end (radius + circleRadius) + gap
-            float textX = radius + circleRadius + 4; // 4px gap between circle and text
+            float gap = 4 * mScale;
+            float textX = radius + circleRadius + gap;
 
             canvas.drawText(timeStr, textX, textY, mPaintText);
         }
@@ -184,7 +222,7 @@ public class TrafficLightView extends View {
 
     private void drawCapsuleOutline(Canvas canvas, int width, int height, float radius) {
         // Add offset for stroke width to prevent clipping
-        float offset = OUTLINE_STROKE / 2f;
+        float offset = mOutlineStroke / 2f;
         float h = height - offset * 2;
         float r = h / 2f;
 
