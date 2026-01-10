@@ -44,9 +44,15 @@ public class AudiRsThemeController {
     private ImageView mBackground; // New Background View
 
     // Traffic Light
-    private TrafficLightView mTrafficLightLeft;
-    private TrafficLightView mTrafficLightStraight;
-    private TrafficLightView mTrafficLightRight;
+    // Traffic Light & Navi - New Layout
+    private View mNaviTrafficContainer;
+    private ImageView mDirectionArrow;
+    private TextView mCountdownText;
+    private ImageView mLightRed;
+    private ImageView mLightYellow;
+    private ImageView mLightGreen;
+    private TextView mNaviDistance;
+    private TextView mNaviEta;
 
     // 档位状态
     private static final String[] GEARS = { "P", "R", "N", "D" };
@@ -74,6 +80,27 @@ public class AudiRsThemeController {
             // 根据转速计算下次闪烁间隔
             int interval = calculateFlashInterval(mCurrentRpm);
             mHandler.postDelayed(this, interval);
+        }
+    };
+
+    // Traffic Light Flashing
+    private boolean mIsTrafficLightFlashing = false;
+    private boolean mTrafficLightFlashOn = true; // True = Bright, False = Dim
+    private int mCurrentRawStatus = 0; // Track current raw status
+
+    private Runnable mTrafficLightFlashRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!mIsTrafficLightFlashing)
+                return;
+
+            mTrafficLightFlashOn = !mTrafficLightFlashOn;
+            // Toggle between 1.0 (Bright) and 0.3 (Dim)
+            float alpha = mTrafficLightFlashOn ? 1.0f : 0.3f;
+            updateTrafficLightImages(mCurrentRawStatus, alpha);
+
+            // Flash interval: 500ms toggle (1 cycle per second = 1Hz)
+            mHandler.postDelayed(this, 500);
         }
     };
 
@@ -110,21 +137,23 @@ public class AudiRsThemeController {
         mSpeedText = rootView.findViewById(R.id.audiRsSpeedText);
         mGearText = rootView.findViewById(R.id.audiRsGearText);
 
-        // Traffic Lights - Bind 3 views
-        mTrafficLightLeft = rootView.findViewById(R.id.audiRsTrafficLightLeft);
-        mTrafficLightStraight = rootView.findViewById(R.id.audiRsTrafficLightStraight);
-        mTrafficLightRight = rootView.findViewById(R.id.audiRsTrafficLightRight);
+        // Traffic Lights & Navi Info - New Bindings
+        mNaviTrafficContainer = rootView.findViewById(R.id.audiRsNaviTrafficContainer);
+        mDirectionArrow = rootView.findViewById(R.id.audiRsDirectionArrow);
+        mCountdownText = rootView.findViewById(R.id.audiRsCountdown);
+        mLightRed = rootView.findViewById(R.id.audiRsLightRed);
+        mLightYellow = rootView.findViewById(R.id.audiRsLightYellow);
+        mLightGreen = rootView.findViewById(R.id.audiRsLightGreen);
+        mNaviDistance = rootView.findViewById(R.id.audiRsNaviDistance);
+        mNaviEta = rootView.findViewById(R.id.audiRsNaviEta);
 
-        // Navi Info Controller (Evolution of TrafficLightController)
-        if (mNaviInfoController == null) {
-            mNaviInfoController = new NaviInfoController();
+        // Remove legacy bindings to TrafficLightView and NaviInfoController
+        // mNaviInfoController.bindTrafficLightViews(...) - REMOVED
+
+        // Initial state: Hide until data arrives
+        if (mNaviTrafficContainer != null) {
+            mNaviTrafficContainer.setVisibility(View.GONE);
         }
-        mNaviInfoController.bindTrafficLightViews(mTrafficLightLeft, mTrafficLightStraight, mTrafficLightRight);
-
-        // Bind Navi Info Views (Distance & ETA)
-        TextView distView = rootView.findViewById(R.id.audiRsNaviDistance);
-        TextView etaView = rootView.findViewById(R.id.audiRsNaviEta);
-        mNaviInfoController.bindNaviInfoViews(distView, etaView);
 
         // TPMS Binding
         mPresFL_Val = rootView.findViewById(R.id.audiRsPresFL_val);
@@ -162,26 +191,155 @@ public class AudiRsThemeController {
     /**
      * Update Traffic Light Status
      */
+    /**
+     * Update Traffic Light Status
+     */
     public void updateTrafficLight(cn.navitool.NaviInfoController.TrafficLightInfo info) {
-        if (mNaviInfoController != null) {
-            mNaviInfoController.updateTrafficLight(info);
+        if (info == null) {
+            if (mNaviTrafficContainer != null)
+                mNaviTrafficContainer.setVisibility(View.GONE);
+            return;
+        }
+
+        // Show container
+        if (mNaviTrafficContainer != null)
+            mNaviTrafficContainer.setVisibility(View.VISIBLE);
+
+        // Store current status for flashing
+        mCurrentRawStatus = info.status;
+        int mappedStatus = NaviInfoController.mapStatus(info.status);
+
+        // 2. Update Countdown & Check Flashing
+        boolean shouldFlash = false;
+        if (mCountdownText != null) {
+            // Fix: info.redCountdown contains the CURRENT countdown for ALL statuses
+            // (Red/Green/Yellow).
+            // info.greenCountdown seems to hold next phase or static data, causing bugs.
+            int time = info.redCountdown;
+
+            if (time > 0) {
+                mCountdownText.setText(String.valueOf(time));
+                mCountdownText.setVisibility(View.VISIBLE);
+
+                // Flash if <= 3s and Red/Green
+                if (time <= 3 && (mappedStatus == TrafficLightView.STATUS_RED
+                        || mappedStatus == TrafficLightView.STATUS_GREEN)) {
+                    shouldFlash = true;
+                }
+            } else {
+                mCountdownText.setVisibility(View.INVISIBLE);
+            }
+        }
+
+        // Handle Flashing State
+        if (shouldFlash) {
+            if (!mIsTrafficLightFlashing) {
+                startTrafficLightFlash();
+            }
+        } else {
+            if (mIsTrafficLightFlashing) {
+                stopTrafficLightFlash();
+            }
+            // Normal update (Bright)
+            updateTrafficLightImages(info.status, 1.0f);
+        }
+
+        // 3. Update Arrow Rotation
+        if (mDirectionArrow != null) {
+            float rotation = 0;
+            switch (info.direction) {
+                case 1:
+                    rotation = -90f;
+                    break; // Left
+                case 2:
+                    rotation = 90f;
+                    break; // Right
+                case 3:
+                    rotation = 180f;
+                    break; // U-Turn
+                default:
+                    rotation = 0f;
+                    break; // Straight
+            }
+            mDirectionArrow.setRotation(rotation);
         }
     }
 
     // Navi Info Controller (Delegate)
     private NaviInfoController mNaviInfoController;
 
+    private void updateTrafficLightImages(int rawStatus) {
+        updateTrafficLightImages(rawStatus, 1.0f); // Default bright
+    }
+
+    private void updateTrafficLightImages(int rawStatus, float activeAlpha) {
+        // Brightness Constants
+        final float ALPHA_DIM = 0.3f;
+
+        // Map RAW status (1=Red, 2=Green) to TrafficLightView constants (1=Green,
+        // 2=Red)
+        int mappedStatus = NaviInfoController.mapStatus(rawStatus);
+
+        // Update Images Alpha
+        if (mLightRed != null) {
+            mLightRed.setAlpha(mappedStatus == TrafficLightView.STATUS_RED ? activeAlpha : ALPHA_DIM);
+        }
+        if (mLightYellow != null) {
+            mLightYellow.setAlpha(mappedStatus == TrafficLightView.STATUS_YELLOW ? activeAlpha : ALPHA_DIM);
+        }
+        if (mLightGreen != null) {
+            mLightGreen.setAlpha(mappedStatus == TrafficLightView.STATUS_GREEN ? activeAlpha : ALPHA_DIM);
+        }
+
+        // Update Colors for Arrow and Countdown (Using active color regardless of
+        // flashing dim/bright)
+        int color = 0xFFFFFFFF; // Default White
+        if (mappedStatus == TrafficLightView.STATUS_RED) {
+            color = 0xFFFF0000; // Red
+        } else if (mappedStatus == TrafficLightView.STATUS_YELLOW) {
+            color = 0xFFFFFF00; // Yellow
+        } else if (mappedStatus == TrafficLightView.STATUS_GREEN) {
+            color = 0xFF00FF00; // Green
+        }
+
+        if (mCountdownText != null) {
+            mCountdownText.setTextColor(color);
+        }
+        if (mDirectionArrow != null) {
+            mDirectionArrow.setColorFilter(color);
+        }
+    }
+
+    private void startTrafficLightFlash() {
+        if (mIsTrafficLightFlashing)
+            return;
+        mIsTrafficLightFlashing = true;
+        mTrafficLightFlashOn = true;
+        mHandler.post(mTrafficLightFlashRunnable);
+        DebugLogger.d(TAG, "Traffic Light Flashing Started");
+    }
+
+    private void stopTrafficLightFlash() {
+        if (!mIsTrafficLightFlashing)
+            return;
+        mIsTrafficLightFlashing = false;
+        mHandler.removeCallbacks(mTrafficLightFlashRunnable);
+        DebugLogger.d(TAG, "Traffic Light Flashing Stopped");
+    }
+
     public void resetTrafficLights() {
-        if (mNaviInfoController != null) {
-            mNaviInfoController.resetTrafficLights();
+        stopTrafficLightFlash(); // Ensure flashing stops on reset
+        if (mNaviTrafficContainer != null) {
+            mNaviTrafficContainer.setVisibility(View.GONE);
         }
     }
 
     // [FIX] Reset navigation info (distance/ETA)
     public void resetNaviInfo() {
-        if (mNaviInfoController != null) {
-            mNaviInfoController.reset(); // Resets navi info including ETA
-        }
+        if (mNaviDistance != null)
+            mNaviDistance.setText("");
+        if (mNaviEta != null)
+            mNaviEta.setText("");
     }
 
     private int mCurrentManeuverIcon = -1;
@@ -552,11 +710,21 @@ public class AudiRsThemeController {
      */
     public void release() {
         stopFlashing();
+        stopTrafficLightFlash(); // Stop traffic light flash
         mHandler.removeCallbacksAndMessages(null);
         mPointer = null;
         mLight1 = mLight2 = mLight3 = mLight4 = mLight5 = null;
         mFlashBar = null;
         mSpeedText = null;
         mGearText = null;
+
+        mNaviTrafficContainer = null;
+        mDirectionArrow = null;
+        mCountdownText = null;
+        mLightRed = null;
+        mLightYellow = null;
+        mLightGreen = null;
+        mNaviDistance = null;
+        mNaviEta = null;
     }
 }

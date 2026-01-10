@@ -101,66 +101,100 @@
         android:textSize="32sp"
         android:textStyle="bold" />
 
-    <!-- Traffic Light Layout (Top Left) - Stacked at same position -->
-    <FrameLayout
-        android:id="@+id/audiRsTrafficLightContainer"
-        android:layout_width="120dp"
-        android:layout_height="80dp"
-        android:layout_gravity="top|start"
-        android:layout_marginStart="80dp"
-        android:layout_marginTop="120dp">
-
-        <!-- Left Light (stacked) -->
-        <cn.navitool.view.TrafficLightView
-            android:id="@+id/audiRsTrafficLightLeft"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="invisible" />
-
-        <!-- Straight Light (stacked) -->
-        <cn.navitool.view.TrafficLightView
-            android:id="@+id/audiRsTrafficLightStraight"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="invisible" />
-
-        <!-- Right Light (stacked) -->
-        <cn.navitool.view.TrafficLightView
-            android:id="@+id/audiRsTrafficLightRight"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:visibility="invisible" />
-    </FrameLayout>
-
-    <!-- Navi Info Layout (Distance & ETA) - Below Traffic Lights, Single Row -->
+    <!-- Navigation & Traffic Light Container (3 Rows) -->
     <LinearLayout
-        android:id="@+id/audiRsNaviInfoContainer"
+        android:id="@+id/audiRsNaviTrafficContainer"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
-        android:layout_marginStart="50dp"
-        android:layout_marginTop="210dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:layout_marginStart="55dp"
+        android:layout_marginTop="108dp"
+        android:orientation="vertical"
+        android:gravity="center_horizontal">
 
-        <TextView
-            android:id="@+id/audiRsNaviDistance"
+        <!-- Row 1: Direction Arrow & Countdown -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="17dp">
+
+            <ImageView
+                android:id="@+id/audiRsDirectionArrow"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:src="@drawable/ic_direction_arrow"
+                android:tint="#FFFFFF"/>
+
+            <TextView
+                android:id="@+id/audiRsCountdown"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:text="66"
+                android:textColor="#FFFFFF"
+                android:textSize="28sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Row 2: Traffic Lights (Red, Yellow, Green) -->
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            tools:text="12.5 km"
-            android:textColor="#FFFFFF"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="25dp">
 
-        <TextView
-            android:id="@+id/audiRsNaviEta"
+            <ImageView
+                android:id="@+id/audiRsLightRed"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/audi_rs_light_red"
+                android:layout_marginEnd="5dp"/>
+
+            <ImageView
+                android:id="@+id/audiRsLightYellow"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/audi_rs_light_yellow"
+                android:layout_marginEnd="5dp"/>
+
+            <ImageView
+                android:id="@+id/audiRsLightGreen"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/audi_rs_light_green"/>
+        </LinearLayout>
+
+        <!-- Row 3: Distance & ETA -->
+        <LinearLayout
+            android:id="@+id/audiRsNaviInfoRow"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"
-            tools:text="ETA 10:30"
-            android:textColor="#FFFFFF"
-            android:textSize="18sp"
-            android:textStyle="bold" />
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/audiRsNaviDistance"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="12.5km"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/audiRsNaviEta"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="10:30"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
     </LinearLayout>
 
     <!-- TPMS Layout: Front Left (Top Inner) -->

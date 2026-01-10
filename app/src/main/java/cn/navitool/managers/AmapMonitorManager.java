@@ -36,7 +36,7 @@ public class AmapMonitorManager {
 
     private AmapMonitorManager(Context context) {
         this.mContext = context.getApplicationContext();
-        initLogThread();
+        // initLogThread();
     }
 
     private void initLogThread() {
@@ -66,7 +66,7 @@ public class AmapMonitorManager {
             mContext.registerReceiver(mAmapReceiver, filter);
             isRegistered = true;
             DebugLogger.i(TAG, "Starting Amap Broadcast Monitor...");
-            logToFile("Monitor Started: Listening for " + AMAP_BROADCAST_ACTION);
+            // logToFile("Monitor Started: Listening for " + AMAP_BROADCAST_ACTION);
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to register receiver", e);
         }
@@ -197,7 +197,7 @@ public class AmapMonitorManager {
         logBuilder.append("--------------------------\n");
 
         // Write to file (async)
-        logToFile(logBuilder.toString());
+        // logToFile(logBuilder.toString());
     }
 
     /**
