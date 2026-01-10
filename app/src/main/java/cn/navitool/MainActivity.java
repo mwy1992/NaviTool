@@ -357,11 +357,11 @@ public class MainActivity extends AppCompatActivity {
             mLayoutADB.setVisibility(View.VISIBLE); // Default Tab
 
         // Debug-only tabs logic:
-        // Cluster (Debug Only)
-        int debugVisibility = BuildConfig.DEBUG ? View.VISIBLE : View.GONE;
+        // Cluster (Now Enabled for Release to allow Theme Selection)
+        int clusterVisibility = View.VISIBLE; // Formerly DEBUG only
         View rbCluster = findViewById(R.id.rbCluster);
         if (rbCluster != null)
-            rbCluster.setVisibility(debugVisibility);
+            rbCluster.setVisibility(clusterVisibility);
 
         // HUD (Release Enabled)
         View rbHud = findViewById(R.id.rbHud);

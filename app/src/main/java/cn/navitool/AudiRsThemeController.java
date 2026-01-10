@@ -137,10 +137,25 @@ public class AudiRsThemeController {
         mSpeedText = rootView.findViewById(R.id.audiRsSpeedText);
         mGearText = rootView.findViewById(R.id.audiRsGearText);
 
-        // Traffic Lights & Navi Info - New Bindings
+        // Row 1: Direction Arrow & Countdown
+        // ...
+
+        // Row 2: Traffic Lights (Red, Yellow, Green)
+        // ...
+
         mNaviTrafficContainer = rootView.findViewById(R.id.audiRsNaviTrafficContainer);
         mDirectionArrow = rootView.findViewById(R.id.audiRsDirectionArrow);
         mCountdownText = rootView.findViewById(R.id.audiRsCountdown);
+        if (mCountdownText != null) {
+            try {
+                android.graphics.Typeface ledFont = android.graphics.Typeface.createFromAsset(
+                        rootView.getContext().getAssets(), "fonts/SHUMA.TTF");
+                mCountdownText.setTypeface(ledFont);
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Failed to load LED font from assets/fonts/SHUMA.TTF", e);
+            }
+        }
+
         mLightRed = rootView.findViewById(R.id.audiRsLightRed);
         mLightYellow = rootView.findViewById(R.id.audiRsLightYellow);
         mLightGreen = rootView.findViewById(R.id.audiRsLightGreen);
