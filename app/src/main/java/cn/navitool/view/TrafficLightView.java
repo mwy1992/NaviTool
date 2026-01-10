@@ -6,26 +6,32 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
 import android.view.View;
 
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
+
+import cn.navitool.R;
 
 /**
  * 自定义红绿灯控件
  * 支持：红/黄/绿灯显示，倒计时，以及方向箭头
+ * 新设计：胶囊形轮廓 + 彩色圆形 + 方向箭头 + 倒计时
  */
-public class TrafficLightView extends android.view.View {
+public class TrafficLightView extends View {
 
     private Paint mPaintLight;
     private Paint mPaintText;
-    private Paint mPaintBg;
+    private Paint mPaintOutline;
+    private Drawable mArrowDrawable;
 
     // Data
     private int mStatus = 0; // 0=None, 1=Green, 2=Red, 3=Yellow
     private int mTime = 0;
-    private int mDirection = 0; // 0=Straight, 1=Left, 2=Right
-    private int mDirectionOverride = -1; // -1=None, 0=Straight, 1=Left, 2=Right
+    private int mDirection = 0; // 0=Straight, 1=Left, 2=Right, 4=...
+    private int mDirectionOverride = -1;
 
     // Constants
     public static final int STATUS_NONE = 0;
@@ -33,12 +39,16 @@ public class TrafficLightView extends android.view.View {
     public static final int STATUS_RED = 2;
     public static final int STATUS_YELLOW = 3;
 
+    // Fixed sizes in pixels (for 星越L fixed screen density)
+    private static final float CIRCLE_DIAMETER = 24f;
+    private static final float TEXT_SIZE = 24f;
+    private static final float OUTLINE_STROKE = 1.5f;
+    private static final float PADDING = 2f; // Tight wrap around text
+
     public TrafficLightView(Context context) {
         super(context);
         init();
     }
-
-    // ... Constructors ...
 
     public TrafficLightView(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
@@ -57,23 +67,33 @@ public class TrafficLightView extends android.view.View {
     }
 
     private void init() {
-        // ...
+        // Light circle paint
         mPaintLight = new Paint(Paint.ANTI_ALIAS_FLAG);
         mPaintLight.setStyle(Paint.Style.FILL);
+
+        // Text paint - fixed px size
         mPaintText = new Paint(Paint.ANTI_ALIAS_FLAG);
         mPaintText.setColor(Color.WHITE);
-        mPaintText.setTextSize(48f);
+        mPaintText.setTextSize(TEXT_SIZE);
         mPaintText.setTextAlign(Paint.Align.CENTER);
         mPaintText.setFakeBoldText(true);
-        mPaintBg = new Paint(Paint.ANTI_ALIAS_FLAG);
-        mPaintBg.setColor(0x40000000); // 黑色半透明背景
-        mPaintBg.setStyle(Paint.Style.FILL);
+
+        // Outline paint for capsule
+        mPaintOutline = new Paint(Paint.ANTI_ALIAS_FLAG);
+        mPaintOutline.setColor(Color.WHITE);
+        mPaintOutline.setStyle(Paint.Style.STROKE);
+        mPaintOutline.setStrokeWidth(OUTLINE_STROKE);
+        mPaintOutline.setStrokeCap(Paint.Cap.ROUND);
+
+        // Load arrow drawable
+        mArrowDrawable = ContextCompat.getDrawable(getContext(), R.drawable.ic_direction_arrow);
     }
 
     /**
      * Update State
      */
     public void updateState(int status, int time, int direction) {
+        boolean timeChanged = this.mTime != time;
         this.mStatus = status;
         this.mTime = time;
         if (mDirectionOverride != -1) {
@@ -81,117 +101,161 @@ public class TrafficLightView extends android.view.View {
         } else {
             this.mDirection = direction;
         }
-        invalidate(); // Request redraw
+        if (timeChanged) {
+            requestLayout(); // Remeasure when time changes (different digit count)
+        }
+        invalidate();
     }
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        // Default size 120x60 dp approx
-        int w = resolveSize(200, widthMeasureSpec);
-        int h = resolveSize(100, heightMeasureSpec);
+        // Calculate height based on text size + minimal padding for tight wrap
+        // Use TEXT_SIZE directly as height basis with small padding
+        float capsuleHeight = TEXT_SIZE + 8; // 24 + 8 = 32px height
+        float radius = capsuleHeight / 2f;
+        float textWidth = measureTextWidth();
+
+        // Width = left semicircle + text area + right semicircle
+        float calculatedWidth = radius + textWidth + radius;
+
+        int w = resolveSize((int) calculatedWidth, widthMeasureSpec);
+        int h = resolveSize((int) capsuleHeight, heightMeasureSpec);
         setMeasuredDimension(w, h);
+    }
+
+    private float measureTextWidth() {
+        // This returns the width of CONTENT AREA after the circle
+        // Layout: [left semicircle with circle] [gap] [text] [right semicircle]
+        if (mTime > 0) {
+            String timeStr = String.valueOf(mTime);
+            float textActualWidth = mPaintText.measureText(timeStr);
+            // gap (4px) + text + extra padding (4px for right side)
+            return 4 + textActualWidth + 4;
+        }
+        return 0; // No text, just circle in left semicircle
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
-        // Debug Log
-        // android.util.Log.d("TrafficLightView", "onDraw: status=" + mStatus + " time="
-        // + mTime);
-
-        if (mStatus == STATUS_NONE)
+        if (mStatus == STATUS_NONE) {
             return;
+        }
 
         int width = getWidth();
         int height = getHeight();
+        float centerY = height / 2f;
+        float radius = height / 2f; // Use actual view height
 
-        // Layout: [Arrow] [Light] [Text]
-        // Section widths: 25% | 35% | 40%
-        int arrowWidth = width / 4;
-        int lightWidth = width * 35 / 100;
-        int textWidth = width - arrowWidth - lightWidth;
+        // 1. Draw Capsule Outline (mirrored half capsules)
+        drawCapsuleOutline(canvas, width, height, radius);
 
-        int arrowCenterX = arrowWidth / 2;
-        int lightCenterX = arrowWidth + lightWidth / 2;
-        int textCenterX = arrowWidth + lightWidth + textWidth / 2;
+        // 2. Get status color
+        int color = getStatusColor();
 
-        int centerY = height / 2;
+        // 3. Draw circle with arrow in left semicircle area
+        float circleCenterX = radius;
+        float circleRadius = CIRCLE_DIAMETER / 2f;
 
-        // 1. Draw Direction Arrow
-        // constants based on Amap: 0=Straight, 1=Left, 2=Right
-        // Color: Same as light or White? White is better for visibility.
-        mPaintBg.setColor(Color.WHITE);
-        mPaintBg.setStyle(Paint.Style.STROKE);
-        mPaintBg.setStrokeWidth(8f); // Thicker line
-        mPaintBg.setStrokeCap(Paint.Cap.ROUND);
-        mPaintBg.setStrokeJoin(Paint.Join.ROUND);
-
-        Path arrowPath = new Path();
-        float arrowSize = height * 0.4f;
-        float ax = arrowCenterX;
-        float ay = centerY;
-
-        if (mDirection == 1) { // Left
-            // <-- (Turn Left Shape)
-            // Vertical part
-            arrowPath.moveTo(ax + arrowSize / 2, ay + arrowSize / 2);
-            arrowPath.lineTo(ax + arrowSize / 2, ay);
-            // Curve or sharp turn? Sharp for now
-            arrowPath.lineTo(ax - arrowSize / 2, ay);
-            // Arrowhead
-            arrowPath.lineTo(ax - arrowSize / 2 + 10, ay - 10);
-            arrowPath.moveTo(ax - arrowSize / 2, ay);
-            arrowPath.lineTo(ax - arrowSize / 2 + 10, ay + 10);
-        } else if (mDirection == 2) { // Right
-            // --> (Turn Right Shape)
-            arrowPath.moveTo(ax - arrowSize / 2, ay + arrowSize / 2);
-            arrowPath.lineTo(ax - arrowSize / 2, ay);
-            arrowPath.lineTo(ax + arrowSize / 2, ay);
-            arrowPath.lineTo(ax + arrowSize / 2 - 10, ay - 10);
-            arrowPath.moveTo(ax + arrowSize / 2, ay);
-            arrowPath.lineTo(ax + arrowSize / 2 - 10, ay + 10);
-        } else if (mDirection == 0 || mDirection == 4) { // Straight
-            // ^ (Straight Arrow)
-            // Vertical Line
-            arrowPath.moveTo(ax, ay + arrowSize / 2); // Bottom
-            arrowPath.lineTo(ax, ay - arrowSize / 2); // Top
-
-            // Arrowhead
-            arrowPath.lineTo(ax - 15, ay - arrowSize / 2 + 15); // Left Wing
-            arrowPath.moveTo(ax, ay - arrowSize / 2);
-            arrowPath.lineTo(ax + 15, ay - arrowSize / 2 + 15); // Right Wing
-        }
-
-        if (!arrowPath.isEmpty()) {
-            canvas.drawPath(arrowPath, mPaintBg);
-        }
-
-        // 2. Draw Light Circle
-        int color = Color.GRAY;
-        if (mStatus == STATUS_RED)
-            color = 0xFFFF4444; // Red
-        else if (mStatus == STATUS_GREEN)
-            color = 0xFF44FF44; // Green
-        else if (mStatus == STATUS_YELLOW)
-            color = 0xFFFFFF44; // Yellow
-
+        // Draw colored circle
         mPaintLight.setColor(color);
-        // Radius based on available height, keep alignment
-        float r = (Math.min(lightWidth, height) * 0.8f) / 2f;
-        canvas.drawCircle(lightCenterX, centerY, r, mPaintLight);
+        canvas.drawCircle(circleCenterX, centerY, circleRadius, mPaintLight);
 
-        // 3. Draw Countdown Text
+        // Draw arrow on top of circle
+        if (mArrowDrawable != null) {
+            drawRotatedArrow(canvas, circleCenterX, centerY, (int) (circleRadius * 1.6f));
+        }
+
+        // 4. Draw countdown text - left aligned after circle with gap
         if (mTime > 0) {
             String timeStr = String.valueOf(mTime);
-            mPaintText.setColor(color); // Match light color
-            mPaintText.setTextSize(height * 0.6f);
+            mPaintText.setColor(color);
+            mPaintText.setTextAlign(Paint.Align.LEFT); // Left align for proper positioning
 
-            Paint.FontMetrics fontMetrics = mPaintText.getFontMetrics();
-            float baseLineY = centerY - (fontMetrics.top + fontMetrics.bottom) / 2;
+            Paint.FontMetrics fm = mPaintText.getFontMetrics();
+            float textY = centerY - (fm.top + fm.bottom) / 2f;
+            // Position text after circle with gap: circle end (radius + circleRadius) + gap
+            float textX = radius + circleRadius + 4; // 4px gap between circle and text
 
-            // Draw centered in text area
-            canvas.drawText(timeStr, textCenterX, baseLineY, mPaintText);
+            canvas.drawText(timeStr, textX, textY, mPaintText);
+        }
+    }
+
+    private void drawCapsuleOutline(Canvas canvas, int width, int height, float radius) {
+        // Add offset for stroke width to prevent clipping
+        float offset = OUTLINE_STROKE / 2f;
+        float h = height - offset * 2;
+        float r = h / 2f;
+
+        Path capsulePath = new Path();
+
+        // Left semicircle
+        RectF leftArc = new RectF(offset, offset, r * 2 + offset, h + offset);
+        capsulePath.addArc(leftArc, 90, 180);
+
+        // Top line
+        capsulePath.moveTo(r + offset, offset);
+        capsulePath.lineTo(width - r - offset, offset);
+
+        // Right semicircle
+        RectF rightArc = new RectF(width - r * 2 - offset, offset, width - offset, h + offset);
+        capsulePath.addArc(rightArc, -90, 180);
+
+        // Bottom line
+        capsulePath.moveTo(width - r - offset, h + offset);
+        capsulePath.lineTo(r + offset, h + offset);
+
+        canvas.drawPath(capsulePath, mPaintOutline);
+    }
+
+    private void drawRotatedArrow(Canvas canvas, float cx, float cy, int size) {
+        if (mArrowDrawable == null)
+            return;
+
+        canvas.save();
+
+        // Rotate based on direction
+        float rotation = getArrowRotation();
+        canvas.rotate(rotation, cx, cy);
+
+        // Center the drawable
+        int halfSize = size / 2;
+        mArrowDrawable.setBounds(
+                (int) (cx - halfSize),
+                (int) (cy - halfSize),
+                (int) (cx + halfSize),
+                (int) (cy + halfSize));
+        mArrowDrawable.draw(canvas);
+
+        canvas.restore();
+    }
+
+    private float getArrowRotation() {
+        switch (mDirection) {
+            case 1:
+                return -90f; // Left turn
+            case 2:
+                return 90f; // Right turn
+            case 3:
+                return 180f; // U-turn
+            case 0:
+            case 4:
+            default:
+                return 0f; // Straight
+        }
+    }
+
+    private int getStatusColor() {
+        switch (mStatus) {
+            case STATUS_RED:
+                return 0xFFFF4444;
+            case STATUS_GREEN:
+                return 0xFF44FF44;
+            case STATUS_YELLOW:
+                return 0xFFFFFF44;
+            default:
+                return Color.GRAY;
         }
     }
 }

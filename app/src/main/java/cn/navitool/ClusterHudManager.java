@@ -375,10 +375,11 @@ public class ClusterHudManager
             // Handle Float Values (Temp, Fuel, Range)
             try {
                 if (sensorType == SENSOR_TYPE_FUEL_LEVEL) {
-                    // MConfig divides by 1000 for Liters
-                    float liters = value / 1000f;
-                    mCachedFuelLiters = liters;
-                    updateComponentText("fuel", String.format("%.0fL", liters));
+                    // [FIX] Removed /1000 - sensor likely returns Liters directly
+                    // If shows huge numbers, sensor returns ml and we need to re-add /1000
+                    DebugLogger.d(TAG, "Fuel Level Raw: " + value);
+                    mCachedFuelLiters = value;
+                    updateComponentText("fuel", String.format("%.0fL", value));
                     updateFuelRangeComponent();
                 } else if (sensorType == ISensor.SENSOR_TYPE_TEMPERATURE_AMBIENT) {
                     // [FIX] Formatting: Integer + Unit, no text prefix
@@ -1690,6 +1691,20 @@ public class ClusterHudManager
                 mPresentation = null;
                 DebugLogger.i(TAG, "ClusterHudPresentation DISMISSED");
             }
+        }
+    }
+
+    /**
+     * [FIX] Public method for complete HUD reset - dismisses presentation and
+     * recreates it.
+     * Used by "Reset HUD Layout" button to clear all cached/stale data.
+     */
+    public void dismissAndRecreate() {
+        DebugLogger.i(TAG, "dismissAndRecreate: Force clearing all HUD state...");
+        dismissPresentation();
+        // If either Cluster or HUD is enabled, recreate immediately
+        if (mIsClusterEnabled || mIsHudEnabled) {
+            mMainHandler.postDelayed(this::showPresentation, 100);
         }
     }
 

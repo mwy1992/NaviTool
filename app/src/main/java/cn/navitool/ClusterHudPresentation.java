@@ -575,22 +575,25 @@ public class ClusterHudPresentation extends android.app.Dialog {
                 } else if ("traffic_light".equals(data.type)) {
                     // Traffic Light Component
                     cn.navitool.view.TrafficLightView tlv = new cn.navitool.view.TrafficLightView(getContext());
-                    // Set fixed size or use data attributes
-                    // Default size for HUD traffic light
-                    params.width = 300;
-                    params.height = 150;
+                    // [FIX] Use WRAP_CONTENT to let TrafficLightView calculate its own size
+                    params.width = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
+                    params.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
 
                     // Mark tag so it can be updated
                     // We'll trust the generic tag assignment below
                     view = tlv;
                 } else if ("navi_arrival_time".equals(data.type) || "navi_distance_remaining".equals(data.type)) {
-                    // Navi Info Components
+                    // Navi Info Components - Start GONE until actual navigation data arrives
                     android.widget.TextView tv = new android.widget.TextView(getContext());
-                    tv.setText(data.text);
+                    // [FIX] Only show in preview, hide in real HUD until navigation starts
+                    // Preview: text comes from config, Real HUD: starts empty
+                    tv.setText(""); // Start empty in real HUD
+                    tv.setVisibility(View.GONE); // Hide until navigation provides data
                     tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
                     tv.setTextColor(data.color);
-                    tv.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 32); // Slightly larger than default
+                    // [FIX] Normal weight, 24px size to match other text
+                    tv.setTypeface(android.graphics.Typeface.DEFAULT);
+                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
                     view = tv;
                 } else {
                     android.widget.TextView tv = new android.widget.TextView(getContext());
@@ -763,7 +766,11 @@ public class ClusterHudPresentation extends android.app.Dialog {
 
             if (viewType != null && viewType.equals(type)) {
                 if (v instanceof android.widget.TextView && text != null) {
-                    ((android.widget.TextView) v).setText(text);
+                    android.widget.TextView tv = (android.widget.TextView) v;
+                    // [FIX] Clear text first and invalidate to prevent overlap artifacts
+                    tv.setText("");
+                    tv.setText(text);
+                    tv.invalidate();
                 } else if (v instanceof android.widget.LinearLayout && text != null) {
                     android.widget.LinearLayout ll = (android.widget.LinearLayout) v;
                     String[] parts = (text != null ? text : "").split("\n");

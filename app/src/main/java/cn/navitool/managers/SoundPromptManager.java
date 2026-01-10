@@ -12,6 +12,11 @@ public class SoundPromptManager {
     private MediaPlayer mMediaPlayer;
     private boolean mIsDirectPlaybackMode = false; // Default: Mix (false)
 
+    // [FIX] Singleton focus listener to prevent leak when sounds are rapidly
+    // triggered
+    private android.media.AudioManager.OnAudioFocusChangeListener mFocusListener;
+    private android.media.AudioFocusRequest mFocusRequest; // For Android O+
+
     public void setPlaybackMode(boolean isDirect) {
         mIsDirectPlaybackMode = isDirect;
         DebugLogger.d(TAG, "Playback Mode Changed: " + (isDirect ? "DIRECT (Pause Music)" : "MIX (Duck Music)"));
@@ -146,17 +151,36 @@ public class SoundPromptManager {
                 (streamType == android.media.AudioManager.STREAM_MUSIC ? "MUSIC (Media)" : "NOTIFICATION (Navi)"));
     }
 
+    // [FIX] Proactive abandon to prevent focus leak from reset() canceling
+    // OnCompletionListener
+    private void abandonFocus() {
+        android.media.AudioManager am = (android.media.AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
+        if (am == null)
+            return;
+        DebugLogger.d(TAG, "Proactively abandoning previous audio focus...");
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && mFocusRequest != null) {
+            am.abandonAudioFocusRequest(mFocusRequest);
+            mFocusRequest = null;
+        } else if (mFocusListener != null) {
+            am.abandonAudioFocus(mFocusListener);
+        }
+    }
+
     private void playFile(String filePath) {
         try {
-            // Request Audio Focus
+            // [FIX] Initialize singleton listener if needed
+            if (mFocusListener == null) {
+                mFocusListener = focusChange -> {
+                    DebugLogger.d(TAG, "Audio Focus Changed: " + focusChange);
+                };
+            }
+
+            // [FIX] Proactively abandon previous focus before requesting new one
+            // This prevents leak when reset() cancels the OnCompletionListener
+            abandonFocus();
+
             android.media.AudioManager am = (android.media.AudioManager) mContext
                     .getSystemService(Context.AUDIO_SERVICE);
-            android.media.AudioFocusRequest focusRequest = null;
-            android.media.AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
-                // 添加日志以调试焦点变化
-                DebugLogger.d(TAG, "Audio Focus Changed: " + focusChange);
-            };
-            final android.media.AudioManager.OnAudioFocusChangeListener finalFocusListener = focusChangeListener;
 
             if (am != null) {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -188,12 +212,12 @@ public class SoundPromptManager {
 
                     android.media.AudioAttributes playbackAttributes = attrBuilder.build();
 
-                    focusRequest = new android.media.AudioFocusRequest.Builder(focusType)
+                    mFocusRequest = new android.media.AudioFocusRequest.Builder(focusType)
                             .setAudioAttributes(playbackAttributes)
                             .setAcceptsDelayedFocusGain(false)
-                            .setOnAudioFocusChangeListener(focusChangeListener)
+                            .setOnAudioFocusChangeListener(mFocusListener)
                             .build();
-                    int focusResult = am.requestAudioFocus(focusRequest);
+                    int focusResult = am.requestAudioFocus(mFocusRequest);
                     DebugLogger.d(TAG, "Audio Focus Requested (" + (mIsDirectPlaybackMode ? "DIRECT" : "MIX")
                             + ", Stream="
                             + (mAudioStreamType == android.media.AudioManager.STREAM_MUSIC ? "MEDIA" : "NAVI")
@@ -213,7 +237,7 @@ public class SoundPromptManager {
                     int stream = mAudioStreamType;
                     // Use the selected stream for legacy request
 
-                    int focusResult = am.requestAudioFocus(focusChangeListener, stream, focusType);
+                    int focusResult = am.requestAudioFocus(mFocusListener, stream, focusType);
                     DebugLogger.d(TAG, "Audio Focus Requested (Legacy " + (mIsDirectPlaybackMode ? "DIRECT" : "MIX")
                             + "), result=" + focusResult);
                 }
@@ -251,31 +275,16 @@ public class SoundPromptManager {
             mMediaPlayer.prepareAsync(); // Async to avoid blocking Main Thread
             DebugLogger.d(TAG, "Preparing sound async: " + filePath);
 
-            final android.media.AudioFocusRequest finalRequest = focusRequest;
             mMediaPlayer.setOnCompletionListener(mediaPlayer -> {
-                // Abandon Focus
+                // [FIX] Now uses singleton, so abandonFocus() works correctly
                 DebugLogger.d(TAG, "Sound completed, abandoning audio focus...");
-                if (am != null) {
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && finalRequest != null) {
-                        int result = am.abandonAudioFocusRequest(finalRequest);
-                        DebugLogger.d(TAG, "abandonAudioFocusRequest result: " + result);
-                    } else {
-                        int result = am.abandonAudioFocus(finalFocusListener);
-                        DebugLogger.d(TAG, "abandonAudioFocus result: " + result);
-                    }
-                }
+                abandonFocus();
             });
 
             // Clean up on error too
             mMediaPlayer.setOnErrorListener((mp, what, extra) -> {
                 DebugLogger.e(TAG, "MediaPlayer Error: what=" + what + ", extra=" + extra);
-                if (am != null) {
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && finalRequest != null) {
-                        am.abandonAudioFocusRequest(finalRequest);
-                    } else {
-                        am.abandonAudioFocus(finalFocusListener);
-                    }
-                }
+                abandonFocus();
                 return true;
             });
 

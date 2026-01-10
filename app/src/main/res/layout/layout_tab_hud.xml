@@ -10,7 +10,7 @@
         android:orientation="vertical"
         android:padding="12dp">
 
-        <!-- 1. Header: Switch (Unchanged location logic, but isolated) -->
+        <!-- 1. Header: Title | Buttons (Horizontal) | Switch -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -19,13 +19,87 @@
             android:layout_marginBottom="12dp">
             
             <TextView
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
                 android:text="HUD Control"
                 android:textSize="20sp"
                 android:textStyle="bold"
                 android:textColor="?android:attr/textColorPrimary"/>
+
+            <!-- Buttons (Horizontal, centered as a group) -->
+            <HorizontalScrollView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="12dp"
+                android:fillViewport="true"
+                android:scrollbars="none">
+                
+                <LinearLayout
+                    android:id="@+id/layoutHudEditorControls"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center">
+                    
+                    <Button
+                        android:id="@+id/btnHudSwitchMode"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:text="AR模式"
+                        android:textSize="12sp"/>
+                        
+                    <Button
+                        android:id="@+id/btnHudAdd"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:text="添加"
+                        android:textSize="12sp"/>
+                        
+                    <Button
+                        android:id="@+id/btnHudModify"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:text="修改"
+                        android:textSize="12sp"/>
+                        
+                    <Button
+                        android:id="@+id/btnHudDelete"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:text="删除"
+                        android:textSize="12sp"/>
+                        
+                    <Button
+                        android:id="@+id/btnHudSave"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:text="保存"
+                        android:textSize="12sp"/>
+                        
+                    <Button
+                        android:id="@+id/btnHudReset"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:text="重置"
+                        android:textSize="12sp"/>
+                        
+                    <Button
+                        android:id="@+id/btnHudSnowMode"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="雪地"
+                        android:textSize="12sp"/>
+                    
+                </LinearLayout>
+            </HorizontalScrollView>
 
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/switchHud"
@@ -33,104 +107,30 @@
                 android:layout_height="wrap_content"/>
         </LinearLayout>
 
-        <!-- 2. Body: Horizontal Split (Buttons | Preview) -->
-        <LinearLayout
+        <!-- 2. Body: Preview Area Only (Buttons moved to header) -->
+        <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="horizontal">
+            android:layout_height="match_parent">
 
-            <!-- Left: Editor Controls (Vertical Buttons) -->
-            <!-- Moved from previous ScrollView. Buttons stack vertically here. -->
-            <ScrollView
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:paddingEnd="20dp">
-                
-                <LinearLayout
-                    android:id="@+id/layoutHudEditorControls"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:visibility="gone">
-                    <!-- Changed to wrap_content to minimize width per user request -->
-                    
-                    <Button
-                        android:id="@+id/btnHudSwitchMode"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="切换AR模式"
-                        android:layout_marginBottom="8dp"/>
-                        
-                    <Button
-                        android:id="@+id/btnHudAdd"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="添加组件"
-                        android:layout_marginBottom="8dp"/>
-                    <Button
-                        android:id="@+id/btnHudModify"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="修改布局"
-                        android:layout_marginBottom="8dp"/>
-                    <Button
-                        android:id="@+id/btnHudDelete"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="删除选中"
-                        android:layout_marginBottom="8dp"/>
-                    <Button
-                        android:id="@+id/btnHudSave"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="保存布局"
-                        android:layout_marginBottom="8dp"/>
-                    <Button
-                        android:id="@+id/btnHudReset"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="重置布局"
-                        android:layout_marginBottom="8dp"/>
-                    <Button
-                        android:id="@+id/btnHudSnowMode"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="雪地模式开关"
-                        android:layout_marginBottom="8dp"/>
-                    
-                </LinearLayout>
-            </ScrollView>
-
-            <!-- Right: Preview Area -->
-            <!-- Fills remaining width -->
+            <!-- Preview Container -->
             <FrameLayout
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:paddingStart="0dp">
+                android:id="@+id/layoutHudPreviewContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:visibility="gone"
+                android:padding="4dp"
+                android:background="@drawable/border_hud_preview">
 
-                <!-- Preview Container (Legacy Logic: No Scaling, No Clip) -->
+                <!-- HUD Preview Content Area: 1456x380 -->
                 <FrameLayout
-                    android:id="@+id/layoutHudPreviewContainer"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="center_vertical|start"
-                    android:visibility="gone"
-                    android:padding="4dp"
-                    android:background="@drawable/border_hud_preview">
-                    <!-- Note: gravity changed to top|center per "Preview moves up" request -->
-
-                    <!-- HUD Preview Content Area: 1456x380 -->
-                    <FrameLayout
-                        android:id="@+id/layoutHudPreview"
-                        android:layout_width="1456px"
-                        android:layout_height="380px"
-                        android:background="#000000"
-                        android:visibility="gone">
-                    </FrameLayout>
+                    android:id="@+id/layoutHudPreview"
+                    android:layout_width="1456px"
+                    android:layout_height="380px"
+                    android:background="#000000"
+                    android:visibility="gone">
                 </FrameLayout>
             </FrameLayout>
-
-        </LinearLayout>
+        </FrameLayout>
     </LinearLayout>
 </ScrollView>
