@@ -612,7 +612,7 @@ public class ThemeBrightnessManager {
 
     public void syncAutoNaviTheme() {
         SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
-        if (!prefs.getBoolean("auto_theme_sync", true))
+        if (!prefs.getBoolean("auto_theme_sync", false))
             return;
 
         int currentNightMode = mContext.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;

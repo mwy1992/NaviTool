@@ -231,7 +231,7 @@ public class KeyHandlerManager {
 
         if (keyCode == ONEOS_KEY_MEDIA_NEXT || keyCode == ONEOS_KEY_MEDIA_PREV || keyCode == ONEOS_KEY_MEDIA_PP) {
             SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
-            if (!prefs.getBoolean("steering_wheel_control_v2", true)) {
+            if (!prefs.getBoolean("steering_wheel_control_v2", false)) {
                 DebugLogger.d(TAG, "Steering wheel control disabled");
                 return;
             }
@@ -269,7 +269,7 @@ public class KeyHandlerManager {
 
     private void processWechatAction(String type) {
         SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
-        if (!prefs.getBoolean("wechat_button_enabled_v2", true))
+        if (!prefs.getBoolean("wechat_button_enabled_v2", false))
             return;
 
         int action = prefs.getInt("wechat_" + type + "_press_action", 0);

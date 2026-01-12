@@ -18,7 +18,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:text="Cluster / 仪表模式"
+            android:text="@string/cluster_label_default"
             android:textSize="24sp"
             android:textColor="#000000"
             android:textStyle="bold"/>

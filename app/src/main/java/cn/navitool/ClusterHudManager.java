@@ -33,11 +33,12 @@ public class ClusterHudManager
 
     private static volatile ClusterHudManager instance;
     private Context mContext;
-    private ClusterHudPresentation mPresentation;
+    private Presentation mPresentation;
     private boolean mIsClusterEnabled = false;
     private boolean mIsHudEnabled = false;
+    private boolean mIsFloatingEnabled = false; // Floating Traffic Light State
     private boolean mIsDashboardMode = false;
-    private int mPendingTheme = ClusterHudPresentation.THEME_DEFAULT; // 保存待应用的主题
+    private int mPendingTheme = Presentation.THEME_DEFAULT; // 保存待应用的主题
     // [Fix Cold Boot] Retry counter for Display id 2 discovery
     private int mRetryCount = 0;
 
@@ -91,14 +92,16 @@ public class ClusterHudManager
 
     // [FIX] Traffic Light Timeout - Auto-clear if Amap process exits without
     // broadcast
-    private static final long TRAFFIC_LIGHT_TIMEOUT_MS = 10000; // 10 seconds
+    private static final long TRAFFIC_LIGHT_TIMEOUT_MS = 3000; // 3 seconds (Optimized from 10s)
     private final Runnable mTrafficLightTimeoutRunnable = new Runnable() {
         @Override
         public void run() {
-            DebugLogger.d(TAG, "Traffic Light Timeout - Auto-clearing");
+            DebugLogger.d(TAG, "Traffic Light Timeout (3s) - Auto-clearing");
             if (mPresentation != null) {
                 mPresentation.resetTrafficLights();
             }
+            // [Issue 3 Fix] Notify that navigation data has stopped
+            updateNaviInputState(false);
         }
     };
 
@@ -375,11 +378,11 @@ public class ClusterHudManager
             // Handle Float Values (Temp, Fuel, Range)
             try {
                 if (sensorType == SENSOR_TYPE_FUEL_LEVEL) {
-                    // [FIX] Removed /1000 - sensor likely returns Liters directly
-                    // If shows huge numbers, sensor returns ml and we need to re-add /1000
-                    DebugLogger.d(TAG, "Fuel Level Raw: " + value);
-                    mCachedFuelLiters = value;
-                    updateComponentText("fuel", String.format("%.0fL", value));
+                    // [FIX] Sensor returns ml, convert to liters
+                    float liters = value / 1000f;
+                    DebugLogger.d(TAG, "Fuel Level Raw: " + value + " ml -> " + liters + " L");
+                    mCachedFuelLiters = liters;
+                    updateComponentText("fuel", String.format("%.0fL", liters));
                     updateFuelRangeComponent();
                 } else if (sensorType == ISensor.SENSOR_TYPE_TEMPERATURE_AMBIENT) {
                     // [FIX] Formatting: Integer + Unit, no text prefix
@@ -402,10 +405,6 @@ public class ClusterHudManager
                     updateComponentText("fuel_inst", String.format("%.1fL/100km", value));
                 } else if (sensorType == TYPE_AVG_FUEL_CONSUMPTION) {
                     updateComponentText("fuel_avg", String.format("%.1fL/100km", value));
-                } else if (sensorType == SENSOR_TYPE_FUEL_LEVEL) {
-                    DebugLogger.d(TAG, "Fuel Level Raw Value (SENSOR_TYPE_FUEL_LEVEL): " + value);
-                    float liters = value / 1000f;
-                    updateComponentText("fuel_level", String.format(Locale.getDefault(), "%.0fL", liters));
                 } else {
                     // [FIX] Throttling for Tire Pressure Messages (1s interval)
                     long now = System.currentTimeMillis();
@@ -539,6 +538,38 @@ public class ClusterHudManager
         // [FIX] Forward Turn Signal State to Presentation (for Traffic Light filtering)
         if (mPresentation != null) {
             mPresentation.updateTurnSignal(isLeft, isOn);
+        }
+    }
+
+    // --- Floating Traffic Light Control ---
+    private boolean mIsAmapForeground = false;
+
+    public void setAmapForeground(boolean isForeground) {
+        if (mIsAmapForeground != isForeground) {
+            mIsAmapForeground = isForeground;
+            DebugLogger.d(TAG, "Amap Foreground State Changed: " + isForeground);
+            updateFloatingLightVisibility();
+        }
+    }
+
+    public void setFloatingTrafficLightEnabled(boolean enabled) {
+        mIsFloatingEnabled = enabled; // Update local state
+        updateFloatingLightVisibility();
+    }
+
+    private void updateFloatingLightVisibility() {
+        // Show ONLY if Enabled AND Amap is NOT in foreground
+        boolean shouldShow = mIsFloatingEnabled && !mIsAmapForeground;
+        if (mPresentation != null) {
+            mPresentation.setFloatingTrafficLightEnabled(shouldShow);
+        }
+    }
+
+    public void toggleFloatingTrafficLightPositioning() {
+        if (mPresentation != null) {
+            mPresentation.toggleFloatingTrafficLightPositioning();
+        } else {
+            DebugLogger.toast(mContext, "HUD未连接，无法定位");
         }
     }
 
@@ -684,11 +715,11 @@ public class ClusterHudManager
             if (drawable == null)
                 return null;
 
-            int iconSize = 48;
+            int iconSize = 32; // Reduced from 48 to 32 as per user request
             int padding = 12;
             android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
             paint.setColor(android.graphics.Color.WHITE);
-            paint.setTextSize(36);
+            paint.setTextSize(24); // Reduced from 36 to 24 to match icon size (32)
             paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
 
             String volText = String.valueOf(volume);
@@ -709,10 +740,10 @@ public class ClusterHudManager
             float textY = (totalHeight / 2f) - ((paint.descent() + paint.ascent()) / 2f);
             canvas.drawText(volText, iconSize + padding, textY, paint);
 
-            // Recycle old cache if exists
-            if (mCachedVolumeBitmap != null && !mCachedVolumeBitmap.isRecycled()) {
-                mCachedVolumeBitmap.recycle();
-            }
+            // Do NOT recycle manually, let GC handle it to avoid crashes in Views
+            // if (mCachedVolumeBitmap != null && !mCachedVolumeBitmap.isRecycled()) {
+            // mCachedVolumeBitmap.recycle();
+            // }
             mCachedVolumeBitmap = bitmap;
             mLastVolume = volume;
 
@@ -888,7 +919,7 @@ public class ClusterHudManager
      * 更新油量续航组合组件，格式: "32L|280km"
      */
     private void updateFuelRangeComponent() {
-        String text = String.format("%.0fL|%.0fkm", mCachedFuelLiters, mCachedRangeKm);
+        String text = String.format("⛽ %.0fL|%.0fkm", mCachedFuelLiters, mCachedRangeKm);
         updateComponentText("fuel_range", text);
     }
 
@@ -1223,6 +1254,12 @@ public class ClusterHudManager
                             // 当导航结束 (naviMode=1) 时，延迟1秒重新显示仪表
                             if (naviMode == 1 && mIsClusterEnabled) {
                                 DebugLogger.i(TAG, "Navigation ended (mode=1), will re-display cluster in 1 second...");
+
+                                // [New] Update Theme Logic: Navi Ended -> Idle
+                                if (mPresentation != null) {
+                                    mPresentation.setNavigating(false);
+                                }
+
                                 mMainHandler.postDelayed(() -> {
                                     DebugLogger.i(TAG, "Re-displaying cluster after navigation end...");
                                     // 重新调用 switchNaviMode(3) 并刷新显示
@@ -1240,6 +1277,15 @@ public class ClusterHudManager
                                         mPresentation.setClusterVisible(true);
                                     }
                                 }, 1000);
+                            } else if (naviMode == 3) {
+                                // [New] Update Theme Logic: Navi Started -> Active
+                                // REVERTED/CHANGED (Issue 3):
+                                // We NO LONGER setNavigating(true) just because system is in Navi Mode (3).
+                                // Background switching is now strictly tied to DATA arrival (Traffic
+                                // Light/Guide Info).
+                                // mPresentation.setNavigating(true);
+                                DebugLogger.i(TAG,
+                                        "NaviMode 3 (Map) detected. Waiting for actual data to switch background.");
                             }
                         }
 
@@ -1347,6 +1393,9 @@ public class ClusterHudManager
     public void forceRefreshPresentation() {
         DebugLogger.i(TAG, "forceRefreshPresentation called");
 
+        // Use new clear method to ensure clean state
+        clearHudComponents();
+
         // 先关闭现有的 presentation
         if (mPresentation != null) {
             try {
@@ -1361,7 +1410,7 @@ public class ClusterHudManager
         if (mIsClusterEnabled || mIsHudEnabled) {
             // 在创建 presentation 前，先加载保存的主题
             int savedTheme = ConfigManager.getInstance().getInt("cluster_theme_builtin",
-                    ClusterHudPresentation.THEME_DEFAULT);
+                    Presentation.THEME_DEFAULT);
             mPendingTheme = savedTheme;
             DebugLogger.i(TAG, "forceRefresh: Loaded saved theme: " + savedTheme);
 
@@ -1407,7 +1456,7 @@ public class ClusterHudManager
 
         // 加载保存的主题
         int savedTheme = ConfigManager.getInstance().getInt("cluster_theme_builtin",
-                ClusterHudPresentation.THEME_DEFAULT);
+                Presentation.THEME_DEFAULT);
         mPendingTheme = savedTheme;
         DebugLogger.i(TAG, "showUiOnly: Loaded saved theme: " + savedTheme);
 
@@ -1578,7 +1627,7 @@ public class ClusterHudManager
                 Context themeContext = new android.view.ContextThemeWrapper(displayContext, R.style.Theme_NaviTool);
 
                 // Instantiate as Dialog (Single argument constructor)
-                mPresentation = new ClusterHudPresentation(themeContext);
+                mPresentation = new Presentation(themeContext);
                 DebugLogger.d(TAG, "showPresentation: [Step 4] Dialog Object Created (Type: APPLICATION_OVERLAY)");
 
                 // Logging for verification
@@ -1621,9 +1670,13 @@ public class ClusterHudManager
                     }
                 });
 
+                // [FIX] Apply Floating Traffic Light State
+                mPresentation.setFloatingTrafficLightEnabled(mIsFloatingEnabled);
+
                 mPresentation.show();
                 mPresentation.setClusterVisible(mIsClusterEnabled);
                 mPresentation.setHudVisible(mIsHudEnabled);
+                mPresentation.setFloatingTrafficLightEnabled(mIsFloatingEnabled); // Apply Floating State
                 mPresentation.setMediaPlaying(mIsMediaPlaying); // Sync initial state
 
                 // [FIX Initial State] Sync Day/Night Mode using System Global Configuration
@@ -1814,11 +1867,15 @@ public class ClusterHudManager
     }
 
     public void clearHudComponents() {
+        DebugLogger.i(TAG, "Clearing HUD/Cluster components cache");
         if (mPresentation != null) {
             mPresentation.clearHudComponents();
         }
-        if (mPresentation != null) {
-            mPresentation.clearHudComponents();
+        if (mCachedHudComponents != null) {
+            mCachedHudComponents.clear();
+        }
+        if (mCachedClusterComponents != null) {
+            mCachedClusterComponents.clear();
         }
     }
 
@@ -1865,19 +1922,35 @@ public class ClusterHudManager
         if (mPresentation != null) {
             return mPresentation.getCurrentTheme();
         }
-        return ClusterHudPresentation.THEME_DEFAULT;
+        return Presentation.THEME_DEFAULT;
     }
 
     // Moved to top: private final Handler mMainHandler = new
     // Handler(Looper.getMainLooper());
 
+    // --- Simulated Gear Logic ---
+    private boolean mIsSimulatedGearEnabled = false;
+    private float mCurrentRpm = 0f;
+    private int mCurrentSpeed = 0;
+    private int mCurrentSensorGearValue = 0;
+
+    public void setSimulatedGearEnabled(boolean enabled) {
+        mIsSimulatedGearEnabled = enabled;
+        // Trigger immediate update
+        updateGear(mCurrentSensorGearValue);
+    }
+
     public void updateRpm(float rpm) {
+        mCurrentRpm = rpm;
         if (mPresentation != null) {
             mMainHandler.post(() -> {
                 if (mPresentation != null) {
                     mPresentation.updateRpm(rpm);
                 }
             });
+        }
+        if (mIsSimulatedGearEnabled) {
+            calculateAndPushSimulatedGear();
         }
     }
 
@@ -1894,17 +1967,23 @@ public class ClusterHudManager
     public void updateGear(int gearValue) {
         // [FIX] Cache gear value for cold boot display
         mCachedGear = gearValue;
+        mCurrentSensorGearValue = gearValue;
 
         if (mPresentation != null) {
             mMainHandler.post(() -> {
                 if (mPresentation != null) {
-                    mPresentation.updateGear(gearValue);
+                    if (mIsSimulatedGearEnabled) {
+                        calculateAndPushSimulatedGear();
+                    } else {
+                        mPresentation.updateGear(gearValue);
+                    }
                 }
             });
         }
     }
 
     public void updateSpeed(int speed) {
+        mCurrentSpeed = speed;
         if (mPresentation != null) {
             mMainHandler.post(() -> {
                 if (mPresentation != null) {
@@ -1912,7 +1991,50 @@ public class ClusterHudManager
                 }
             });
         }
+        if (mIsSimulatedGearEnabled) {
+            calculateAndPushSimulatedGear();
+        }
+    }
 
+    private void calculateAndPushSimulatedGear() {
+        String baseGear = convertGearValueToString(mCurrentSensorGearValue);
+        if (baseGear == null)
+            baseGear = "P";
+
+        String calculated = DrivingShift.getInstance().calculateGear(
+                mCurrentSpeed,
+                mCurrentRpm,
+                baseGear);
+
+        if (mPresentation != null) {
+            mMainHandler.post(() -> mPresentation.updateGear(calculated));
+        }
+    }
+
+    private String convertGearValueToString(int gearValue) {
+        // Gear constants (Duplicated from Presentation/SoundPromptManager)
+        final int GEAR_PARK = 2097712;
+        final int GEAR_REVERSE = 2097728;
+        final int GEAR_NEUTRAL = 2097680;
+        final int GEAR_DRIVE = 2097696;
+        final int TRSM_GEAR_PARK = 15;
+        final int TRSM_GEAR_DRIVE = 13;
+        final int TRSM_GEAR_NEUT = 14;
+        final int TRSM_GEAR_RVS = 11;
+
+        if (gearValue == GEAR_DRIVE || gearValue == TRSM_GEAR_DRIVE)
+            return "D";
+        if (gearValue == GEAR_REVERSE || gearValue == TRSM_GEAR_RVS)
+            return "R";
+        if (gearValue == GEAR_NEUTRAL || gearValue == TRSM_GEAR_NEUT)
+            return "N";
+        if (gearValue == GEAR_PARK || gearValue == TRSM_GEAR_PARK)
+            return "P";
+
+        // M Gear support
+        // if (gearValue == M?) -> "M"
+
+        return "P"; // Default
     }
 
     @Override
@@ -2011,16 +2133,18 @@ public class ClusterHudManager
 
     // --- Sensor Data Persistence ---
     private boolean mSensorsRegistered = false; // [FIX] Prevent duplicate registration
-    private static final int SENSOR_TYPE_FUEL_LEVEL = 2101760; // Fuel Level
+    // [FIX] Corrected Fuel Level Sensor ID (was 2101760, actual API value is
+    // 1050112)
+    private static final int SENSOR_TYPE_FUEL_LEVEL = 1050112; // Fuel Level (ISensor.SENSOR_TYPE_FUEL_LEVEL)
     private static final int SENSOR_TYPE_ENV_OUTSIDE_TEMPERATURE = 2100992; // Outside Temp
 
-    private String mCachedFuelText = "--L";
+    private String mCachedFuelText = "⛽ --L";
     private String mCachedRangeText = "--km";
     private String mCachedTempOutText = "--°C";
     private String mCachedTempInText = "--°C";
 
     private void loadSensorCache() {
-        mCachedFuelText = ConfigManager.getInstance().getString("last_fuel_text", "--L");
+        mCachedFuelText = ConfigManager.getInstance().getString("last_fuel_text", "⛽ --L");
         mCachedRangeText = ConfigManager.getInstance().getString("last_range_text", "--km");
         mCachedTempOutText = ConfigManager.getInstance().getString("last_temp_out_text", "--°C");
         mCachedTempInText = ConfigManager.getInstance().getString("last_temp_in_text", "--°C");
@@ -2035,6 +2159,21 @@ public class ClusterHudManager
         saveSensorCache("last_fuel_text", text);
         if (mPresentation != null) {
             updateComponentText("fuel", text);
+        }
+    }
+
+    /**
+     * [NEW] Update fuel with float value (in liters).
+     * This properly updates both mCachedFuelLiters and mCachedFuelText.
+     */
+    public void updateFuelWithValue(float liters) {
+        mCachedFuelLiters = liters;
+        String text = String.format("⛽ %.0fL", liters);
+        mCachedFuelText = text;
+        saveSensorCache("last_fuel_text", text);
+        if (mPresentation != null) {
+            updateComponentText("fuel", text);
+            updateFuelRangeComponent();
         }
     }
 
@@ -2087,16 +2226,19 @@ public class ClusterHudManager
      * [Self-Init] 从 ConfigManager 加载所有保存的状态
      * 消除 MainActivity 和 BootReceiver 之间的初始化冲突
      */
+
     private void loadSavedState() {
         try {
             // 1. Load Enabled States
             mIsClusterEnabled = ConfigManager.getInstance().getBoolean("switch_cluster", true);
             mIsHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", true);
-            DebugLogger.i(TAG, "Self-Init: Loaded State -> Cluster=" + mIsClusterEnabled + ", HUD=" + mIsHudEnabled);
+            mIsFloatingEnabled = ConfigManager.getInstance().getBoolean("floating_traffic_light_enabled", false);
+            DebugLogger.i(TAG, "Self-Init: Loaded State -> Cluster=" + mIsClusterEnabled + ", HUD=" + mIsHudEnabled
+                    + ", Floating=" + mIsFloatingEnabled);
 
             // 2. Load Theme
             mPendingTheme = ConfigManager.getInstance().getInt("cluster_theme_builtin",
-                    ClusterHudPresentation.THEME_DEFAULT);
+                    Presentation.THEME_DEFAULT);
             DebugLogger.i(TAG, "Self-Init: Loaded Theme -> " + mPendingTheme);
 
             // 3. Load UI Layouts (HUD & Cluster)
@@ -2113,6 +2255,21 @@ public class ClusterHudManager
             // If enabled, we prepare to show. DisplayListener will trigger actual show.
         } catch (Exception e) {
             DebugLogger.e(TAG, "Error in loadSavedState", e);
+        }
+    }
+
+    /**
+     * [Issue 3 / 8 Fix] Update Navigation State purely based on Data Input.
+     * Called by NaviInfoController when valid data arrives or times out.
+     */
+    public void updateNaviInputState(boolean isNavigating) {
+        if (mPresentation != null) {
+            // Ensure we are on main thread
+            mMainHandler.post(() -> {
+                if (mPresentation != null) {
+                    mPresentation.setNavigating(isNavigating);
+                }
+            });
         }
     }
 }

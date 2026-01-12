@@ -56,6 +56,7 @@ import android.widget.FrameLayout;
 public class MainActivity extends AppCompatActivity {
 
     private static final int PERMISSION_REQUEST_CODE = 100;
+    private boolean mIsPositioningActive = false; // Track traffic light positioning state
 
     private androidx.appcompat.app.AlertDialog permissionDialog;
     private View mPermissionDialogView;
@@ -77,7 +78,7 @@ public class MainActivity extends AppCompatActivity {
             });
 
     // Navigation Views
-    private View mLayoutTheme;
+    private View mLayoutGeneral;
     private View mLayoutButtons;
     private View mLayoutAutoStart;
     private ScrollView mLayoutADB; // ADB is not lazy
@@ -87,7 +88,7 @@ public class MainActivity extends AppCompatActivity {
     private View mLayoutCluster;
     private View mLayoutHud;
 
-    private boolean mIsThemeInit = false;
+    private boolean mIsGeneralInit = false;
     private boolean mIsButtonsInit = false;
     private boolean mIsAutoStartInit = false;
     private boolean mIsLightsInit = false;
@@ -164,6 +165,42 @@ public class MainActivity extends AppCompatActivity {
         // [FIX] Delayed UI - Do NOT show immediately on Create
         // cm.ensureUiVisible();
         DebugLogger.i("MainActivity", "UI Initialization deferred. Waiting for ACTION_ACTIVATE_CLUSTER_HUD...");
+
+        if (BuildConfig.DEBUG) {
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.dialog_debug_title))
+                    .setMessage(getString(R.string.dialog_debug_message))
+                    .setCancelable(true)
+                    .show();
+        } else {
+            // Release Version: Show only on first run after install/update
+            try {
+                android.content.pm.PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+                long currentVersionCode = 0;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    currentVersionCode = pInfo.getLongVersionCode();
+                } else {
+                    currentVersionCode = pInfo.versionCode;
+                }
+
+                android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
+                long lastSeenVersion = prefs.getLong("last_seen_version_code", -1);
+
+                if (currentVersionCode != lastSeenVersion) {
+                    long finalVerCode = currentVersionCode;
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle(getString(R.string.dialog_release_title))
+                            .setMessage(getString(R.string.dialog_release_message))
+                            .setCancelable(true)
+                            .setOnDismissListener(dialog -> {
+                                prefs.edit().putLong("last_seen_version_code", finalVerCode).apply();
+                            })
+                            .show();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     @Override
@@ -195,7 +232,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Check Notification Permission
         if (!isNotificationListenerEnabled()) {
-            DebugLogger.toastAlways(this, "⚠️ 通知权限未开启，无法获取路名！请点击自动修复。");
+            DebugLogger.toastAlways(this, getString(R.string.toast_notification_permission_fix));
         }
     }
 
@@ -377,8 +414,8 @@ public class MainActivity extends AppCompatActivity {
             // Hide all potential views
             if (mLayoutADB != null)
                 mLayoutADB.setVisibility(View.GONE);
-            if (mLayoutTheme != null)
-                mLayoutTheme.setVisibility(View.GONE);
+            if (mLayoutGeneral != null)
+                mLayoutGeneral.setVisibility(View.GONE);
             if (mLayoutButtons != null)
                 mLayoutButtons.setVisibility(View.GONE);
             if (mLayoutAutoStart != null)
@@ -392,15 +429,17 @@ public class MainActivity extends AppCompatActivity {
                 mLayoutCluster.setVisibility(View.GONE);
             if (mLayoutHud != null)
                 mLayoutHud.setVisibility(View.GONE);
+            if (mLayoutLights != null)
+                mLayoutLights.setVisibility(View.GONE);
 
             // Show selected
             if (checkedId == R.id.rbADB) {
                 if (mLayoutADB != null)
                     mLayoutADB.setVisibility(View.VISIBLE);
-            } else if (checkedId == R.id.rbTheme) {
-                ensureThemeInflated();
-                if (mLayoutTheme != null)
-                    mLayoutTheme.setVisibility(View.VISIBLE);
+            } else if (checkedId == R.id.rbGeneral) {
+                ensureGeneralInflated();
+                if (mLayoutGeneral != null)
+                    mLayoutGeneral.setVisibility(View.VISIBLE);
             } else if (checkedId == R.id.rbButtons) {
                 ensureButtonsInflated();
                 if (mLayoutButtons != null)
@@ -414,6 +453,10 @@ public class MainActivity extends AppCompatActivity {
                 ensureBrightnessInflated();
                 if (mLayoutBrightness != null)
                     mLayoutBrightness.setVisibility(View.VISIBLE);
+            } else if (checkedId == R.id.rbLights) {
+                ensureLightsInflated();
+                if (mLayoutLights != null)
+                    mLayoutLights.setVisibility(View.VISIBLE);
             } else if (checkedId == R.id.rbSound) {
                 ensureSoundInflated();
                 if (mLayoutSound != null)
@@ -442,13 +485,13 @@ public class MainActivity extends AppCompatActivity {
         return currentView;
     }
 
-    private void ensureThemeInflated() {
-        if (mLayoutTheme == null) {
-            View v = tryInflate(mLayoutTheme, R.id.stubTheme, R.id.layoutContentTheme);
-            mLayoutTheme = v;
-            setupThemeSettings();
+    private void ensureGeneralInflated() {
+        if (mLayoutGeneral == null) {
+            View v = tryInflate(mLayoutGeneral, R.id.stubGeneral, R.id.layoutContentGeneral);
+            mLayoutGeneral = v;
+            setupGeneralSettings();
             setupForceAutoDayNight();
-            mIsThemeInit = true;
+            mIsGeneralInit = true;
             // Re-apply debug visibility for the newly inflated layout
             updateDebugViewsVisibility(DebugLogger.isDebugEnabled(this));
         }
@@ -519,6 +562,193 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void ensureLightsInflated() {
+        if (mLayoutLights == null) {
+            View v = tryInflate(mLayoutLights, R.id.stubLights, R.id.layoutContentLights);
+            mLayoutLights = v;
+            setupLights();
+            mIsLightsInit = true;
+        }
+    }
+
+    private void setupLights() {
+        if (mLayoutLights == null)
+            return;
+
+        // Welcome Lamp Always On Switch
+        android.widget.Switch swWelcomeLamp = mLayoutLights.findViewById(R.id.swWelcomeLampAlwaysOn);
+        if (swWelcomeLamp != null) {
+            boolean isEnabled = ConfigManager.getInstance().getBoolean("welcome_lamp_always_on", false);
+            swWelcomeLamp.setChecked(isEnabled);
+            swWelcomeLamp.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                ConfigManager.getInstance().setBoolean("welcome_lamp_always_on", isChecked);
+                // Notify Service
+                cn.navitool.managers.WelcomeLampManager.getInstance(this).setEnabled(isChecked);
+                if (isChecked) {
+                    DebugLogger.toast(this, getString(R.string.toast_welcome_lamp_enabled));
+                }
+            });
+        }
+    }
+
+    private void setupGeneralSettings() {
+        if (mLayoutGeneral == null)
+            return;
+
+        // Auto Theme Switch
+        SwitchMaterial switchAutoTheme = mLayoutGeneral.findViewById(R.id.switchAutoTheme);
+        if (switchAutoTheme != null) {
+            boolean isAutoTheme = ConfigManager.getInstance().getBoolean("auto_theme_switch", false);
+            switchAutoTheme.setChecked(isAutoTheme);
+            switchAutoTheme.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                ConfigManager.getInstance().setBoolean("auto_theme_switch", isChecked);
+                if (isChecked) {
+                    ThemeBrightnessManager.getInstance(this).checkDayNightStatus(true);
+                    DebugLogger.toast(this, getString(R.string.auto_theme_sync_enabled));
+                } else {
+                    DebugLogger.toast(this, getString(R.string.auto_theme_sync_disabled));
+                }
+            });
+        }
+
+        // Sunshade Control
+        setupSunshadeControl();
+
+        // 24/25 Model Light Sensor
+        SwitchMaterial switch2425 = mLayoutGeneral.findViewById(R.id.switch2425LightSensor);
+        if (switch2425 != null) {
+            switch2425.setChecked(ConfigManager.getInstance().getBoolean("enable_24_25_sensor", false));
+            switch2425.setEnabled(false); // Placeholder as per original
+        }
+
+        // Festival Wallpaper
+        android.widget.Spinner spinnerFestival = mLayoutGeneral.findViewById(R.id.spinnerFestivalWallpaper);
+        if (spinnerFestival != null) {
+            android.widget.ArrayAdapter<CharSequence> adapter = android.widget.ArrayAdapter.createFromResource(this,
+                    R.array.festival_options, android.R.layout.simple_spinner_item);
+            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spinnerFestival.setAdapter(adapter);
+            spinnerFestival.setEnabled(false); // Placeholder
+        }
+
+        // Floating Traffic Light
+        SwitchMaterial switchFloatingTraffic = mLayoutGeneral.findViewById(R.id.switchFloatingTrafficLight);
+        if (switchFloatingTraffic != null) {
+            boolean isEnabled = ConfigManager.getInstance().getBoolean("floating_traffic_light_enabled", false);
+            switchFloatingTraffic.setChecked(isEnabled);
+
+            Button btnPosition = mLayoutGeneral.findViewById(R.id.btnPositionTrafficLight);
+            if (btnPosition != null)
+                btnPosition.setVisibility(isEnabled ? View.VISIBLE : View.GONE);
+
+            switchFloatingTraffic.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                ConfigManager.getInstance().setBoolean("floating_traffic_light_enabled", isChecked);
+                if (isChecked) {
+                    NaviInfoController.getInstance(this).showTrafficLightFloating();
+                    if (btnPosition != null)
+                        btnPosition.setVisibility(View.VISIBLE);
+                } else {
+                    NaviInfoController.getInstance(this).hideTrafficLightFloating();
+                    if (btnPosition != null)
+                        btnPosition.setVisibility(View.GONE);
+                }
+            });
+
+            if (btnPosition != null) {
+                btnPosition.setOnClickListener(v -> {
+                    String currentText = btnPosition.getText().toString();
+                    if (getString(R.string.action_settings).equals(currentText)) {
+                        btnPosition.setText(getString(R.string.action_save));
+                        NaviInfoController.getInstance(this).enterPositionAdjustmentMode(); // Enter
+                        DebugLogger.toast(this, getString(R.string.toast_enter_position_mode));
+                    } else {
+                        btnPosition.setText(getString(R.string.action_settings));
+                        NaviInfoController.getInstance(this).enterPositionAdjustmentMode(); // Exit/Save
+                        DebugLogger.toast(this, getString(R.string.toast_position_saved));
+                    }
+                });
+            }
+        }
+
+        // Simulated Gear Switch
+        com.google.android.material.switchmaterial.SwitchMaterial switchSimGear = mLayoutGeneral
+                .findViewById(R.id.switchSimulatedGear);
+        if (switchSimGear != null) {
+            boolean isEnabled = ConfigManager.getInstance().getBoolean("simulated_gear_enabled", false);
+            switchSimGear.setChecked(isEnabled);
+            ClusterHudManager.getInstance(this).setSimulatedGearEnabled(isEnabled);
+
+            switchSimGear.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                ConfigManager.getInstance().setBoolean("simulated_gear_enabled", isChecked);
+                ClusterHudManager.getInstance(this).setSimulatedGearEnabled(isChecked);
+                if (isChecked) {
+                    DebugLogger.toast(this, getString(R.string.toast_simulated_gear_enabled));
+                }
+            });
+        }
+    }
+
+    private void setupSunshadeControl() {
+        if (mLayoutGeneral == null)
+            return;
+
+        // Auto Open Switch
+        SwitchMaterial swAutoOpen = mLayoutGeneral.findViewById(R.id.swSunshadeAutoOpen);
+        if (swAutoOpen != null) {
+            swAutoOpen.setChecked(cn.navitool.managers.SunshadeManager.getInstance(this).isAutoOpenEnabled());
+            swAutoOpen.setOnCheckedChangeListener((v, isChecked) -> {
+                cn.navitool.managers.SunshadeManager.getInstance(this).setAutoOpenEnabled(isChecked);
+                if (isChecked)
+                    DebugLogger.toast(this, getString(R.string.toast_sunshade_auto_enabled));
+            });
+        }
+
+        // Night Mode Only Button
+        com.google.android.material.button.MaterialButton btnNight = mLayoutGeneral
+                .findViewById(R.id.btnSunshadeNightOnly);
+        if (btnNight != null) {
+            boolean isNightOnly = cn.navitool.managers.SunshadeManager.getInstance(this).isNightModeOnly();
+            updateSunshadeNightIcon(btnNight, isNightOnly);
+            btnNight.setOnClickListener(v -> {
+                boolean newState = !cn.navitool.managers.SunshadeManager.getInstance(this).isNightModeOnly();
+                cn.navitool.managers.SunshadeManager.getInstance(this).setNightModeOnly(newState);
+                updateSunshadeNightIcon(btnNight, newState);
+            });
+        }
+
+        // Target Position Slider
+        SeekBar sbPos = mLayoutGeneral.findViewById(R.id.sbSunshadePosition);
+        if (sbPos != null) {
+            sbPos.setProgress(cn.navitool.managers.SunshadeManager.getInstance(this).getTargetPosition());
+            sbPos.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                    if (fromUser) {
+                        cn.navitool.managers.SunshadeManager.getInstance(MainActivity.this).setTargetPosition(progress);
+                    }
+                }
+
+                @Override
+                public void onStartTrackingTouch(SeekBar seekBar) {
+                }
+
+                @Override
+                public void onStopTrackingTouch(SeekBar seekBar) {
+                }
+            });
+        }
+    }
+
+    private void updateSunshadeNightIcon(com.google.android.material.button.MaterialButton btn, boolean isNightOnly) {
+        if (isNightOnly) {
+            btn.setIconResource(R.drawable.ic_check);
+            btn.setIconTint(android.content.res.ColorStateList.valueOf(android.graphics.Color.GREEN));
+        } else {
+            btn.setIconResource(R.drawable.ic_close);
+            btn.setIconTint(android.content.res.ColorStateList.valueOf(android.graphics.Color.RED));
+        }
+    }
+
     private void initUI() {
         // --- Header / Debug ---
         boolean isDebug = DebugLogger.isDebugEnabled(this);
@@ -539,7 +769,7 @@ public class MainActivity extends AppCompatActivity {
         // Ensure Cluster Service starts even if tab is not visited
         // Use new theme system (THEME_DEFAULT or THEME_AUDI_RS)
         int savedTheme = ConfigManager.getInstance().getInt("cluster_theme_builtin",
-                ClusterHudPresentation.THEME_DEFAULT);
+                Presentation.THEME_DEFAULT);
         ClusterHudManager.getInstance(this).setClusterTheme(savedTheme);
         // Note: Other tabs setup is deferred to ensureXInflated methods
     }
@@ -583,7 +813,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Load saved Audi RS theme state
         int savedTheme = ConfigManager.getInstance().getInt("cluster_theme_builtin",
-                ClusterHudPresentation.THEME_DEFAULT);
+                Presentation.THEME_DEFAULT);
         updateAudiRsThemeCheckmarks(savedTheme, checkDefault, checkAudiRs, themeDefault, themeAudiRs);
 
         // Apply saved theme on startup
@@ -593,9 +823,9 @@ public class MainActivity extends AppCompatActivity {
         if (themeAudiRs != null) {
             themeAudiRs.setOnClickListener(v -> {
                 DebugLogger.action("MainActivity", "切换仪表主题: 奥迪RS");
-                ClusterHudManager.getInstance(this).setClusterTheme(ClusterHudPresentation.THEME_AUDI_RS);
-                ConfigManager.getInstance().setInt("cluster_theme_builtin", ClusterHudPresentation.THEME_AUDI_RS);
-                updateAudiRsThemeCheckmarks(ClusterHudPresentation.THEME_AUDI_RS, checkDefault, checkAudiRs,
+                ClusterHudManager.getInstance(this).setClusterTheme(Presentation.THEME_AUDI_RS);
+                ConfigManager.getInstance().setInt("cluster_theme_builtin", Presentation.THEME_AUDI_RS);
+                updateAudiRsThemeCheckmarks(Presentation.THEME_AUDI_RS, checkDefault, checkAudiRs,
                         themeDefault, themeAudiRs);
             });
         }
@@ -605,9 +835,9 @@ public class MainActivity extends AppCompatActivity {
             final View.OnClickListener existingListener = null; // May need to chain
             themeDefault.setOnClickListener(v -> {
                 DebugLogger.action("MainActivity", "切换仪表主题: 默认");
-                ClusterHudManager.getInstance(this).setClusterTheme(ClusterHudPresentation.THEME_DEFAULT);
-                ConfigManager.getInstance().setInt("cluster_theme_builtin", ClusterHudPresentation.THEME_DEFAULT);
-                updateAudiRsThemeCheckmarks(ClusterHudPresentation.THEME_DEFAULT, checkDefault, checkAudiRs,
+                ClusterHudManager.getInstance(this).setClusterTheme(Presentation.THEME_DEFAULT);
+                ConfigManager.getInstance().setInt("cluster_theme_builtin", Presentation.THEME_DEFAULT);
+                updateAudiRsThemeCheckmarks(Presentation.THEME_DEFAULT, checkDefault, checkAudiRs,
                         themeDefault, themeAudiRs);
             });
         }
@@ -615,7 +845,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void updateAudiRsThemeCheckmarks(int selectedTheme, View checkDefault, View checkAudiRs,
             View themeDefault, View themeAudiRs) {
-        boolean isDefault = (selectedTheme == ClusterHudPresentation.THEME_DEFAULT);
+        boolean isDefault = (selectedTheme == Presentation.THEME_DEFAULT);
         if (checkDefault != null)
             checkDefault.setVisibility(isDefault ? View.VISIBLE : View.GONE);
         if (checkAudiRs != null)
@@ -1092,11 +1322,46 @@ public class MainActivity extends AppCompatActivity {
             // Real HUD Gear = 48px -> Preview = 96px
             // Real HUD Other = 24px -> Preview = 48px
             if ("gear".equals(type)) {
-                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 96);
+                // [Sync Issue 4] Gear: 36px * 2 = 72px
+                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 72);
+                // [Sync Issue 4] Fixed Width 80px * 2 = 160px, Center
+                if (view.getLayoutParams() == null) {
+                    view.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
+                            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
+                }
+                view.getLayoutParams().width = 160;
+                tv.setGravity(android.view.Gravity.CENTER);
+            } else if ("temp_out".equals(type) || "temp_in".equals(type)) {
+                // [Sync Issue 10] Temp: Standard Font 48px
+                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 48);
+                // [Sync Issue 10] Fixed Width 90px * 2 = 180px, Right Align
+                if (view.getLayoutParams() == null) {
+                    view.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
+                            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
+                }
+                view.getLayoutParams().width = 180;
+                tv.setGravity(android.view.Gravity.END);
             } else {
                 tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 48);
             }
             tv.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
+
+            // [Sync Issue 10] Apply Dynamic Negative Margin to Preview for WYSIWYG
+            // Logic: -20% of Text Size
+            float currentTextSize = tv.getTextSize();
+            int margin = (int) (-currentTextSize * 0.2f);
+
+            if (view.getLayoutParams() == null) {
+                view.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
+                        android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                        android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
+            }
+            android.widget.FrameLayout.LayoutParams tvParams = (android.widget.FrameLayout.LayoutParams) view
+                    .getLayoutParams();
+            tvParams.topMargin = margin;
+            tvParams.bottomMargin = margin;
 
             if ("song".equals(type) || "test_media".equals(type)) {
                 // Preview width = 600px (HUD 300px * 2)
@@ -1169,10 +1434,20 @@ public class MainActivity extends AppCompatActivity {
                             newX = 0;
                         if (newX + viewWidth > parentWidth)
                             newX = parentWidth - viewWidth;
-                        if (newY < 0)
-                            newY = 0;
-                        if (newY + viewHeight > parentHeight)
-                            newY = parentHeight - viewHeight;
+                        // [FIX] Consistently apply negative margin logic to Boundary Check
+                        // Allow dragging "out of bounds" by the same amount as the visual negative
+                        // margin
+                        float verticalOffset = 0;
+                        if (view instanceof TextView) {
+                            float scaledTextSize = ((TextView) view).getTextSize() * view.getScaleY();
+                            verticalOffset = scaledTextSize * 0.2f;
+                        }
+
+                        if (newY < -verticalOffset)
+                            newY = -verticalOffset;
+                        // Bottom Bound: Parent Height + Offset (so bottom of view can go below parent)
+                        if (newY + viewHeight > parentHeight + verticalOffset)
+                            newY = parentHeight - viewHeight + verticalOffset;
 
                         // [REMOVED] Collision Detection - Now allowing overlapping
                         // if (wouldOverlap(view, newX, newY, viewWidth, viewHeight)) {
@@ -1350,26 +1625,30 @@ public class MainActivity extends AppCompatActivity {
         lpMedia.weight = 1;
         colMedia.setLayoutParams(lpMedia);
 
-        // Add Headers
+        // Add Headers (Center-aligned to match buttons)
         android.widget.TextView h1 = new android.widget.TextView(this);
         h1.setText("基本信息");
         h1.setTypeface(null, android.graphics.Typeface.BOLD);
         h1.setPadding(0, 0, 0, 16);
+        h1.setGravity(android.view.Gravity.CENTER);
         colBasic.addView(h1);
         android.widget.TextView h2 = new android.widget.TextView(this);
         h2.setText("行驶数据");
         h2.setTypeface(null, android.graphics.Typeface.BOLD);
         h2.setPadding(0, 0, 0, 16);
+        h2.setGravity(android.view.Gravity.CENTER);
         colDrive.addView(h2);
         android.widget.TextView h4 = new android.widget.TextView(this);
         h4.setText("导航信息");
         h4.setTypeface(null, android.graphics.Typeface.BOLD);
         h4.setPadding(0, 0, 0, 16);
+        h4.setGravity(android.view.Gravity.CENTER);
         colNavi.addView(h4);
         android.widget.TextView h3 = new android.widget.TextView(this);
         h3.setText("媒体信息");
         h3.setTypeface(null, android.graphics.Typeface.BOLD);
         h3.setPadding(0, 0, 0, 16);
+        h3.setGravity(android.view.Gravity.CENTER);
         colMedia.addView(h3);
 
         root.addView(colBasic);
@@ -1396,7 +1675,7 @@ public class MainActivity extends AppCompatActivity {
                 if ("time".equals(type))
                     addHudTimeComponent();
                 else if ("fuel".equals(type))
-                    createAndAddHudComponent("fuel", "油量: --L", 0, 0);
+                    createAndAddHudComponent("fuel", "⛽ --L", 0, 0);
                 else if ("temp_in".equals(type))
                     createAndAddHudComponent("temp_in", "--°C", 0, 0);
                 else if ("temp_out".equals(type))
@@ -1404,7 +1683,7 @@ public class MainActivity extends AppCompatActivity {
                 else if ("range".equals(type))
                     createAndAddHudComponent("range", "--km", 0, 0);
                 else if ("fuel_range".equals(type))
-                    createAndAddHudComponent("fuel_range", "--L|--km", 0, 0);
+                    createAndAddHudComponent("fuel_range", "⛽ --L|--km", 0, 0);
                 else if ("gear".equals(type))
                     createAndAddHudComponent("gear", "D", 0, 0);
                 else if ("turn_signal".equals(type))
@@ -1999,18 +2278,6 @@ public class MainActivity extends AppCompatActivity {
 
     // --- Theme Tab Logic ---
 
-    private void setupThemeSettings() {
-        android.content.SharedPreferences prefs = getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
-        SwitchMaterial switchAutoTheme = findViewById(R.id.switchAutoTheme);
-        switchAutoTheme.setChecked(prefs.getBoolean("auto_theme_sync", true));
-        switchAutoTheme.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            prefs.edit().putBoolean("auto_theme_sync", isChecked).apply();
-            DebugLogger.toast(this,
-                    getString(isChecked ? R.string.auto_theme_sync_enabled : R.string.auto_theme_sync_disabled));
-        });
-
-    }
-
     private void setupSoundSwitches() {
         // Master Switch
         SwitchMaterial switchMaster = findViewById(R.id.switchSoundMaster);
@@ -2107,22 +2374,66 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showSoundFileSelector(String fileKey, TextView tvFile) {
+        // Check and request storage permission at runtime
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            boolean hasRead = checkSelfPermission(
+                    Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+            boolean hasWrite = checkSelfPermission(
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+            if (!hasRead || !hasWrite) {
+                requestPermissions(new String[] {
+                        Manifest.permission.READ_EXTERNAL_STORAGE,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                }, 200);
+                android.widget.Toast.makeText(this, "权限申请中，同意后请重启APP生效", android.widget.Toast.LENGTH_LONG).show();
+                return;
+            }
+        }
+
+        // Standard path logic
         java.io.File soundDir = new java.io.File(Environment.getExternalStorageDirectory(), "NaviTool/Sound");
+
+        DebugLogger.d("SoundSelector", "Path: " + soundDir.getAbsolutePath());
+
+        // Initial check
         if (!soundDir.exists() || !soundDir.isDirectory()) {
             new android.app.AlertDialog.Builder(this)
                     .setTitle(R.string.dialog_title_select_sound)
-                    .setMessage(R.string.dialog_no_files_message)
+                    .setMessage(getString(R.string.dialog_no_files_message) + "\n\n路径: " + soundDir.getAbsolutePath())
                     .setPositiveButton(android.R.string.ok, null)
                     .show();
             return;
         }
 
+        // Try to list files
         java.io.File[] files = soundDir
                 .listFiles((dir, name) -> name.toLowerCase().endsWith(".mp3") || name.toLowerCase().endsWith(".wav"));
+
+        // Debug
+        DebugLogger.d("SoundSelector", "canRead: " + soundDir.canRead());
+        DebugLogger.d("SoundSelector", "listFiles: " + (files != null ? files.length : "null"));
+
         if (files == null || files.length == 0) {
+            String msg = getString(R.string.dialog_no_files_message) + "\n\n路径: " + soundDir.getAbsolutePath();
+
+            if (!soundDir.canRead() || files == null) {
+                msg += "\n\n【权限错误】无法读取文件列表。\n请尝试 >>彻底重启APP<< (关闭后台进程) 以刷新权限组。";
+                msg += "\n(可读: " + soundDir.canRead() + ")";
+            }
+
+            // Also list ALL files in directory for debugging if it was just empty filter
+            if (files != null && files.length == 0) {
+                java.io.File[] allFiles = soundDir.listFiles();
+                if (allFiles != null && allFiles.length > 0) {
+                    msg += "\n\n检测到 " + allFiles.length + " 个非音频文件。";
+                } else {
+                    msg += "\n\n目录为空。";
+                }
+            }
+
             new android.app.AlertDialog.Builder(this)
                     .setTitle(R.string.dialog_title_select_sound)
-                    .setMessage(R.string.dialog_no_files_message)
+                    .setMessage(msg)
                     .setPositiveButton(android.R.string.ok, null)
                     .show();
             return;

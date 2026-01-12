@@ -79,10 +79,10 @@
                     android:checked="true"/>
 
                 <RadioButton
-                    android:id="@+id/rbTheme"
+                    android:id="@+id/rbGeneral"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/tab_theme"
+                    android:text="@string/tab_general"
                     android:textSize="18sp"
                     android:gravity="center_vertical"
                     android:padding="16dp"
@@ -142,7 +142,7 @@
                     android:id="@+id/rbCluster"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="仪表"
+                    android:text="@string/tab_cluster"
                     android:textSize="18sp"
                     android:gravity="center_vertical"
                     android:padding="16dp"
@@ -155,7 +155,7 @@
                     android:id="@+id/rbHud"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="HUD"
+                    android:text="@string/tab_hud"
                     android:textSize="18sp"
                     android:gravity="center_vertical"
                     android:padding="16dp"
@@ -185,11 +185,11 @@
             android:layout_weight="9.2"
             android:padding="24dp">
 
-            <!-- 1. Theme Settings Layout (ViewStub) -->
+            <!-- 1. General Settings Layout (ViewStub) -->
             <ViewStub
-                android:id="@+id/stubTheme"
-                android:inflatedId="@+id/layoutContentTheme"
-                android:layout="@layout/layout_tab_theme"
+                android:id="@+id/stubGeneral"
+                android:inflatedId="@+id/layoutContentGeneral"
+                android:layout="@layout/layout_tab_general"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
@@ -352,20 +352,20 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="System Info"
+                            android:text="@string/header_system_info"
                             android:textStyle="bold"
                             android:layout_marginBottom="8dp"/>
                         <TextView
                             android:id="@+id/tvBootTime"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Boot Time: --"
+                            android:text="@string/label_boot_time"
                             android:textSize="14sp"/>
                         <TextView
                             android:id="@+id/tvPsdStatus"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="PSD Status: --"
+                            android:text="@string/label_psd_status"
                             android:textSize="14sp"
                             android:layout_marginTop="4dp"/>
                     </LinearLayout>
@@ -380,7 +380,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="16dp"
-                        android:text="模拟发动机启动"
+                        android:text="@string/btn_simulate_engine_start"
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                         app:icon="@drawable/ic_check"
                         app:iconGravity="textStart"/>

@@ -60,6 +60,8 @@ public class AudiRsThemeController {
 
     // Day/Night State
     private boolean mIsDayMode = true;
+    // Navigation State
+    private boolean mIsNavigating = false;
 
     // 闪烁动画
     private Handler mHandler = new Handler(Looper.getMainLooper());
@@ -468,11 +470,27 @@ public class AudiRsThemeController {
         }
     }
 
+    public void setNavigating(boolean isNavigating) {
+        if (mIsNavigating != isNavigating) {
+            mIsNavigating = isNavigating;
+            DebugLogger.d(TAG, "Navigation State Changed: " + isNavigating);
+            updateDayMode(); // Refresh background
+        }
+    }
+
     private void updateDayMode() {
         if (mBackground != null) {
-            DebugLogger.d(TAG, "Updating Background Image to: " + (mIsDayMode ? "DAY" : "NIGHT"));
-            // Day: audi_rs_bg_day, Night: audi_rs_bg_night
-            mBackground.setImageResource(mIsDayMode ? R.drawable.audi_rs_bg_day : R.drawable.audi_rs_bg_night);
+            int resId;
+            if (mIsNavigating) {
+                // Navigating: Use Standard Backgrounds
+                resId = mIsDayMode ? R.drawable.audi_rs_bg_day : R.drawable.audi_rs_bg_night;
+                DebugLogger.d(TAG, "Background: Standard (Navi Active) - " + (mIsDayMode ? "DAY" : "NIGHT"));
+            } else {
+                // Idle: Use Idle Backgrounds
+                resId = mIsDayMode ? R.drawable.audi_rs_bg_day_idle : R.drawable.audi_rs_bg_night_idle;
+                DebugLogger.d(TAG, "Background: Idle (Navi Inactive) - " + (mIsDayMode ? "DAY" : "NIGHT"));
+            }
+            mBackground.setImageResource(resId);
         } else {
             DebugLogger.w(TAG, "mBackground is null during updateDayMode");
         }

@@ -36,9 +36,25 @@ public class AdbShell {
     }
 
     private AtomicBoolean isConnecting = new AtomicBoolean(false);
+    private AtomicBoolean isAborted = new AtomicBoolean(false); // [FIX] Abort flag for Android 11
 
     public void connect() {
-        if (isConnected.get() || isConnecting.get())
+        // [FIX] Feature Flag check first
+        if (!ConfigManager.getInstance().getBoolean("is_adb_enabled", true)) {
+            DebugLogger.i(TAG, "ADB Feature disabled by user config");
+            return;
+        }
+
+        // [FIX] Android 11+ Check: Disable ADB to prevent crashes
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            DebugLogger.w(TAG, "ADB functionality disabled on Android 11+ (API 30+) to prevent crashes.");
+            // Optionally update UI status if needed, or just silently return
+            sendBroadcast("不可用(Android 11+)");
+            isAborted.set(true);
+            return;
+        }
+
+        if (isConnected.get() || isConnecting.get() || isAborted.get())
             return;
 
         isConnecting.set(true);
@@ -61,13 +77,22 @@ public class AdbShell {
                 connection.connect();
 
                 isConnected.set(true);
+                isAborted.set(false); // Reset abort on success
                 DebugLogger.i(TAG, "ADB Connected successfully");
                 sendBroadcast("已连接");
 
             } catch (Throwable e) {
-                DebugLogger.e(TAG, "ADB Connection failed", e);
+                // [FIX] Specific handling for Connection Refused (Android 11 Port Closed)
+                if (e instanceof java.net.ConnectException && e.getMessage() != null
+                        && e.getMessage().contains("ECONNREFUSED")) {
+                    DebugLogger.e(TAG, "ADB Connection Refused (Port 5555 closed). Aborting further attempts.");
+                    isAborted.set(true);
+                    sendBroadcast("连接被拒绝(端口关闭)");
+                } else {
+                    DebugLogger.e(TAG, "ADB Connection failed", e);
+                    sendBroadcast("连接失败: " + e.getMessage());
+                }
                 isConnected.set(false);
-                sendBroadcast("连接失败: " + e.getMessage());
             } finally {
                 isConnecting.set(false);
             }
@@ -101,6 +126,11 @@ public class AdbShell {
     }
 
     public void exec(String command) {
+        if (isAborted.get()) {
+            DebugLogger.d(TAG, "ADB Aborted, ignoring command: " + command);
+            return;
+        }
+
         if (!isConnected.get() || connection == null) {
             DebugLogger.w(TAG, "Not connected, trying to connect...");
             connect();

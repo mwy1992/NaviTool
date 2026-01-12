@@ -187,12 +187,9 @@ public class SoundPromptManager {
 
                     int focusType;
                     if (mIsDirectPlaybackMode) {
-                        // Direct Mode: Try Exclusive if available to force pause
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
-                            focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE;
-                        } else {
-                            focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT;
-                        }
+                        // Direct Mode: Use TRANSIENT (not EXCLUSIVE) to allow music to auto-resume
+                        // EXCLUSIVE causes some players (QQ Music) to not auto-resume
+                        focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT;
                     } else {
                         // Mix Mode: Duck
                         focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK;
@@ -225,11 +222,8 @@ public class SoundPromptManager {
                 } else {
                     int focusType;
                     if (mIsDirectPlaybackMode) {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
-                            focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE;
-                        } else {
-                            focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT;
-                        }
+                        // Direct Mode: Use TRANSIENT to allow music to auto-resume
+                        focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT;
                     } else {
                         focusType = android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK;
                     }

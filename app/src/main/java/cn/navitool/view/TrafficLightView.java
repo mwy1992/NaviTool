@@ -25,6 +25,7 @@ public class TrafficLightView extends View {
     private Paint mPaintLight;
     private Paint mPaintText;
     private Paint mPaintOutline;
+    private Paint mPaintBackground;
     private Drawable mArrowDrawable;
 
     // Data
@@ -104,6 +105,11 @@ public class TrafficLightView extends View {
         // Light circle paint
         mPaintLight = new Paint(Paint.ANTI_ALIAS_FLAG);
         mPaintLight.setStyle(Paint.Style.FILL);
+
+        // Background paint
+        mPaintBackground = new Paint(Paint.ANTI_ALIAS_FLAG);
+        mPaintBackground.setColor(0x99666666); // Medium Light Gray, semi-transparent
+        mPaintBackground.setStyle(Paint.Style.FILL);
 
         // Text paint - fixed px size
         mPaintText = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -228,22 +234,14 @@ public class TrafficLightView extends View {
 
         Path capsulePath = new Path();
 
-        // Left semicircle
-        RectF leftArc = new RectF(offset, offset, r * 2 + offset, h + offset);
-        capsulePath.addArc(leftArc, 90, 180);
+        // Create a single closed RoundRect path for proper filling
+        RectF rect = new RectF(offset, offset, width - offset, height - offset);
+        capsulePath.addRoundRect(rect, r, r, Path.Direction.CW);
 
-        // Top line
-        capsulePath.moveTo(r + offset, offset);
-        capsulePath.lineTo(width - r - offset, offset);
+        // Draw Background Fill
+        canvas.drawPath(capsulePath, mPaintBackground);
 
-        // Right semicircle
-        RectF rightArc = new RectF(width - r * 2 - offset, offset, width - offset, h + offset);
-        capsulePath.addArc(rightArc, -90, 180);
-
-        // Bottom line
-        capsulePath.moveTo(width - r - offset, h + offset);
-        capsulePath.lineTo(r + offset, h + offset);
-
+        // Draw Outline
         canvas.drawPath(capsulePath, mPaintOutline);
     }
 

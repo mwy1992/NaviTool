@@ -143,4 +143,57 @@
         <item>国庆节</item>
         <item>圣诞节</item>
     </string-array>
+
+    <string name="sunshade_auto_open">自动开启遮阳帘</string>
+    <string name="sunshade_sensor_open">根据光线传感器开启</string>
+    <string name="floating_traffic_light_title">悬浮红绿灯</string>
+    <string name="action_settings">设置</string>
+    <string name="action_save">保存</string>
+    <string name="action_switch_style">切换样式</string>
+    <string name="simulated_gear_title">显示模拟计算档位</string>
+    <string name="toast_enter_position_mode">进入位置调整模式</string>
+    <string name="toast_position_saved">已保存位置</string>
+    <string name="toast_simulated_gear_enabled">模拟档位已开启 (需行驶中)</string>
+
+    <!-- Refactored Strings -->
+    <string name="tab_general">通用</string>
+    <string name="tab_cluster">仪表</string>
+    <string name="tab_hud">HUD</string>
+    <string name="header_system_info">系统信息</string>
+    <string name="label_boot_time">启动时间: %1$s</string>
+    <string name="label_psd_status">PSD 状态: %1$s</string>
+    <string name="btn_simulate_engine_start">模拟发动机启动</string>
+
+    <string name="header_hud_control">HUD</string>
+    <string name="action_ar_mode">AR模式</string>
+    <string name="action_add">添加</string>
+    <string name="action_modify">修改</string>
+    <string name="action_delete">删除</string>
+    <string name="action_reset">重置</string>
+    <string name="action_snow_mode">雪地</string>
+
+    <string name="header_cluster_enable">仪表主题</string>
+
+    <string name="action_test_speed">测试 0-270 km/h</string>
+    <string name="action_test_rpm">测试 0-8000 RPM</string>
+    <string name="action_test_gear">换档 PRND</string>
+    <string name="action_import_themes">导入主题 (SD卡/NaviTool/Themes)</string>
+    <string name="theme_style_1_default">样式 1 (默认)</string>
+    <string name="theme_audi_rs">奥迪RS主题</string>
+
+    <string name="label_welcome_lamp_always_on">迎宾灯常开</string>
+    <string name="desc_welcome_lamp_always_on">保持迎宾灯开关处于开启状态</string>
+
+    <string name="cluster_label_default">仪表主题</string>
+
+    <!-- Dialogs and Toasts -->
+    <string name="dialog_debug_title">Debug 版本提示</string>
+    <string name="dialog_debug_message">该版本为DEBUG版本，如遇到任何软件运行的问题，可在/sdcard/NaviTool文件夹中找到navitool.debug.txt和navitool.logcat.txt，反馈问题时可提供这两个文件以帮助定位问题原因。也可附带详细问题描述或视频。</string>
+    <string name="dialog_release_title">重要提示</string>
+    <string name="dialog_release_message">本软件正在开发中，存在多种不确定的BUG，如遇到问题可安装DEBUG版本，根据相应提示提供反馈日志。</string>
+    <string name="toast_notification_permission_fix">⚠️ 通知权限未开启，无法获取路名！请点击自动修复。</string>
+    <string name="toast_welcome_lamp_enabled">迎宾灯常开已启用</string>
+    <string name="toast_sunshade_auto_enabled">遮阳帘自动开启已启用</string>
+    <string name="toast_floating_position_instruction">悬浮红绿灯定位模式开启，请拖动位置</string>
+    <string name="toast_position_saved_simple">位置已保存</string>
 </resources>

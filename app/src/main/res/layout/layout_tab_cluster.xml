@@ -26,16 +26,11 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Enable Cluster Projection"
+                    android:text="@string/header_cluster_enable"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary"/>
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Display 2 (1920x720) + NaviMode 3"
-                    android:textSize="12sp"
-                    android:textColor="?android:attr/textColorSecondary"/>
+
             </LinearLayout>
 
             <com.google.android.material.switchmaterial.SwitchMaterial
@@ -54,21 +49,21 @@
                 android:id="@+id/btnClusterTestSpeed"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Test 0-270-0 km/h"/>
+                android:text="@string/action_test_speed"/>
 
             <Button
                 android:id="@+id/btnClusterTestRpm"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="10dp"
-                android:text="Test 0-8000 RPM"/>
+                android:text="@string/action_test_rpm"/>
             
             <Button
                 android:id="@+id/btnClusterTestGear"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="10dp"
-                android:text="换档 PRND"/>
+                android:text="@string/action_test_gear"/>
         </LinearLayout>
 
         <!-- 2. Body: Theme Selector -->
@@ -76,7 +71,7 @@
             android:id="@+id/btnImportTheme"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Import Themes (From SD/NaviTool/Themes)"
+            android:text="@string/action_import_themes"
             android:layout_marginTop="8dp"/>
 
         <!-- 2. Body: Theme Selector -->
@@ -105,7 +100,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Style 1 (Default)"
+                        android:text="@string/theme_style_1_default"
                         android:layout_gravity="center"
                         android:textColor="#CCCCCC"/>
 
@@ -140,7 +135,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="奥迪RS"
+                        android:text="@string/theme_audi_rs"
                         android:layout_gravity="center"
                         android:textColor="#FF0000"
                         android:textStyle="bold"

@@ -21,7 +21,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="HUD Control"
+                android:text="@string/header_hud_control"
                 android:textSize="20sp"
                 android:textStyle="bold"
                 android:textColor="?android:attr/textColorPrimary"/>
@@ -48,7 +48,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="8dp"
-                        android:text="AR模式"
+                        android:text="@string/action_ar_mode"
                         android:textSize="12sp"/>
                         
                     <Button
@@ -56,7 +56,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="8dp"
-                        android:text="添加"
+                        android:text="@string/action_add"
                         android:textSize="12sp"/>
                         
                     <Button
@@ -64,7 +64,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="8dp"
-                        android:text="修改"
+                        android:text="@string/action_modify"
                         android:textSize="12sp"/>
                         
                     <Button
@@ -72,7 +72,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="8dp"
-                        android:text="删除"
+                        android:text="@string/action_delete"
                         android:textSize="12sp"/>
                         
                     <Button
@@ -80,7 +80,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="8dp"
-                        android:text="保存"
+                        android:text="@string/action_save"
                         android:textSize="12sp"/>
                         
                     <Button
@@ -88,14 +88,14 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginEnd="8dp"
-                        android:text="重置"
+                        android:text="@string/action_reset"
                         android:textSize="12sp"/>
                         
                     <Button
                         android:id="@+id/btnHudSnowMode"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="雪地"
+                        android:text="@string/action_snow_mode"
                         android:textSize="12sp"/>
                     
                 </LinearLayout>

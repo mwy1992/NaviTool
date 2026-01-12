@@ -40,6 +40,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
     // ... existing fields ...
     private ICarFunction iCarFunction;
+
+    public ICarFunction getCarFunction() {
+        return iCarFunction;
+    }
+
     private ISensor iSensor;
     // ...
 
@@ -75,6 +80,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         } else if ("psd_always_on_method2_enabled".equals(key)) {
             boolean enabled = sharedPreferences.getBoolean(key, false);
             cn.navitool.managers.PsdManager.getInstance(KeepAliveAccessibilityService.this).setEnabledMethod2(enabled);
+        } else if ("welcome_lamp_always_on".equals(key)) {
+            boolean enabled = sharedPreferences.getBoolean(key, false);
+            cn.navitool.managers.WelcomeLampManager.getInstance(KeepAliveAccessibilityService.this).setEnabled(enabled);
         }
     };
 
@@ -88,6 +96,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         DebugLogger.createDirectories();
 
         cn.navitool.managers.PsdManager.getInstance(this).init();
+        // Initialize Welcome Lamp Manager
+        boolean welcomeLampEnabled = ConfigManager.getInstance().getBoolean("welcome_lamp_always_on", false);
+        if (welcomeLampEnabled) {
+            cn.navitool.managers.WelcomeLampManager.getInstance(this).setEnabled(true);
+        }
         initCar();
     }
 
@@ -164,7 +177,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             CharSequence packageName = event.getPackageName();
-            if (packageName != null && AUTONAVI_PKG.equals(packageName.toString())) {
+            // [Issue 7 Fix] Detect Amap Foreground State for Floating Window hiding
+            boolean isAmap = (packageName != null && AUTONAVI_PKG.equals(packageName.toString()));
+            cn.navitool.ClusterHudManager.getInstance(this).setAmapForeground(isAmap);
+
+            if (isAmap) {
                 boolean wasDetected = mAmapDetected;
                 mAmapDetected = true;
 
@@ -243,6 +260,10 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
         // 3. Check Amap Services
         checkAndStartAmapServices();
+
+        // 4. Trigger Sunshade Auto Open
+        // Checks internal logic (Enabled? Night Mode?) before acting
+        cn.navitool.managers.SunshadeManager.getInstance(this).executeAutoOpen();
     }
 
     @Override
@@ -567,10 +588,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 DebugLogger.w(TAG, "Polled Invalid Gear (0) - Ignoring to prevent default 'P' overwrite");
             }
 
-            // 2. Fuel Level (Value Type - Float)
-            float fuel = iSensor.getSensorLatestValue(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_FUEL);
-            DebugLogger.d(TAG, "Polled Fuel: " + fuel);
-            ClusterHudManager.getInstance(this).updateFuel((int) fuel + "L");
+            // 2. Fuel Level (Value Type - Float, returns ml)
+            float fuelMl = iSensor.getSensorLatestValue(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_FUEL);
+            DebugLogger.d(TAG, "Polled Fuel: " + fuelMl + " ml");
+            float fuelLiters = fuelMl / 1000f;
+            ClusterHudManager.getInstance(this).updateFuelWithValue(fuelLiters);
 
             // 3. Range (Value Type - Float)
             float range = iSensor.getSensorLatestValue(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_RANGE);

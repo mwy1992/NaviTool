@@ -31,7 +31,38 @@ public class NaviInfoController {
     private int mRouteRemainDis = -1;
     private int mRouteRemainTime = -1;
 
-    public NaviInfoController() {
+    private static volatile NaviInfoController instance;
+    private android.content.Context mContext;
+
+    private NaviInfoController(android.content.Context context) {
+        mContext = context.getApplicationContext();
+    }
+
+    public static NaviInfoController getInstance(android.content.Context context) {
+        if (instance == null) {
+            synchronized (NaviInfoController.class) {
+                if (instance == null) {
+                    instance = new NaviInfoController(context);
+                }
+            }
+        }
+        return instance;
+    }
+
+    // --- Floating Window Control (Connected to ClusterHudManager) ---
+    public void showTrafficLightFloating() {
+        DebugLogger.i(TAG, "showTrafficLightFloating requested");
+        ClusterHudManager.getInstance(mContext).setFloatingTrafficLightEnabled(true);
+    }
+
+    public void hideTrafficLightFloating() {
+        DebugLogger.i(TAG, "hideTrafficLightFloating requested");
+        ClusterHudManager.getInstance(mContext).setFloatingTrafficLightEnabled(false);
+    }
+
+    public void enterPositionAdjustmentMode() {
+        DebugLogger.i(TAG, "enterPositionAdjustmentMode requested");
+        ClusterHudManager.getInstance(mContext).toggleFloatingTrafficLightPositioning();
     }
 
     /**
