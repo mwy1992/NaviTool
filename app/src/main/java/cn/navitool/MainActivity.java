@@ -110,6 +110,8 @@ public class MainActivity extends AppCompatActivity {
 
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM);
 
+        cn.navitool.managers.MemoryMonitor.logMemory("MainActivity.onCreate-Start");
+
         // [Fix Cold Boot] Initialize ConfigManager and DebugLogger first
         ConfigManager.init(this);
         DebugLogger.init(this);
@@ -206,6 +208,8 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        cn.navitool.managers.MemoryMonitor.logMemory("MainActivity.onResume");
+
         // Check Media Key Service
         boolean isOneOSConnected = cn.navitool.managers.KeyHandlerManager.getInstance(this).isOneOSConnected();
         updateOneOSStatus(isOneOSConnected);
@@ -683,6 +687,43 @@ public class MainActivity extends AppCompatActivity {
                 ClusterHudManager.getInstance(this).setSimulatedGearEnabled(isChecked);
                 if (isChecked) {
                     DebugLogger.toast(this, getString(R.string.toast_simulated_gear_enabled));
+                }
+            });
+        }
+
+        // Desktop Floating Ball
+        SwitchMaterial switchFloatingBall = mLayoutGeneral.findViewById(R.id.switchFloatingBall);
+        if (switchFloatingBall != null) {
+            boolean isEnabled = ConfigManager.getInstance().getBoolean("floating_ball_enabled", false);
+            switchFloatingBall.setChecked(isEnabled);
+
+            // Restore state on init
+            if (isEnabled) {
+                if (Settings.canDrawOverlays(this)) {
+                    startService(new Intent(this, cn.navitool.service.FloatingBallService.class));
+                } else {
+                    // If enabled but permission lost (rare), turn off switch or ask permission?
+                    // Just leave it, user will toggle and trigger permission check.
+                }
+            }
+
+            switchFloatingBall.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                ConfigManager.getInstance().setBoolean("floating_ball_enabled", isChecked);
+                if (isChecked) {
+                    if (!Settings.canDrawOverlays(this)) {
+                        // Request Permission
+                        Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:" + getPackageName()));
+                        mOverlayPermissionLauncher.launch(intent);
+                        // Reset switch until granted (optional, or let onResume handle it)
+                        buttonView.setChecked(false);
+                        ConfigManager.getInstance().setBoolean("floating_ball_enabled", false);
+                        DebugLogger.toast(this, "请先授予悬浮窗权限");
+                    } else {
+                        startService(new Intent(this, cn.navitool.service.FloatingBallService.class));
+                    }
+                } else {
+                    stopService(new Intent(this, cn.navitool.service.FloatingBallService.class));
                 }
             });
         }
@@ -1165,6 +1206,15 @@ public class MainActivity extends AppCompatActivity {
             View child = preview.getChildAt(i);
             if (child instanceof TextView) {
                 ((TextView) child).setTextColor(color);
+            } else if (child instanceof android.widget.LinearLayout) {
+                // [FIX] Support Song Component (LinearLayout)
+                android.widget.LinearLayout ll = (android.widget.LinearLayout) child;
+                for (int j = 0; j < ll.getChildCount(); j++) {
+                    View subChild = ll.getChildAt(j);
+                    if (subChild instanceof TextView) {
+                        ((TextView) subChild).setTextColor(color);
+                    }
+                }
             }
         }
     }
@@ -1193,7 +1243,7 @@ public class MainActivity extends AppCompatActivity {
             text = new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(new java.util.Date());
         }
 
-        if ("song".equals(type) || "test_media".equals(type)) {
+        if ("song".equals(type) || "test_media".equals(type) || "song_1line".equals(type)) {
             android.widget.LinearLayout ll = new android.widget.LinearLayout(this);
             ll.setOrientation(android.widget.LinearLayout.VERTICAL);
             ll.setBackgroundColor(android.graphics.Color.TRANSPARENT);
@@ -1671,6 +1721,12 @@ public class MainActivity extends AppCompatActivity {
             btn.setLayoutParams(params);
 
             btn.setOnClickListener(v -> {
+                // [FIX] Prevent duplicate components
+                if (isHudComponentAdded(type)) {
+                    DebugLogger.toast(this, "组件已存在");
+                    return;
+                }
+
                 // Logic based on type
                 if ("time".equals(type))
                     addHudTimeComponent();

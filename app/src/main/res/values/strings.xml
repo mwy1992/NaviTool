@@ -146,6 +146,7 @@
 
     <string name="sunshade_auto_open">自动开启遮阳帘</string>
     <string name="sunshade_sensor_open">根据光线传感器开启</string>
+    <string name="floating_ball_title">桌面悬浮球</string>
     <string name="floating_traffic_light_title">悬浮红绿灯</string>
     <string name="action_settings">设置</string>
     <string name="action_save">保存</string>

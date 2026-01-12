@@ -54,6 +54,7 @@ public class SoundPromptManager {
 
     public void init() {
         DebugLogger.i(TAG, "SoundPromptManager Initialized");
+        MemoryMonitor.setComponentStatus("SoundManager", "Initialized");
     }
 
     public void destroy() {

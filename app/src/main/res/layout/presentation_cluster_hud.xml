@@ -37,4 +37,22 @@
         
     </FrameLayout>
 
+    <!-- Debug RPM View (Overlay) - Commented out for release, uncomment for calibration
+    <TextView
+        android:id="@+id/debugRpmText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="50px"
+        android:textColor="#FF0000"
+        android:textSize="40sp"
+        android:textStyle="bold"
+        android:text="RPM: 0"
+        android:elevation="100dp"
+        android:shadowColor="#000000"
+        android:shadowDx="2"
+        android:shadowDy="2"
+        android:shadowRadius="5"/>
+    -->
+
 </FrameLayout>

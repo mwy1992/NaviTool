@@ -88,8 +88,14 @@ public class AmapMonitorManager {
     private final BroadcastReceiver mAmapReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            if (AMAP_BROADCAST_ACTION.equals(intent.getAction())) {
-                parseAndLogBroadcast(intent);
+            try {
+                if (AMAP_BROADCAST_ACTION.equals(intent.getAction())) {
+                    parseAndLogBroadcast(intent);
+                }
+            } catch (Throwable t) {
+                // [FIX] Catch BadParcelableException/ClassNotFoundException on Android 11+
+                // triggered when unparceling extras from external apps (e.g. Amap)
+                DebugLogger.e(TAG, "Error processing Amap broadcast: " + t.getMessage());
             }
         }
     };

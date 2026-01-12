@@ -114,6 +114,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         prefs.registerOnSharedPreferenceChangeListener(prefsListener);
 
         // Initialize Managers
+        cn.navitool.managers.MemoryMonitor.setComponentStatus("KeepAliveService", "Active");
         cn.navitool.managers.ThemeBrightnessManager.getInstance(this).init();
         cn.navitool.managers.SoundPromptManager.getInstance(this).init();
         cn.navitool.managers.KeyHandlerManager.getInstance(this).init();

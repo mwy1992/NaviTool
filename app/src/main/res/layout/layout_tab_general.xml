@@ -220,5 +220,31 @@
                 android:layout_height="wrap_content"/>
         </LinearLayout>
 
+
+        <!-- 8. Floating Ball -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_columnWeight="1"
+            android:layout_gravity="fill_horizontal|center_vertical"
+            android:layout_marginEnd="8dp"
+            android:layout_marginBottom="16dp"
+            android:minHeight="60dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/floating_ball_title"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorPrimary"/>
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchFloatingBall"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"/>
+        </LinearLayout>
+
     </GridLayout>
 </ScrollView>

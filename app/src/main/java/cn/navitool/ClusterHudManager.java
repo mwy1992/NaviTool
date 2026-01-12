@@ -129,6 +129,7 @@ public class ClusterHudManager
         // BUT we might need Activity Context for Themes.
         // We will Wrap it later if needed.
         this.mContext = context.getApplicationContext();
+        cn.navitool.managers.MemoryMonitor.logMemory("ClusterHudManager.Init-Start");
 
         // [HUD FIX] 初始化缓存列表，避免 "Cache not ready" 错误
         this.mCachedHudComponents = new ArrayList<>();
@@ -1598,14 +1599,20 @@ public class ClusterHudManager
         DebugLogger.d(TAG, "showPresentation: [Step 2] Found " + displays.length + " displays total");
 
         Display targetDisplay = null;
-        for (Display d : displays) {
-            DebugLogger.d(TAG, "  - Checking Display ID: " + d.getDisplayId() + ", Name: " + d.getName() + ", State: "
-                    + d.getState());
-            if (d.getDisplayId() == 2) {
-                targetDisplay = d;
-                DebugLogger.i(TAG, "  -> FOUND TARGET DISPLAY (ID 2)");
-                break;
+        try {
+            for (Display d : displays) {
+                if (d == null)
+                    continue;
+                // [FIX] Minimal access to avoid native crash on weird displays
+                if (d.getDisplayId() == 2) {
+                    targetDisplay = d;
+                    // Only log details for the target to be safe
+                    DebugLogger.i(TAG, "  -> FOUND TARGET DISPLAY (ID 2): " + d.getName());
+                    break;
+                }
             }
+        } catch (Throwable t) { // Catch Throwable (Errors + Exceptions)
+            DebugLogger.e(TAG, "Error iterating displays", t);
         }
 
         if (targetDisplay != null) {

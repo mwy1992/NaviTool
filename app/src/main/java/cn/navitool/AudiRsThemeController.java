@@ -35,6 +35,22 @@ public class AudiRsThemeController {
     private static final float POINTER_MIN_ANGLE = 0f; // 0转时的角度
     private static final float POINTER_MAX_ANGLE = 270f; // 8000转时的角度
 
+    // ============================================================
+    // [ADJUST] 指针校准区域 (Pointer Calibration)
+    // ============================================================
+    // 恢复原始逻辑参数 (Restore Original Logic Params)
+    // 1. ORIGINAL_WIDTH: 如果图片是裁剪版(810px)，这里填 810；如果是原版缩放，填 1920。
+    // 2. CONTENT_START/END: 对应宽度下的进度条起止坐标。
+
+    // 方案 A (当前裁剪版): 设为 810, 0, 810 (全宽) 或根据实际测量留白
+    // 方案 B (原始逻辑): 设为 1920, 686, 1660 (程序会自动计算缩放比例)
+
+    // 当前尝试：方案 A (适配 810px 宽度)
+    private static final int ORIGINAL_WIDTH = 810; // 图片基准宽度
+    private static final int CONTENT_START_X = 40; // 进度条起始X (像素)
+    private static final int CONTENT_END_X = 1000; // 进度条结束X (像素)
+    // ============================================================
+
     // Views
     private ClippedImageView mPointer;
     private ImageView mLight1, mLight2, mLight3, mLight4, mLight5;
@@ -53,6 +69,9 @@ public class AudiRsThemeController {
     private ImageView mLightGreen;
     private TextView mNaviDistance;
     private TextView mNaviEta;
+
+    // Debug View - Commented out
+    // private TextView mDebugRpmText;
 
     // 档位状态
     private static final String[] GEARS = { "P", "R", "N", "D" };
@@ -151,10 +170,10 @@ public class AudiRsThemeController {
         if (mCountdownText != null) {
             try {
                 android.graphics.Typeface ledFont = android.graphics.Typeface.createFromAsset(
-                        rootView.getContext().getAssets(), "fonts/SHUMA.TTF");
+                        rootView.getContext().getAssets(), "fonts/DigitalNumbers-Regular.ttf");
                 mCountdownText.setTypeface(ledFont);
             } catch (Exception e) {
-                DebugLogger.e(TAG, "Failed to load LED font from assets/fonts/SHUMA.TTF", e);
+                DebugLogger.e(TAG, "Failed to load LED font from assets/fonts/DigitalNumbers-Regular.ttf", e);
             }
         }
 
@@ -194,6 +213,12 @@ public class AudiRsThemeController {
         // Initial sync
         updateDayMode();
     }
+
+    /*
+     * public void setDebugRpmView(TextView view) {
+     * mDebugRpmText = view;
+     * }
+     */
 
     /**
      * Update Traffic Light Status
@@ -607,6 +632,13 @@ public class AudiRsThemeController {
         // 计算进度比例: 0-8000转 映射到 0-1
         float progress = (float) clampedRpm / RPM_MAX;
 
+        // Update Debug Text - Commented out
+        /*
+         * if (mDebugRpmText != null) {
+         * mDebugRpmText.setText(String.format("RPM: %d", rpm));
+         * }
+         */
+
         int viewWidth = mPointer.getWidth();
         int viewHeight = mPointer.getHeight();
 
@@ -617,15 +649,19 @@ public class AudiRsThemeController {
             return;
         }
 
-        // 原始图片参数（像素值）
-        final int ORIGINAL_WIDTH = 1920; // 原始图片宽度
-        final int CONTENT_START_X = 686; // 进度条内容起始X坐标（右移120px）
-        final int CONTENT_END_X = 1660; // 进度条内容结束X坐标（右移120px）
+        if (viewWidth <= 0 || viewHeight <= 0) {
+            // View还没测量完成，先设置可见
+            mPointer.setVisibility(View.VISIBLE);
+            mPointer.disableClip();
+            return;
+        }
 
-        // 计算缩放比例（View尺寸 / 原始图片尺寸）
+        // [FIX] 恢复原始逻辑 (Restore Original Scaling Logic)
+        // 计算缩放比例 (如果 View宽=810, Original=1920 -> Scale=0.42)
+        // (如果 View宽=810, Original=810 -> Scale=1.0)
         float scaleX = (float) viewWidth / ORIGINAL_WIDTH;
 
-        // 转换为View坐标
+        // 转换为当前View的坐标
         int scaledStartX = (int) (CONTENT_START_X * scaleX);
         int scaledEndX = (int) (CONTENT_END_X * scaleX);
 
@@ -636,15 +672,18 @@ public class AudiRsThemeController {
             mPointer.setVisibility(View.VISIBLE);
             mPointer.setAlpha(1.0f);
 
-            // 设置裁剪角度（25°向左倾斜）
+            // 设置裁剪角度（25°向左倾斜 - 保持不变）
             mPointer.setClipAngle(32f);
 
             // 设置裁剪进度
             mPointer.setClipProgress(progress, scaledStartX, scaledEndX);
 
-            android.util.Log.d("AudiRS", "RPM=" + clampedRpm + " progress=" + progress +
-                    " viewWidth=" + viewWidth + " scaledStartX=" + scaledStartX +
-                    " scaledEndX=" + scaledEndX);
+            // Limited logging to avoid flooding
+            if (Math.random() < 0.01) {
+                android.util.Log.d("AudiRS", "RPM=" + clampedRpm + " progress=" + progress +
+                        " viewWidth=" + viewWidth + " scaledStartX=" + scaledStartX +
+                        " scaledEndX=" + scaledEndX);
+            }
         }
     }
 

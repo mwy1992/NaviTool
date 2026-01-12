@@ -98,6 +98,7 @@ public class ThemeBrightnessManager {
 
     public void init() {
         ConfigManager config = ConfigManager.getInstance();
+        MemoryMonitor.setComponentStatus("ThemeManager", "Initialized");
         mIsOverrideEnabled = config.getBoolean("override_brightness_enabled", false);
         mTargetBrightnessDay = config.getInt("override_day_value", 12);
         mTargetBrightnessNight = config.getInt("override_night_value", 5);

@@ -56,10 +56,11 @@ public class Presentation extends android.app.Dialog {
         mLayoutCluster = findViewById(R.id.layoutCluster);
         mLayoutHud = findViewById(R.id.layoutHud);
 
-        // [DEBUG] Set HUD Background to Light Green to visualize margins (User Request)
         if (mLayoutHud != null) {
             mLayoutHud.setBackgroundColor(0xFF90EE90);
         }
+
+        cn.navitool.managers.MemoryMonitor.logMemory("Presentation.onCreate-Start");
 
         // Ensure transparent background for the window itself
         if (getWindow() != null) {
@@ -88,6 +89,115 @@ public class Presentation extends android.app.Dialog {
         updateDebugMode(DebugLogger.isDebugEnabled(getContext()));
 
         initializeFloatingTrafficLight();
+
+        // Log Detailed Component Memory
+        if (DebugLogger.isDebugEnabled(getContext())) {
+            logComponentMemoryBreakdown();
+        }
+    }
+
+    // Memory Breakdown Logger
+    private void logComponentMemoryBreakdown() {
+        long totalEstimate = 0;
+
+        DebugLogger.i("NaviMemory", "=== Memory Breakdown Start ===");
+
+        // 1. Audi RS Theme
+        if (mAudiRsLayout != null) {
+            long size = calculateViewTreeMemory(mAudiRsLayout);
+            DebugLogger.i("NaviMemory",
+                    String.format("Component: AUDI_RS_THEME | Size: %.2f MB", size / 1024f / 1024f));
+            totalEstimate += size;
+        } else {
+            DebugLogger.i("NaviMemory", "Component: AUDI_RS_THEME | Size: 0 MB (Not Loaded)");
+        }
+
+        // 2. Default Cluster
+        if (mLayoutCluster != null && mLayoutCluster.getVisibility() == View.VISIBLE && mAudiRsLayout == null) {
+            long size = calculateViewTreeMemory(mLayoutCluster);
+            DebugLogger.i("NaviMemory",
+                    String.format("Component: DEFAULT_CLUSTER | Size: %.2f MB", size / 1024f / 1024f));
+            totalEstimate += size;
+        }
+
+        // 3. HUD
+        if (mLayoutHud != null) {
+            long size = calculateViewTreeMemory(mLayoutHud);
+            DebugLogger.i("NaviMemory", String.format("Component: HUD_LAYER | Size: %.2f MB", size / 1024f / 1024f));
+            totalEstimate += size;
+        }
+
+        // 4. Floating Traffic Light
+        if (mFloatingTrafficLightContainer != null) {
+            long size = calculateViewTreeMemory(mFloatingTrafficLightContainer);
+            DebugLogger.i("NaviMemory",
+                    String.format("Component: FLOATING_LIGHT | Size: %.2f MB", size / 1024f / 1024f));
+            totalEstimate += size;
+        }
+
+        // 5. Logic Components (Status Only)
+        // These use negligible memory (<1MB) compared to Bitmaps, so we just show their
+        // status.
+        java.util.Map<String, String> statuses = cn.navitool.managers.MemoryMonitor.getComponentStatuses();
+        if (!statuses.isEmpty()) {
+            for (java.util.Map.Entry<String, String> entry : statuses.entrySet()) {
+                DebugLogger.i("NaviMemory",
+                        String.format("Component: %s | Status: %s", entry.getKey(), entry.getValue()));
+            }
+        }
+
+        DebugLogger.i("NaviMemory", String.format("--- Summary ---"));
+        long totalNative = android.os.Debug.getNativeHeapAllocatedSize();
+        long unaccounted = totalNative - totalEstimate;
+
+        DebugLogger.i("NaviMemory", String.format("Total Known UI Bitmaps: %.2f MB", totalEstimate / 1024f / 1024f));
+        DebugLogger.i("NaviMemory", String.format("Total Native Heap: %.2f MB", totalNative / 1024f / 1024f));
+        DebugLogger.i("NaviMemory",
+                String.format("Unaccounted (System/Logic/Other): %.2f MB", unaccounted / 1024f / 1024f));
+
+        DebugLogger.i("NaviMemory", "=== Memory Breakdown End ===");
+    }
+
+    private long calculateViewTreeMemory(View view) {
+        if (view == null)
+            return 0;
+
+        final java.util.concurrent.atomic.AtomicLong size = new java.util.concurrent.atomic.AtomicLong(0);
+
+        // Simple recursive traversal
+        traverseView(view, v -> {
+            if (v instanceof ImageView) {
+                android.graphics.drawable.Drawable d = ((ImageView) v).getDrawable();
+                if (d instanceof android.graphics.drawable.BitmapDrawable) {
+                    android.graphics.Bitmap bmp = ((android.graphics.drawable.BitmapDrawable) d).getBitmap();
+                    if (bmp != null && !bmp.isRecycled()) {
+                        size.addAndGet(bmp.getByteCount());
+                    }
+                }
+            }
+            // Check background also
+            android.graphics.drawable.Drawable bg = v.getBackground();
+            if (bg instanceof android.graphics.drawable.BitmapDrawable) {
+                android.graphics.Bitmap bmp = ((android.graphics.drawable.BitmapDrawable) bg).getBitmap();
+                if (bmp != null && !bmp.isRecycled()) {
+                    size.addAndGet(bmp.getByteCount());
+                }
+            }
+        });
+
+        return size.get();
+    }
+
+    private void traverseView(View view, androidx.core.util.Consumer<View> action) {
+        if (view == null)
+            return;
+        action.accept(view);
+        if (view instanceof android.view.ViewGroup) {
+            android.view.ViewGroup vg = (android.view.ViewGroup) view;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                traverseView(vg.getChildAt(i), action);
+            }
+        }
     }
 
     private void initializeFloatingTrafficLight() {
@@ -428,8 +538,16 @@ public class Presentation extends android.app.Dialog {
     public void updateDebugMode(boolean isDebug) {
         // [DEBUG] User Request: Light Green Background to wrap content
         if (mLayoutHud != null) {
-            mLayoutHud.setBackgroundColor(0xFF90EE90);
+            // [配置] HUD 背景颜色
+            // 调试时可改为 0xFF90EE90 (浅绿色) 以观察边界
+            // Default: Transparent (全透明)
+            mLayoutHud.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             mLayoutHud.setVisibility(View.VISIBLE); // Force visible for debug
+        }
+
+        // Log Detailed Component Memory
+        if (isDebug) {
+            logComponentMemoryBreakdown();
         }
     }
 
@@ -443,6 +561,9 @@ public class Presentation extends android.app.Dialog {
         // 这样确保从任何状态都能正确切换
         mCurrentTheme = theme;
         DebugLogger.d("ClusterHudPresentation", "setClusterTheme: " + theme);
+
+        long memBefore = android.os.Debug.getNativeHeapAllocatedSize();
+        cn.navitool.managers.MemoryMonitor.logMemory("Before Theme Switch: " + theme);
 
         try {
             if (theme == THEME_AUDI_RS) {
@@ -489,6 +610,15 @@ public class Presentation extends android.app.Dialog {
                         try {
                             if (mThemeController != null && mAudiRsLayout != null) {
                                 ((AudiRsThemeController) mThemeController).bindViews(mAudiRsLayout);
+
+                                // [DEBUG] Inject Debug RPM View - Commented out
+                                /*
+                                 * TextView debugText = findViewById(R.id.debugRpmText);
+                                 * if (debugText != null) {
+                                 * ((AudiRsThemeController) mThemeController).setDebugRpmView(debugText);
+                                 * }
+                                 */
+
                                 mAudiRsLayout.setVisibility(View.VISIBLE);
                                 DebugLogger.d("ClusterHudPresentation", "[AUDI-POST] Set mAudiRsLayout VISIBLE");
 
@@ -509,12 +639,22 @@ public class Presentation extends android.app.Dialog {
                     mThemeController.release();
                 }
                 // 重新加载默认仪表布局
+                // 重新加载默认仪表布局
                 enableClusterDashboard();
                 DebugLogger.d("ClusterHudPresentation", "Switched to default theme, enableClusterDashboard called");
             }
         } catch (Exception e) {
             DebugLogger.e("ClusterHudPresentation", "Error setting cluster theme: " + theme, e);
         }
+
+        long memAfter = android.os.Debug.getNativeHeapAllocatedSize();
+        long delta = (memAfter - memBefore) / 1024
+                / 1024;
+        cn.navitool.managers.MemoryMonitor.logMemory("After Theme Switch: " + theme + " (Delta: " + delta + "MB)");
+
+        // Detailed breakdown
+        logComponentMemoryBreakdown();
+
     }
 
     private void hideDefaultClusterElements() {
@@ -959,7 +1099,12 @@ public class Presentation extends android.app.Dialog {
                     tv.setVisibility(View.GONE); // Hide until navigation provides data
                     tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
                     tv.setTextColor(data.color);
+                    // [FIX] Alignment Settings for Navigation Components
+                    tv.setPadding(0, 0, 0, 0);
+                    tv.setIncludeFontPadding(false);
+                    tv.setLineSpacing(0, 1f);
                     // [FIX] Normal weight, 24px size to match other text
+
                     tv.setTypeface(android.graphics.Typeface.DEFAULT);
                     tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
                     view = tv;
@@ -982,10 +1127,8 @@ public class Presentation extends android.app.Dialog {
                         tv.setTypeface(data.typeface);
                     }
 
-                    // Dynamic Margin (24px * 0.2 = ~5px)
-                    int margin = (int) (-24f * 0.2f);
-                    params.topMargin = margin;
-                    params.bottomMargin = margin;
+                    // Dynamic Margin REMOVED - Rely on setY tolerance
+                    // int margin = (int) (-24f * 0.2f);
                     view = tv;
                 } else {
                     android.widget.TextView tv = new android.widget.TextView(getContext());
@@ -1008,19 +1151,17 @@ public class Presentation extends android.app.Dialog {
                         tv.setGravity(android.view.Gravity.CENTER);
                         params.width = 80; // Fixed width
 
-                        // [Issue 10] Dynamic Percentage Negative Margin (-20%)
-                        int margin = (int) (-gearSize * 0.2f); // Approx -7px
-                        params.topMargin = margin;
-                        params.bottomMargin = margin;
+                        // [Issue 10] Dynamic Percentage Negative Margin (-20%) - REMOVED
+                        // int margin = (int) (-gearSize * 0.2f);
+
                     } else {
                         // Generic Text (Speed, etc.)
                         float textSize = 24f;
                         tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, textSize);
 
-                        // [Issue 10] Dynamic Percentage Negative Margin (-20%)
-                        int margin = (int) (-textSize * 0.2f); // Approx -5px
-                        params.topMargin = margin;
-                        params.bottomMargin = margin;
+                        // [Issue 10] Dynamic Percentage Negative Margin (-20%) - REMOVED
+                        // int margin = (int) (-textSize * 0.2f);
+
                     }
 
                     // Rule 3: Song Component Layout (Handled by LinearLayout block above)
@@ -1070,6 +1211,14 @@ public class Presentation extends android.app.Dialog {
                 if (view instanceof android.widget.TextView) {
                     float currentSize = ((android.widget.TextView) view).getTextSize();
                     tolerance = currentSize * 0.2f * data.scale;
+                } else if (view instanceof android.widget.LinearLayout
+                        && ((android.widget.LinearLayout) view).getChildCount() > 0) {
+                    // [FIX] Handle Song Component (LinearLayout with TextViews)
+                    android.view.View child = ((android.widget.LinearLayout) view).getChildAt(0);
+                    if (child instanceof android.widget.TextView) {
+                        float currentSize = ((android.widget.TextView) child).getTextSize();
+                        tolerance = currentSize * 0.2f * data.scale;
+                    }
                 }
 
                 float clampedX = Math.max(0, Math.min(data.x, maxWidth - scaledWidth));
