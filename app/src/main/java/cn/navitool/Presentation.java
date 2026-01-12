@@ -1108,6 +1108,39 @@ public class Presentation extends android.app.Dialog {
                     tv.setTypeface(android.graphics.Typeface.DEFAULT);
                     tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
                     view = tv;
+                } else if ("fuel_range".equals(data.type) || "fuel".equals(data.type)) {
+                    // [Refactor] Fuel & Fuel Range Structural Split (LinearLayout)
+                    // Create horizontal container
+                    android.widget.LinearLayout containerLayout = new android.widget.LinearLayout(getContext());
+                    containerLayout.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+                    containerLayout.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+                    // 1. Emoji View "⛽" (Hardcoded Size 18px)
+                    android.widget.TextView tvEmoji = new android.widget.TextView(getContext());
+                    tvEmoji.setText("⛽");
+                    tvEmoji.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 18f); // 18px
+                    tvEmoji.setTextColor(data.color);
+                    tvEmoji.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    tvEmoji.setPadding(0, 0, 4, 0); // Right padding 4px
+                    tvEmoji.setIncludeFontPadding(false);
+
+                    // 2. Value View (Standard Size 24px)
+                    android.widget.TextView tvValue = new android.widget.TextView(getContext());
+                    // Extract value, e.g. "⛽ 32L|280km" -> "32L|280km"
+                    String valText = data.text != null ? data.text.replace("⛽", "").trim() : "";
+                    tvValue.setText(valText);
+                    tvValue.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24f);
+                    tvValue.setTextColor(data.color);
+                    tvValue.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    tvValue.setIncludeFontPadding(false);
+
+                    containerLayout.addView(tvEmoji);
+                    containerLayout.addView(tvValue);
+
+                    view = containerLayout;
+                    params.width = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
+                    params.height = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
+
                 } else if ("temp_out".equals(data.type) || "temp_in".equals(data.type)) {
                     // Temperature Components - Right-aligned to keep °C position stable
                     android.widget.TextView tv = new android.widget.TextView(getContext());
@@ -1340,41 +1373,52 @@ public class Presentation extends android.app.Dialog {
                     tv.invalidate();
                 } else if (v instanceof android.widget.LinearLayout && text != null) {
                     android.widget.LinearLayout ll = (android.widget.LinearLayout) v;
-                    String[] parts = (text != null ? text : "").split("\n");
-                    String title = parts.length > 0 ? parts[0] : "";
-                    String artist = parts.length > 1 ? parts[1] : "";
 
-                    // Update Title
-                    if (ll.getChildCount() > 0 && ll.getChildAt(0) instanceof android.widget.TextView) {
-                        ((android.widget.TextView) ll.getChildAt(0)).setText(title);
-                    }
-
-                    // Update Artist
-                    if (!artist.isEmpty()) {
-                        if (ll.getChildCount() > 1) {
-                            ((android.widget.TextView) ll.getChildAt(1)).setText(artist);
-                            ll.getChildAt(1).setVisibility(android.view.View.VISIBLE);
-                        } else {
-                            // Add text view
-                            android.widget.TextView tvArtist = new android.widget.TextView(v.getContext());
-                            tvArtist.setText(artist);
-                            tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
-                            // Reuse color from Title
-                            if (ll.getChildCount() > 0) {
-                                tvArtist.setTextColor(
-                                        ((android.widget.TextView) ll.getChildAt(0)).getTextColors());
-                            } else {
-                                tvArtist.setTextColor(android.graphics.Color.WHITE);
-                            }
-                            tvArtist.setSingleLine(true);
-                            tvArtist.setMaxLines(1);
-                            tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.END); // 使用...省略
-                            tvArtist.setIncludeFontPadding(false);
-                            ll.addView(tvArtist);
+                    // [Refactor] Handle Fuel & Fuel Range Update
+                    if ("fuel_range".equals(viewType) || "fuel".equals(viewType)) {
+                        if (ll.getChildCount() > 1 && ll.getChildAt(1) instanceof android.widget.TextView) {
+                            // Update Value Text Only (remove emoji from input text if present)
+                            String cleanText = text.replace("⛽", "").trim();
+                            ((android.widget.TextView) ll.getChildAt(1)).setText(cleanText);
                         }
                     } else {
-                        if (ll.getChildCount() > 1) {
-                            ll.getChildAt(1).setVisibility(android.view.View.GONE);
+                        // Song Logic
+                        String[] parts = (text != null ? text : "").split("\n");
+                        String title = parts.length > 0 ? parts[0] : "";
+                        String artist = parts.length > 1 ? parts[1] : "";
+
+                        // Update Title
+                        if (ll.getChildCount() > 0 && ll.getChildAt(0) instanceof android.widget.TextView) {
+                            ((android.widget.TextView) ll.getChildAt(0)).setText(title);
+                        }
+
+                        // Update Artist
+                        if (!artist.isEmpty()) {
+                            if (ll.getChildCount() > 1) {
+                                ((android.widget.TextView) ll.getChildAt(1)).setText(artist);
+                                ll.getChildAt(1).setVisibility(android.view.View.VISIBLE);
+                            } else {
+                                // Add text view
+                                android.widget.TextView tvArtist = new android.widget.TextView(v.getContext());
+                                tvArtist.setText(artist);
+                                tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
+                                // Reuse color from Title
+                                if (ll.getChildCount() > 0) {
+                                    tvArtist.setTextColor(
+                                            ((android.widget.TextView) ll.getChildAt(0)).getTextColors());
+                                } else {
+                                    tvArtist.setTextColor(android.graphics.Color.WHITE);
+                                }
+                                tvArtist.setSingleLine(true);
+                                tvArtist.setMaxLines(1);
+                                tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.END); // 使用...省略
+                                tvArtist.setIncludeFontPadding(false);
+                                ll.addView(tvArtist);
+                            }
+                        } else {
+                            if (ll.getChildCount() > 1) {
+                                ll.getChildAt(1).setVisibility(android.view.View.GONE);
+                            }
                         }
                     }
                 } else if (v instanceof android.widget.ImageView && image != null) {

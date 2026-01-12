@@ -114,17 +114,7 @@
                     android:background="?android:attr/selectableItemBackground"
                     android:textColor="@drawable/selector_nav_text"/>
 
-                <RadioButton
-                    android:id="@+id/rbLights"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="@string/tab_lights"
-                    android:textSize="18sp"
-                    android:gravity="center_vertical"
-                    android:padding="16dp"
-                    android:button="@null"
-                    android:background="?android:attr/selectableItemBackground"
-                    android:textColor="@drawable/selector_nav_text"/>
+
 
                 <RadioButton
                     android:id="@+id/rbSound"
@@ -399,13 +389,7 @@
                 </LinearLayout>
             </ScrollView>
 
-            <!-- 5. Lights Layout (ViewStub) -->
-            <ViewStub
-                android:id="@+id/stubLights"
-                android:inflatedId="@+id/layoutContentLights"
-                android:layout="@layout/layout_tab_lights"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent" />
+
 
             <!-- 6. Brightness Layout (ViewStub) -->
             <ViewStub

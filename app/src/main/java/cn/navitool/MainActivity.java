@@ -82,7 +82,7 @@ public class MainActivity extends AppCompatActivity {
     private View mLayoutButtons;
     private View mLayoutAutoStart;
     private ScrollView mLayoutADB; // ADB is not lazy
-    private View mLayoutLights;
+
     private View mLayoutBrightness;
     private View mLayoutSound;
     private View mLayoutCluster;
@@ -91,7 +91,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean mIsGeneralInit = false;
     private boolean mIsButtonsInit = false;
     private boolean mIsAutoStartInit = false;
-    private boolean mIsLightsInit = false;
+
     private boolean mIsBrightnessInit = false;
     private boolean mIsSoundInit = false;
     private boolean mIsClusterInit = false;
@@ -433,8 +433,6 @@ public class MainActivity extends AppCompatActivity {
                 mLayoutCluster.setVisibility(View.GONE);
             if (mLayoutHud != null)
                 mLayoutHud.setVisibility(View.GONE);
-            if (mLayoutLights != null)
-                mLayoutLights.setVisibility(View.GONE);
 
             // Show selected
             if (checkedId == R.id.rbADB) {
@@ -457,10 +455,7 @@ public class MainActivity extends AppCompatActivity {
                 ensureBrightnessInflated();
                 if (mLayoutBrightness != null)
                     mLayoutBrightness.setVisibility(View.VISIBLE);
-            } else if (checkedId == R.id.rbLights) {
-                ensureLightsInflated();
-                if (mLayoutLights != null)
-                    mLayoutLights.setVisibility(View.VISIBLE);
+
             } else if (checkedId == R.id.rbSound) {
                 ensureSoundInflated();
                 if (mLayoutSound != null)
@@ -563,35 +558,6 @@ public class MainActivity extends AppCompatActivity {
             // Load saved HUD layout immediately to prevent reset
             loadHudLayout(mHudMode);
             mIsHudInit = true;
-        }
-    }
-
-    private void ensureLightsInflated() {
-        if (mLayoutLights == null) {
-            View v = tryInflate(mLayoutLights, R.id.stubLights, R.id.layoutContentLights);
-            mLayoutLights = v;
-            setupLights();
-            mIsLightsInit = true;
-        }
-    }
-
-    private void setupLights() {
-        if (mLayoutLights == null)
-            return;
-
-        // Welcome Lamp Always On Switch
-        android.widget.Switch swWelcomeLamp = mLayoutLights.findViewById(R.id.swWelcomeLampAlwaysOn);
-        if (swWelcomeLamp != null) {
-            boolean isEnabled = ConfigManager.getInstance().getBoolean("welcome_lamp_always_on", false);
-            swWelcomeLamp.setChecked(isEnabled);
-            swWelcomeLamp.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                ConfigManager.getInstance().setBoolean("welcome_lamp_always_on", isChecked);
-                // Notify Service
-                cn.navitool.managers.WelcomeLampManager.getInstance(this).setEnabled(isChecked);
-                if (isChecked) {
-                    DebugLogger.toast(this, getString(R.string.toast_welcome_lamp_enabled));
-                }
-            });
         }
     }
 

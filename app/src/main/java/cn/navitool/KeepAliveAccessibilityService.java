@@ -80,9 +80,6 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         } else if ("psd_always_on_method2_enabled".equals(key)) {
             boolean enabled = sharedPreferences.getBoolean(key, false);
             cn.navitool.managers.PsdManager.getInstance(KeepAliveAccessibilityService.this).setEnabledMethod2(enabled);
-        } else if ("welcome_lamp_always_on".equals(key)) {
-            boolean enabled = sharedPreferences.getBoolean(key, false);
-            cn.navitool.managers.WelcomeLampManager.getInstance(KeepAliveAccessibilityService.this).setEnabled(enabled);
         }
     };
 
@@ -96,11 +93,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         DebugLogger.createDirectories();
 
         cn.navitool.managers.PsdManager.getInstance(this).init();
-        // Initialize Welcome Lamp Manager
-        boolean welcomeLampEnabled = ConfigManager.getInstance().getBoolean("welcome_lamp_always_on", false);
-        if (welcomeLampEnabled) {
-            cn.navitool.managers.WelcomeLampManager.getInstance(this).setEnabled(true);
-        }
+
         initCar();
     }
 
