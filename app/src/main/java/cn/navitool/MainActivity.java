@@ -1249,6 +1249,43 @@ public class MainActivity extends AppCompatActivity {
                     android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
             view = ll;
             view.setLayoutParams(params);
+        } else if ("fuel_range".equals(type) || "fuel".equals(type)) {
+            // [Preview Sync] Fuel & Fuel Range using LinearLayout
+            // Preview is 2x scale of HUD
+            // HUD: Emoji 18px, Value 24px
+            // Preview: Emoji 36px, Value 48px
+
+            android.widget.LinearLayout ll = new android.widget.LinearLayout(this);
+            ll.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+            ll.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            ll.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+
+            // 1. Emoji View "⛽" (Preview Size 36px)
+            android.widget.TextView tvEmoji = new android.widget.TextView(this);
+            tvEmoji.setText("⛽");
+            tvEmoji.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 36f); // 2x 18px
+            tvEmoji.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
+            tvEmoji.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            tvEmoji.setPadding(0, 0, 8, 0); // Preview Padding 8px (2x 4px)
+            tvEmoji.setIncludeFontPadding(false);
+
+            // 2. Value View (Preview Size 48px)
+            android.widget.TextView tvValue = new android.widget.TextView(this);
+            String valText = text != null ? text.replace("⛽", "").trim() : "";
+            tvValue.setText(valText);
+            tvValue.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 48f); // 2x 24px
+            tvValue.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
+            tvValue.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            tvValue.setIncludeFontPadding(false);
+
+            ll.addView(tvEmoji);
+            ll.addView(tvValue);
+
+            android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
+            view = ll;
+            view.setLayoutParams(params);
         } else if ("traffic_light".equals(type)) {
             // Traffic Light Preview
             cn.navitool.view.TrafficLightView tlv = new cn.navitool.view.TrafficLightView(this);
@@ -1457,6 +1494,23 @@ public class MainActivity extends AppCompatActivity {
                         if (view instanceof TextView) {
                             float scaledTextSize = ((TextView) view).getTextSize() * view.getScaleY();
                             verticalOffset = scaledTextSize * 0.2f;
+                        } else if (view instanceof android.widget.LinearLayout) {
+                            // [FIX] Handle LinearLayout (e.g., Fuel, Song)
+                            android.widget.LinearLayout ll = (android.widget.LinearLayout) view;
+                            if (ll.getChildCount() > 0) {
+                                // Default to first child
+                                View child = ll.getChildAt(0);
+                                // For Fuel/FuelRange, value is at index 1 (48px), Emoji at 0 (36px).
+                                // We want the larger one (Value) or just be consistent.
+                                if (ll.getChildCount() > 1 && ll.getChildAt(1) instanceof TextView) {
+                                    child = ll.getChildAt(1);
+                                }
+
+                                if (child instanceof TextView) {
+                                    float scaledTextSize = ((TextView) child).getTextSize() * view.getScaleY();
+                                    verticalOffset = scaledTextSize * 0.2f;
+                                }
+                            }
                         }
 
                         if (newY < -verticalOffset)
