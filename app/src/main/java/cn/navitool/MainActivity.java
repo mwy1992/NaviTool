@@ -241,9 +241,9 @@ public class MainActivity extends AppCompatActivity {
 
         // [FIX] Restore Floating Ball Service on Resume (if enabled)
         if (ConfigManager.getInstance().getBoolean("floating_ball_enabled", false)) {
-             if (Settings.canDrawOverlays(this)) {
-                 startService(new Intent(this, cn.navitool.service.FloatingBallService.class));
-             }
+            if (Settings.canDrawOverlays(this)) {
+                startService(new Intent(this, cn.navitool.service.FloatingBallService.class));
+            }
         }
     }
 
@@ -633,12 +633,37 @@ public class MainActivity extends AppCompatActivity {
 
             if (btnPosition != null) {
                 // [FIX] Feature Change: Button now toggles style and shows temporarily
-                btnPosition.setText(getString(R.string.action_switch_style)); 
+                btnPosition.setText(getString(R.string.action_switch_style));
                 btnPosition.setOnClickListener(v -> {
                     NaviInfoController.getInstance(this).toggleFloatingStyle();
                     DebugLogger.toast(this, "样式已切换，3秒后自动隐藏");
                 });
             }
+        }
+
+        // Transmission Type Button
+        android.widget.Button btnTransmissionType = mLayoutGeneral.findViewById(R.id.btnTransmissionType);
+        if (btnTransmissionType != null) {
+            final int TYPE_8AT = 0;
+            final int TYPE_7DCT = 1;
+
+            // Initial State
+            int currentType = ConfigManager.getInstance().getInt("transmission_type", TYPE_8AT);
+            btnTransmissionType.setText(currentType == TYPE_8AT ? "我是8AT车型" : "我是7DCT车型");
+
+            // Apply initial setting to DrivingShift
+            cn.navitool.DrivingShift.getInstance().setTransmissionType(currentType);
+
+            btnTransmissionType.setOnClickListener(v -> {
+                int type = ConfigManager.getInstance().getInt("transmission_type", TYPE_8AT);
+                int newType = (type == TYPE_8AT) ? TYPE_7DCT : TYPE_8AT;
+
+                ConfigManager.getInstance().setInt("transmission_type", newType);
+                cn.navitool.DrivingShift.getInstance().setTransmissionType(newType);
+
+                btnTransmissionType.setText(newType == TYPE_8AT ? "我是8AT车型" : "我是7DCT车型");
+                DebugLogger.toast(this, newType == TYPE_8AT ? "已切换为 8AT 逻辑" : "已切换为 7DCT 逻辑");
+            });
         }
 
         // Simulated Gear Switch
@@ -649,15 +674,25 @@ public class MainActivity extends AppCompatActivity {
             switchSimGear.setChecked(isEnabled);
             ClusterHudManager.getInstance(this).setSimulatedGearEnabled(isEnabled);
 
+            // Initial button visibility
+            if (btnTransmissionType != null) {
+                btnTransmissionType.setVisibility(isEnabled ? android.view.View.VISIBLE : android.view.View.GONE);
+            }
+
             switchSimGear.setOnCheckedChangeListener((buttonView, isChecked) -> {
                 ConfigManager.getInstance().setBoolean("simulated_gear_enabled", isChecked);
                 ClusterHudManager.getInstance(this).setSimulatedGearEnabled(isChecked);
                 if (isChecked) {
                     DebugLogger.toast(this, getString(R.string.toast_simulated_gear_enabled));
                 }
+
+                // Toggle button visibility
+                if (btnTransmissionType != null) {
+                    btnTransmissionType.setVisibility(isChecked ? android.view.View.VISIBLE : android.view.View.GONE);
+                }
             });
         }
-        
+
         // HUD Green Background (Debug)
         SwitchMaterial switchHudGreenBg = mLayoutGeneral.findViewById(R.id.switchHudGreenBg);
         if (switchHudGreenBg != null) {
@@ -675,7 +710,8 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // Desktop Floating Ball
-        SwitchMaterial switchFloatingBall = mLayoutGeneral.findViewById(R.id.switchFloatingBall);
+        SwitchMaterial switchFloatingBall = mLayoutGeneral
+                .findViewById(R.id.switchFloatingBall);
         if (switchFloatingBall != null) {
             boolean isEnabled = ConfigManager.getInstance().getBoolean("floating_ball_enabled", false);
             switchFloatingBall.setChecked(isEnabled);
@@ -937,7 +973,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Load Layout
         loadHudLayout(mHudMode);
-        
+
         // [FIX] Force refresh data to generic components immediately
         ClusterHudManager.getInstance(this).forceNotifyListener();
     }
@@ -1223,6 +1259,7 @@ public class MainActivity extends AppCompatActivity {
         boolean isMediaCover = "media_cover".equals(type) || "test_media_cover".equals(type);
         boolean isTurnSignal = "turn_signal".equals(type);
         boolean isVolume = "volume".equals(type);
+        boolean isAutoHold = "auto_hold".equals(type);
 
         if ("time".equals(type)) {
             // User Request: Show real system time immediately in Preview
@@ -1322,7 +1359,7 @@ public class MainActivity extends AppCompatActivity {
             // Real HUD: 1x (24px fonts), Preview: 2x (should appear as 48px)
             // Use internal scaling method to ensure correct boundary detection
             tlv.setPreviewScale(2.0f);
-        } else if (isMediaCover || isTurnSignal || isVolume) {
+        } else if (isMediaCover || isTurnSignal || isVolume || isAutoHold) {
             ImageView iv = new ImageView(this);
             iv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
 
@@ -1345,6 +1382,26 @@ public class MainActivity extends AppCompatActivity {
                 iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
                 view = iv;
                 view.setLayoutParams(params);
+            } else if (isAutoHold) {
+                // Use Manager to get Bitmap
+                android.graphics.Bitmap bmp = ClusterHudManager.getInstance(this).getAutoHoldBitmap(true); // Default ON
+                                                                                                           // for
+                                                                                                           // preview
+                if (bmp != null) {
+                    iv.setImageBitmap(bmp);
+                } else {
+                    iv.setImageResource(R.drawable.ic_auto_hold);
+                }
+
+                // Real HUD Size 36px -> Preview 72px
+                int size = 72;
+                android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(size,
+                        size);
+                iv.setAdjustViewBounds(true);
+                iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                view = iv;
+                view.setLayoutParams(params);
+
             } else if (isVolume) {
                 // Use Manager to get Standard Bitmap (24px)
                 android.graphics.Bitmap bmp = ClusterHudManager.getInstance(this).getVolumeBitmap(15);
@@ -1422,7 +1479,8 @@ public class MainActivity extends AppCompatActivity {
             tv.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
 
             // [Sync Issue 10] Apply Dynamic Negative Margin to Preview for WYSIWYG
-            // REMOVED: Causing clipping issues. Preview should match Presentation logic (which now wraps views).
+            // REMOVED: Causing clipping issues. Preview should match Presentation logic
+            // (which now wraps views).
             // Logic: -20% of Text Size -> REMOVED
             // float currentTextSize = tv.getTextSize();
             // int margin = (int) (-currentTextSize * 0.2f);
@@ -1786,6 +1844,8 @@ public class MainActivity extends AppCompatActivity {
                     createAndAddHudComponent("gear", "D", 0, 0);
                 else if ("turn_signal".equals(type))
                     createAndAddHudComponent("turn_signal", "←      →", 0, 0);
+                else if ("auto_hold".equals(type))
+                    createAndAddHudComponent("auto_hold", "A", 0, 0);
                 else if ("volume".equals(type))
                     createAndAddHudComponent("volume", "音量: --", 0, 0);
                 else if ("test_media_cover".equals(type))
@@ -1825,6 +1885,7 @@ public class MainActivity extends AppCompatActivity {
         addButton.accept(colDrive, "油量续航", "fuel_range");
         addButton.accept(colDrive, "档位信息", "gear");
         addButton.accept(colDrive, "转向信号", "turn_signal");
+        addButton.accept(colDrive, "Auto Hold", "auto_hold");
 
         // Group 3: Navigation (New)
         addButton.accept(colNavi, "导航红绿灯", "traffic_light");
@@ -3291,7 +3352,7 @@ public class MainActivity extends AppCompatActivity {
 
         // 1. Accessibility Service
         if (!isAccessibilityServiceEnabled()) {
-             // Android 11+ Limitation Check (ADB disabled to prevent crash)
+            // Android 11+ Limitation Check (ADB disabled to prevent crash)
             if (android.os.Build.VERSION.SDK_INT >= 30) {
                 DebugLogger.toast(this, "Android 11+ 系统限制，请手动开启无障碍服务");
                 requestAccessibilityPermission();
@@ -3329,24 +3390,25 @@ public class MainActivity extends AppCompatActivity {
 
         // 2. Overlay Permission
         if (!android.provider.Settings.canDrawOverlays(this)) {
-             // [Fix] Android 9 Sync Issue: System API says false, but AppOps says allowed
-             if (checkOpPermission(android.app.AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW)) {
-                 DebugLogger.toast(this, "检测到系统缓存不同步，请手动【关闭再开启】一次");
-                 requestOverlayPermission();
-                 return;
-             }
+            // [Fix] Android 9 Sync Issue: System API says false, but AppOps says allowed
+            if (checkOpPermission(android.app.AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW)) {
+                DebugLogger.toast(this, "检测到系统缓存不同步，请手动【关闭再开启】一次");
+                requestOverlayPermission();
+                return;
+            }
 
-             // Android 11+ Limitation Check
-             if (android.os.Build.VERSION.SDK_INT >= 30) {
-                 DebugLogger.toast(this, "Android 11+ 系统限制，请手动授予悬浮窗权限");
-                 requestOverlayPermission();
-                 return;
-             }
+            // Android 11+ Limitation Check
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                DebugLogger.toast(this, "Android 11+ 系统限制，请手动授予悬浮窗权限");
+                requestOverlayPermission();
+                return;
+            }
 
             if (AdbShell.getInstance(this).isConnected()) {
                 showRepairingToast(R.string.perm_overlay);
                 AdbShell.getInstance(this).exec("appops set " + getPackageName() + " SYSTEM_ALERT_WINDOW allow");
-                scheduleNextCheck(1000, this::requestOverlayPermission, () -> android.provider.Settings.canDrawOverlays(this));
+                scheduleNextCheck(1000, this::requestOverlayPermission,
+                        () -> android.provider.Settings.canDrawOverlays(this));
                 return;
             }
             showRepairingToast(R.string.perm_overlay);

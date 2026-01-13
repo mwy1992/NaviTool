@@ -245,7 +245,7 @@
                 android:id="@+id/audiRsPresFL_val"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="250"
+                android:text="---"
                 android:textColor="#00FF00"
                 android:textSize="16sp"
                 android:textStyle="bold" />
@@ -263,7 +263,7 @@
             android:id="@+id/audiRsTempFL"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="35°C"
+            android:text="--°C"
             android:textColor="#AAAAAA"
             android:textSize="12sp" />
     </LinearLayout>
@@ -288,7 +288,7 @@
                 android:id="@+id/audiRsPresFR_val"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="250"
+                android:text="---"
                 android:textColor="#00FF00"
                 android:textSize="16sp"
                 android:textStyle="bold" />
@@ -306,7 +306,7 @@
             android:id="@+id/audiRsTempFR"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="35°C"
+            android:text="--°C"
             android:textColor="#AAAAAA"
             android:textSize="12sp" />
     </LinearLayout>
@@ -331,7 +331,7 @@
                 android:id="@+id/audiRsPresRL_val"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="250"
+                android:text="---"
                 android:textColor="#00FF00"
                 android:textSize="16sp"
                 android:textStyle="bold" />
@@ -349,7 +349,7 @@
             android:id="@+id/audiRsTempRL"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="35°C"
+            android:text="--°C"
             android:textColor="#AAAAAA"
             android:textSize="12sp" />
     </LinearLayout>
@@ -374,7 +374,7 @@
                 android:id="@+id/audiRsPresRR_val"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="250"
+                android:text="---"
                 android:textColor="#00FF00"
                 android:textSize="16sp"
                 android:textStyle="bold" />
@@ -392,7 +392,7 @@
             android:id="@+id/audiRsTempRR"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="35°C"
+            android:text="--°C"
             android:textColor="#AAAAAA"
             android:textSize="12sp" />
     </LinearLayout>

@@ -293,7 +293,7 @@ public class Presentation extends android.app.Dialog {
                 @Override
                 public boolean onTouch(View view, android.view.MotionEvent event) {
                     // [FIX] Allow drag anytime
-                    
+
                     switch (event.getAction()) {
                         case android.view.MotionEvent.ACTION_DOWN:
                             initialX = mFloatingParams.x;
@@ -315,8 +315,9 @@ public class Presentation extends android.app.Dialog {
                             ConfigManager.getInstance().setInt("floating_traffic_light_x", mFloatingParams.x);
                             ConfigManager.getInstance().setInt("floating_traffic_light_y", mFloatingParams.y);
                             ConfigManager.getInstance().saveProperties(); // Force save
-                            DebugLogger.d(TAG, "Floating Light Position Saved: " + mFloatingParams.x + "," + mFloatingParams.y);
-                            return true; 
+                            DebugLogger.d(TAG,
+                                    "Floating Light Position Saved: " + mFloatingParams.x + "," + mFloatingParams.y);
+                            return true;
                     }
                     return false;
                 }
@@ -349,13 +350,15 @@ public class Presentation extends android.app.Dialog {
                     mFloatingCountdown.setText("60");
                     mFloatingCountdown.setVisibility(View.VISIBLE);
                 }
-                
+
                 if (mFloatingLightRed != null) {
-                     mFloatingLightRed.setAlpha(1.0f);
-                     // Set resource if needed, but XML should have default
+                    mFloatingLightRed.setAlpha(1.0f);
+                    // Set resource if needed, but XML should have default
                 }
-                if (mFloatingLightYellow != null) mFloatingLightYellow.setAlpha(0.3f);
-                if (mFloatingLightGreen != null) mFloatingLightGreen.setAlpha(0.3f);
+                if (mFloatingLightYellow != null)
+                    mFloatingLightYellow.setAlpha(0.3f);
+                if (mFloatingLightGreen != null)
+                    mFloatingLightGreen.setAlpha(0.3f);
             }
         }
     }
@@ -363,12 +366,12 @@ public class Presentation extends android.app.Dialog {
     public void setFloatingTrafficLightEnabled(boolean enabled) {
         mIsFloatingEnabled = enabled;
         updateFloatingTrafficLightVisibility();
-        
+
         // [FIX] Save position on disable
         if (!enabled && mFloatingParams != null) {
-             ConfigManager.getInstance().setInt("floating_traffic_light_x", mFloatingParams.x);
-             ConfigManager.getInstance().setInt("floating_traffic_light_y", mFloatingParams.y);
-             ConfigManager.getInstance().saveProperties();
+            ConfigManager.getInstance().setInt("floating_traffic_light_x", mFloatingParams.x);
+            ConfigManager.getInstance().setInt("floating_traffic_light_y", mFloatingParams.y);
+            ConfigManager.getInstance().saveProperties();
         }
     }
 
@@ -378,7 +381,7 @@ public class Presentation extends android.app.Dialog {
         mIsHudStyle = !mIsHudStyle;
         ConfigManager.getInstance().setBoolean("floating_style_hud", mIsHudStyle);
         updateFloatingTrafficLightStyle();
-        
+
         // 2. Force Show Temporarily
         forceShowFloatingTrafficLightTemporary();
     }
@@ -394,25 +397,26 @@ public class Presentation extends android.app.Dialog {
 
     private void forceShowFloatingTrafficLightTemporary() {
         if (mFloatingTrafficLightContainer == null) {
-             initializeFloatingTrafficLight();
+            initializeFloatingTrafficLight();
         }
-        
+
         if (mFloatingTrafficLightContainer != null) {
             // Cancel pending hide
             mMainHandler.removeCallbacks(mTempShowRunnable);
-            
+
             // Show
             mIsTempShowing = true;
             updateFloatingTrafficLightVisibility();
-            
+
             // Re-schedule hide
             mMainHandler.postDelayed(mTempShowRunnable, 3000);
-            
+
             // Apply dummy data for preview if no real data
             if (mLatestTrafficLightInfo == null) {
-                 if (mFloatingCountdown != null) mFloatingCountdown.setText("60");
-                 // Initial style update ensures correct view is visible
-                 updateFloatingTrafficLightStyle(); 
+                if (mFloatingCountdown != null)
+                    mFloatingCountdown.setText("60");
+                // Initial style update ensures correct view is visible
+                updateFloatingTrafficLightStyle();
             }
         }
     }
@@ -560,7 +564,8 @@ public class Presentation extends android.app.Dialog {
         if (mLayoutHud != null) {
             // 0x3390EE90 = Light Green with ~20% Alpha (Low Opacity)
             // 0xFF90EE90 = Solid Light Green
-            // User asked for "Light Green Background". Let's use semi-transparent for HUD context.
+            // User asked for "Light Green Background". Let's use semi-transparent for HUD
+            // context.
             // 0x5090EE90
             int color = enabled ? 0x5090EE90 : android.graphics.Color.TRANSPARENT;
             mLayoutHud.setBackgroundColor(color);
@@ -910,6 +915,7 @@ public class Presentation extends android.app.Dialog {
                         || "song_1line".equals(data.type);
                 boolean isTurnSignal = "turn_signal".equals(data.type);
                 boolean isVolume = "volume".equals(data.type);
+                boolean isAutoHold = "auto_hold".equals(data.type);
                 boolean isMediaCover = "media_cover".equals(data.type) || "test_media_cover".equals(data.type);
                 int measuredWidth = 0;
                 int measuredHeight = 0;
@@ -961,7 +967,7 @@ public class Presentation extends android.app.Dialog {
 
                     params.width = 300;
                     view = ll;
-                } else if (isMediaCover || isTurnSignal || isVolume) {
+                } else if (isMediaCover || isTurnSignal || isVolume || isAutoHold) {
                     android.widget.ImageView iv = new android.widget.ImageView(getContext());
                     if (data.image != null) {
                         iv.setImageBitmap(data.image);
@@ -975,6 +981,9 @@ public class Presentation extends android.app.Dialog {
                             iv.setImageResource(R.drawable.ic_volume); // Fallback
                             iv.setColorFilter(data.color);
                         }
+                        // [FIX] Auto Hold: Do NOT set default resource if image is null.
+                        // Wait for logic to provide correct bitmap.
+                        // This prevents it from showing up on startup before state is known.
                     }
                     iv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
 
@@ -986,8 +995,8 @@ public class Presentation extends android.app.Dialog {
                         params.width = 100;
                         params.height = 100;
                     } else {
-                        // 转向灯 & 音量: 36px (预览中为72px, 保持1:2比例)
-                        if (isTurnSignal || isVolume) {
+                        // 转向灯 & 音量 & Auto Hold: 36px (预览中为72px, 保持1:2比例)
+                        if (isTurnSignal || isVolume || isAutoHold) {
                             params.height = 36;
                         } else {
                             params.height = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
@@ -1137,35 +1146,19 @@ public class Presentation extends android.app.Dialog {
                     tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
                     view = tv;
                 } else if ("fuel_range".equals(data.type) || "fuel".equals(data.type)) {
-                    // [Refactor] Fuel & Fuel Range Structural Split (LinearLayout)
-                    // Create horizontal container
-                    android.widget.LinearLayout containerLayout = new android.widget.LinearLayout(getContext());
-                    containerLayout.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-                    containerLayout.setGravity(android.view.Gravity.CENTER_VERTICAL);
-
-                    // 1. Emoji View "⛽" (Hardcoded Size 18px)
-                    android.widget.TextView tvEmoji = new android.widget.TextView(getContext());
-                    tvEmoji.setText("⛽");
-                    tvEmoji.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 18f); // 18px
-                    tvEmoji.setTextColor(data.color);
-                    tvEmoji.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                    tvEmoji.setPadding(0, 0, 4, 0); // Right padding 4px
-                    tvEmoji.setIncludeFontPadding(false);
-
-                    // 2. Value View (Standard Size 24px)
-                    android.widget.TextView tvValue = new android.widget.TextView(getContext());
-                    // Extract value, e.g. "⛽ 32L|280km" -> "32L|280km"
-                    String valText = data.text != null ? data.text.replace("⛽", "").trim() : "";
-                    tvValue.setText(valText);
-                    tvValue.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24f);
-                    tvValue.setTextColor(data.color);
-                    tvValue.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                    tvValue.setIncludeFontPadding(false);
-
-                    containerLayout.addView(tvEmoji);
-                    containerLayout.addView(tvValue);
-
-                    view = containerLayout;
+                    // [Refactor] Flattened to single TextView for performance and to fix ghosting
+                    android.widget.TextView tv = new android.widget.TextView(getContext());
+                    // Combine Emoji and Text: "⛽" + " " + "56L"
+                    String valText = data.text != null ? data.text : "";
+                    if (!valText.contains("⛽")) {
+                        valText = "⛽ " + valText;
+                    }
+                    tv.setText(valText);
+                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24f);
+                    tv.setTextColor(data.color);
+                    tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    tv.setIncludeFontPadding(false);
+                    view = tv; // Direct TextView, no container
                     params.width = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
                     params.height = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
 
@@ -1192,10 +1185,7 @@ public class Presentation extends android.app.Dialog {
                     // int margin = (int) (-24f * 0.2f);
                     view = tv;
                 } else {
-                    // [FIX] Wrap TextView in FrameLayout to prevent text ghosting/overlap artifacts
-                    android.widget.FrameLayout wrapper = new android.widget.FrameLayout(getContext());
-                    wrapper.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-
+                    // [FIX] Removed FrameLayout wrapper to prevent ghosting
                     android.widget.TextView tv = new android.widget.TextView(getContext());
                     tv.setText(data.text);
                     tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
@@ -1207,31 +1197,18 @@ public class Presentation extends android.app.Dialog {
                         tv.setTypeface(data.typeface);
                     }
 
-                    // Rule 2: Font size logic - gear uses 48px, others use 24px
-                    // Preview: gear=96px, others=48px -> HUD: gear=48px, others=24px
                     // Rule 2: Font size logic - Gear Special Case
                     if ("gear".equals(data.type)) {
                         float gearSize = 36f; // [Issue 4] 48 -> 36
                         tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, gearSize);
                         tv.setGravity(android.view.Gravity.CENTER);
                         params.width = 80; // Fixed width
-
-                        // [Issue 10] Dynamic Percentage Negative Margin (-20%) - REMOVED
-                        // int margin = (int) (-gearSize * 0.2f);
-
                     } else {
                         // Generic Text (Speed, etc.)
                         float textSize = 24f;
                         tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, textSize);
-
-                        // [Issue 10] Dynamic Percentage Negative Margin (-20%) - REMOVED
-                        // int margin = (int) (-textSize * 0.2f);
-
                     }
-
-                    // Add TextView to Wrapper
-                    wrapper.addView(tv);
-                    view = wrapper;
+                    view = tv; // Direct TextView
                 }
 
                 view.setTag(data); // CRITICAL: Tag with Data for updateSpeed loop!
@@ -1277,14 +1254,6 @@ public class Presentation extends android.app.Dialog {
                 if (view instanceof android.widget.TextView) {
                     float currentSize = ((android.widget.TextView) view).getTextSize();
                     tolerance = currentSize * 0.2f * data.scale;
-                } else if (view instanceof android.widget.LinearLayout
-                        && ((android.widget.LinearLayout) view).getChildCount() > 0) {
-                    // [FIX] Handle Song Component (LinearLayout with TextViews)
-                    android.view.View child = ((android.widget.LinearLayout) view).getChildAt(0);
-                    if (child instanceof android.widget.TextView) {
-                        float currentSize = ((android.widget.TextView) child).getTextSize();
-                        tolerance = currentSize * 0.2f * data.scale;
-                    }
                 }
 
                 float clampedX = Math.max(0, Math.min(data.x, maxWidth - scaledWidth));
@@ -1379,6 +1348,12 @@ public class Presentation extends android.app.Dialog {
     }
 
     public void updateComponent(String type, String text, android.graphics.Bitmap image) {
+        // [Fix] Delegate Gear to Theme Controller (Audi RS)
+        if ("gear".equals(type) && mCurrentTheme == THEME_AUDI_RS && mThemeController instanceof AudiRsThemeController
+                && text != null) {
+            ((AudiRsThemeController) mThemeController).setGear(text);
+        }
+
         // Update HUD
         updateComponentGeneric(mRealHudComponents, type, text, image);
         // Update Cluster
@@ -1400,71 +1375,61 @@ public class Presentation extends android.app.Dialog {
             if (viewType != null && viewType.equals(type)) {
                 if (v instanceof android.widget.TextView && text != null) {
                     android.widget.TextView tv = (android.widget.TextView) v;
-                    // [FIX] Clear text first and invalidate to prevent overlap artifacts
-                    tv.setText("");
-                    tv.setText(text);
+
+                    // [Refactor] Handle Fuel Text Merging
+                    if ("fuel_range".equals(viewType) || "fuel".equals(viewType)) {
+                        String valText = text.replace("⛽", "").trim();
+                        tv.setText("⛽ " + valText);
+                    } else {
+                        // Standard update
+                        // [FIX] Clear text first and invalidate to prevent overlap artifacts
+                        // tv.setText(""); // Flashing might be too visible, try direct set
+                        tv.setText(text);
+                    }
                     tv.invalidate();
                 } else if (v instanceof android.widget.LinearLayout && text != null) {
                     android.widget.LinearLayout ll = (android.widget.LinearLayout) v;
 
-                    // [Refactor] Handle Fuel & Fuel Range Update
-                    if ("fuel_range".equals(viewType) || "fuel".equals(viewType)) {
-                        if (ll.getChildCount() > 1 && ll.getChildAt(1) instanceof android.widget.TextView) {
-                            // Update Value Text Only (remove emoji from input text if present)
-                            String cleanText = text.replace("⛽", "").trim();
-                            ((android.widget.TextView) ll.getChildAt(1)).setText(cleanText);
+                    // Song Logic (Fuel removed from here)
+                    String[] parts = (text != null ? text : "").split("\n");
+                    String title = parts.length > 0 ? parts[0] : "";
+                    String artist = parts.length > 1 ? parts[1] : "";
+
+                    // Update Title
+                    if (ll.getChildCount() > 0 && ll.getChildAt(0) instanceof android.widget.TextView) {
+                        ((android.widget.TextView) ll.getChildAt(0)).setText(title);
+                    }
+                    // Update Artist...
+                    if (!artist.isEmpty()) {
+                        if (ll.getChildCount() > 1) {
+                            ((android.widget.TextView) ll.getChildAt(1)).setText(artist);
+                            ll.getChildAt(1).setVisibility(android.view.View.VISIBLE);
+                        } else {
+                            // Add artist view if missing (lazy add)
+                            android.widget.TextView tvArtist = new android.widget.TextView(v.getContext());
+                            tvArtist.setText(artist);
+                            tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
+                            // Reuse color from Title
+                            if (ll.getChildCount() > 0) {
+                                tvArtist.setTextColor(
+                                        ((android.widget.TextView) ll.getChildAt(0)).getTextColors());
+                            } else {
+                                tvArtist.setTextColor(android.graphics.Color.WHITE);
+                            }
+                            tvArtist.setSingleLine(true);
+                            tvArtist.setMaxLines(1);
+                            tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                            tvArtist.setIncludeFontPadding(false);
+                            ll.addView(tvArtist);
                         }
                     } else {
-                        // Song Logic
-                        String[] parts = (text != null ? text : "").split("\n");
-                        String title = parts.length > 0 ? parts[0] : "";
-                        String artist = parts.length > 1 ? parts[1] : "";
-
-                        // Update Title
-                        if (ll.getChildCount() > 0 && ll.getChildAt(0) instanceof android.widget.TextView) {
-                            ((android.widget.TextView) ll.getChildAt(0)).setText(title);
-                        }
-
-                        // Update Artist
-                        if (!artist.isEmpty()) {
-                            if (ll.getChildCount() > 1) {
-                                ((android.widget.TextView) ll.getChildAt(1)).setText(artist);
-                                ll.getChildAt(1).setVisibility(android.view.View.VISIBLE);
-                            } else {
-                                // Add text view
-                                android.widget.TextView tvArtist = new android.widget.TextView(v.getContext());
-                                tvArtist.setText(artist);
-                                tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
-                                // Reuse color from Title
-                                if (ll.getChildCount() > 0) {
-                                    tvArtist.setTextColor(
-                                            ((android.widget.TextView) ll.getChildAt(0)).getTextColors());
-                                } else {
-                                    tvArtist.setTextColor(android.graphics.Color.WHITE);
-                                }
-                                tvArtist.setSingleLine(true);
-                                tvArtist.setMaxLines(1);
-                                tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.END); // 使用...省略
-                                tvArtist.setIncludeFontPadding(false);
-                                ll.addView(tvArtist);
-                            }
-                        } else {
-                            if (ll.getChildCount() > 1) {
-                                ll.getChildAt(1).setVisibility(android.view.View.GONE);
-                            }
+                        if (ll.getChildCount() > 1) {
+                            ll.getChildAt(1).setVisibility(android.view.View.GONE);
                         }
                     }
                 } else if (v instanceof android.widget.ImageView && image != null) {
                     ((android.widget.ImageView) v).setImageBitmap(image);
                     ((android.widget.ImageView) v).clearColorFilter();
-                } else if (v instanceof android.widget.FrameLayout && text != null) {
-                    // [FIX] Handle Wrapped TextView
-                    android.widget.FrameLayout fl = (android.widget.FrameLayout) v;
-                    if (fl.getChildCount() > 0 && fl.getChildAt(0) instanceof android.widget.TextView) {
-                        android.widget.TextView tv = (android.widget.TextView) fl.getChildAt(0);
-                        tv.setText(""); // Clear first
-                        tv.setText(text);
-                    }
                 }
             }
         }
@@ -1635,10 +1600,14 @@ public class Presentation extends android.app.Dialog {
         // [FIX] Sync Simulated Gear with Audi RS Theme
         if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null && gearStr != null) {
             int gearCode = 2097712; // Default P (GEAR_PARK)
-            if ("D".equals(gearStr)) gearCode = 2097696; // GEAR_DRIVE
-            else if ("R".equals(gearStr)) gearCode = 2097728; // GEAR_REVERSE
-            else if ("N".equals(gearStr)) gearCode = 2097680; // GEAR_NEUTRAL
-            else if ("P".equals(gearStr)) gearCode = 2097712; // GEAR_PARK
+            if ("D".equals(gearStr))
+                gearCode = 2097696; // GEAR_DRIVE
+            else if ("R".equals(gearStr))
+                gearCode = 2097728; // GEAR_REVERSE
+            else if ("N".equals(gearStr))
+                gearCode = 2097680; // GEAR_NEUTRAL
+            else if ("P".equals(gearStr))
+                gearCode = 2097712; // GEAR_PARK
             mThemeController.setGear(gearCode);
         }
 

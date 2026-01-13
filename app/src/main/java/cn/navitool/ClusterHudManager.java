@@ -63,6 +63,10 @@ public class ClusterHudManager
     // resets
     private int mCurrentAppliedTheme = -1;
 
+    // [Fix] Simulated Gear Support
+    private boolean mSimulatedGearEnabled = false;
+    private float mCachedRpm = 0f;
+
     private List<HudComponentData> mCachedHudComponents;
     private List<HudComponentData> mCachedClusterComponents;
     private Object mDimMenuInteraction; // IDimMenuInteraction via Reflection
@@ -72,6 +76,7 @@ public class ClusterHudManager
     // Typo in AdaptAPI: TRUN instead of TURN (Strictly matching API name)
     private static final int FUNC_LEFT_TRUN_SIGNAL = 553980160;
     private static final int FUNC_RIGHT_TRUN_SIGNAL = 553980416;
+    private static final int FUNC_AUTOHOLD_STATUS = 33661;
 
     // Additional Sensor IDs
     private static final int SENSOR_TYPE_ODOMETER = 1050368;
@@ -351,6 +356,9 @@ public class ClusterHudManager
             // Register Turn Signals (Separate IDs)
             mCarFunction.registerFunctionValueWatcher(FUNC_LEFT_TRUN_SIGNAL, mFunctionListener);
             mCarFunction.registerFunctionValueWatcher(FUNC_RIGHT_TRUN_SIGNAL, mFunctionListener);
+
+            // Register Auto Hold
+            mCarFunction.registerFunctionValueWatcher(FUNC_AUTOHOLD_STATUS, mFunctionListener);
         } catch (Exception e) {
             DebugLogger.e(TAG, "Error registering functions", e);
         }
@@ -407,12 +415,7 @@ public class ClusterHudManager
                 } else if (sensorType == TYPE_AVG_FUEL_CONSUMPTION) {
                     updateComponentText("fuel_avg", String.format("%.1fL/100km", value));
                 } else {
-                    // [FIX] Throttling for Tire Pressure Messages (1s interval)
-                    long now = System.currentTimeMillis();
-                    if (now - mLastTireUpdateTime < 1000) {
-                        return; // Skip if too fast
-                    }
-                    mLastTireUpdateTime = now;
+                    // [FIX] Removed Throttling for Real-Time Updates
 
                     // [DEBUG] Log TPMS sensor data
                     DebugLogger.d(TAG, "TPMS Sensor: type=" + sensorType + ", value=" + value);
@@ -599,7 +602,14 @@ public class ClusterHudManager
                     DebugLogger.d(TAG, "TurnSignal API: Right Changed -> " + isOn);
                     updateTurnSignal(false, isOn);
                 }
+            } else if (funcId == FUNC_AUTOHOLD_STATUS) {
+                DebugLogger.d(TAG, "AutoHold API: Changed -> " + value);
+                mIsAutoHoldOn = (value == 1);
+                android.graphics.Bitmap bitmap = getAutoHoldBitmap(mIsAutoHoldOn);
+                // 使用通用 updateComponentImage 更新，组件 key 为 "auto_hold"
+                updateComponentImage("auto_hold", bitmap);
             }
+
         }
 
         @Override
@@ -624,6 +634,8 @@ public class ClusterHudManager
     private android.graphics.Bitmap mBitmapRight;
 
     private android.graphics.Bitmap mBitmapHazard;
+    private android.graphics.Bitmap mCachedAutoHoldBitmap;
+    private boolean mIsAutoHoldOn = false;
 
     // Volume Cache
     private android.graphics.Bitmap mCachedVolumeBitmap;
@@ -691,6 +703,50 @@ public class ClusterHudManager
             return bitmap;
         } catch (Exception e) {
             DebugLogger.e(TAG, "Error generating turn signal bitmap", e);
+            return null;
+        }
+    }
+
+    public android.graphics.Bitmap getAutoHoldBitmap(boolean isOn) {
+        if (!isOn) {
+            // [FIX] Return null instead of Transparent Bitmap.
+            // Null prevents "update" callback from clearing the Preview icon in
+            // MainActivity.
+            // Presentation handles null by not setting image (invisible), which is desired.
+            return null;
+        }
+        if (mCachedAutoHoldBitmap != null) {
+            return mCachedAutoHoldBitmap;
+        }
+
+        try {
+            android.graphics.drawable.Drawable drawable = mContext.getDrawable(R.drawable.ic_auto_hold);
+            if (drawable == null)
+                return null;
+
+            // Target Height: 72px (Standard for 2x Preview)
+            // Calculate width to maintain aspect ratio
+            int targetHeight = 72;
+            int intrinsicWidth = drawable.getIntrinsicWidth();
+            int intrinsicHeight = drawable.getIntrinsicHeight();
+
+            float ratio = (intrinsicHeight > 0) ? (float) intrinsicWidth / intrinsicHeight : 1.0f;
+            int targetWidth = (int) (targetHeight * ratio);
+            if (targetWidth <= 0)
+                targetWidth = targetHeight;
+
+            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(targetWidth, targetHeight,
+                    android.graphics.Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+
+            drawable.setBounds(0, 0, targetWidth, targetHeight);
+            // Removed setTint(WHITE) to keep original Green color
+            drawable.draw(canvas);
+
+            mCachedAutoHoldBitmap = bitmap;
+            return bitmap;
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error generating Auto Hold bitmap", e);
             return null;
         }
     }
@@ -770,6 +826,9 @@ public class ClusterHudManager
         mBitmapRight = null;
         mBitmapHazard = null;
         mCachedVolumeBitmap = null;
+        if (mCachedAutoHoldBitmap != null)
+            mCachedAutoHoldBitmap.recycle();
+        mCachedAutoHoldBitmap = null;
         mTransparentBitmap = null;
 
         dismissPresentation();
@@ -886,15 +945,35 @@ public class ClusterHudManager
     }
 
     private String getGearString(int gearValue) {
+        // [FIX] Use cached speed and RPM for simulated gear calculation
+        if (mSimulatedGearEnabled && (gearValue == ISensorEvent.GEAR_DRIVE || gearValue == 13)) { // 13=TRSM_GEAR_DRIVE
+            // DebugLogger.d(TAG, "Simulated Gear Enabled. Speed: " + mCachedSpeed + ", RPM:
+            // " + mCachedRpm);
+            String sensorGear = "D"; // We only simulate for Drive
+            return cn.navitool.DrivingShift.getInstance().calculateGear(mCachedSpeed, mCachedRpm, sensorGear);
+        } else if (mSimulatedGearEnabled && (gearValue == 2097744)) { // Manual Mode?
+            // Handle Manual if needed, or pass through
+            return mapRawGearToChar(gearValue);
+        } else {
+            return mapRawGearToChar(gearValue);
+        }
+    }
+
+    private String mapRawGearToChar(int gearValue) {
         switch (gearValue) {
             case ISensorEvent.GEAR_PARK:
+            case 15:
                 return "P";
             case ISensorEvent.GEAR_REVERSE:
+            case 11:
                 return "R";
             case ISensorEvent.GEAR_NEUTRAL:
+            case 14:
                 return "N";
             case ISensorEvent.GEAR_DRIVE:
+            case 13:
                 return "D";
+            // Map specific sub-gears if sensor supports them natively
             case ISensorEvent.GEAR_FIRST:
                 return "D1";
             case ISensorEvent.GEAR_SECOND:
@@ -912,7 +991,7 @@ public class ClusterHudManager
             case ISensorEvent.GEAR_EIGHTH:
                 return "D8";
             default:
-                return "D";
+                return "D"; // Fallback
         }
     }
 
@@ -1553,7 +1632,7 @@ public class ClusterHudManager
             DebugLogger.e(TAG, "ensureUiVisible: Context is null! Cannot show UI.");
             return;
         }
-        
+
         // [FIX] Check if features are enabled before showing
         if (!mIsClusterEnabled && !mIsHudEnabled) {
             DebugLogger.w(TAG, "ensureUiVisible: Ignored. Both Cluster and HUD are disabled.");
@@ -1622,6 +1701,15 @@ public class ClusterHudManager
         }
 
         if (targetDisplay != null) {
+            // [FIX] Prevent Duplicate Presentation (Ghosting Issue)
+            if (mPresentation != null) {
+                DebugLogger.w(TAG, "showPresentation: Presentation already exists! Skipping creation.");
+                if (!mPresentation.isShowing()) {
+                    mPresentation.show();
+                }
+                return;
+            }
+
             mRetryCount = 0; // Reset retry counter on success
             DebugLogger.d(TAG, "showPresentation: [Step 3] Creating Presentation Window");
             try {
@@ -1796,6 +1884,8 @@ public class ClusterHudManager
                     } else if ("turn_signal".equals(newData.type)) {
                         newData.image = getTurnSignalBitmap(mLeftTurnOn, mRightTurnOn);
                         newData.text = "L:" + mLeftTurnOn + ",R:" + mRightTurnOn;
+                    } else if ("auto_hold".equals(newData.type)) {
+                        newData.image = getAutoHoldBitmap(mIsAutoHoldOn);
                     } else {
                         // Standard Merge
                         for (HudComponentData oldData : mCachedHudComponents) {
@@ -1818,6 +1908,8 @@ public class ClusterHudManager
                     } else if ("turn_signal".equals(newData.type)) {
                         newData.image = getTurnSignalBitmap(mLeftTurnOn, mRightTurnOn);
                         newData.text = "L:" + mLeftTurnOn + ",R:" + mRightTurnOn;
+                    } else if ("auto_hold".equals(newData.type)) {
+                        newData.image = getAutoHoldBitmap(mIsAutoHoldOn);
                     }
                 }
             }
@@ -1860,18 +1952,20 @@ public class ClusterHudManager
         }
     }
 
-    // [New] Public method to force notify listeners (MainActivity Hud Editor) of current data
+    // [New] Public method to force notify listeners (MainActivity Hud Editor) of
+    // current data
     public void forceNotifyListener() {
         if (mListener != null && mCachedHudComponents != null) {
-            DebugLogger.d(TAG, "forceNotifyListener: Pushing " + mCachedHudComponents.size() + " components to listener");
-             final java.util.List<HudComponentData> snapshot = new java.util.ArrayList<>(mCachedHudComponents);
-             mMainHandler.post(() -> {
-                 if (mListener != null) {
-                     for (HudComponentData data : snapshot) {
-                         mListener.onHudDataChanged(data.type, data.text, data.image);
-                     }
-                 }
-             });
+            DebugLogger.d(TAG,
+                    "forceNotifyListener: Pushing " + mCachedHudComponents.size() + " components to listener");
+            final java.util.List<HudComponentData> snapshot = new java.util.ArrayList<>(mCachedHudComponents);
+            mMainHandler.post(() -> {
+                if (mListener != null) {
+                    for (HudComponentData data : snapshot) {
+                        mListener.onHudDataChanged(data.type, data.text, data.image);
+                    }
+                }
+            });
         }
     }
 
@@ -1964,19 +2058,17 @@ public class ClusterHudManager
     // Handler(Looper.getMainLooper());
 
     // --- Simulated Gear Logic ---
-    private boolean mIsSimulatedGearEnabled = false;
-    private float mCurrentRpm = 0f;
-    private int mCurrentSpeed = 0;
-    private int mCurrentSensorGearValue = 0;
 
     public void setSimulatedGearEnabled(boolean enabled) {
-        mIsSimulatedGearEnabled = enabled;
-        // Trigger immediate update
-        updateGear(mCurrentSensorGearValue);
+        mSimulatedGearEnabled = enabled;
+        DebugLogger.d(TAG, "Simulated Gear Enabled: " + enabled);
+        if (mSimulatedGearEnabled) {
+            calculateAndPushSimulatedGear();
+        }
     }
 
     public void updateRpm(float rpm) {
-        mCurrentRpm = rpm;
+        mCachedRpm = rpm;
         if (mPresentation != null) {
             mMainHandler.post(() -> {
                 if (mPresentation != null) {
@@ -1984,7 +2076,7 @@ public class ClusterHudManager
                 }
             });
         }
-        if (mIsSimulatedGearEnabled) {
+        if (mSimulatedGearEnabled) {
             calculateAndPushSimulatedGear();
         }
     }
@@ -2000,15 +2092,14 @@ public class ClusterHudManager
     }
 
     public void updateGear(int gearValue) {
-        // [FIX] Cache gear value for cold boot display
+        boolean gearChanged = (mCachedGear != gearValue);
         mCachedGear = gearValue;
-        mCurrentSensorGearValue = gearValue;
 
         if (mPresentation != null) {
             mMainHandler.post(() -> {
                 if (mPresentation != null) {
-                    if (mIsSimulatedGearEnabled) {
-                        calculateAndPushSimulatedGear();
+                    if (mSimulatedGearEnabled) {
+                        calculateAndPushSimulatedGear(gearChanged);
                     } else {
                         mPresentation.updateGear(gearValue);
                     }
@@ -2018,7 +2109,7 @@ public class ClusterHudManager
     }
 
     public void updateSpeed(int speed) {
-        mCurrentSpeed = speed;
+        mCachedSpeed = speed;
         if (mPresentation != null) {
             mMainHandler.post(() -> {
                 if (mPresentation != null) {
@@ -2026,20 +2117,23 @@ public class ClusterHudManager
                 }
             });
         }
-        if (mIsSimulatedGearEnabled) {
+        if (mSimulatedGearEnabled) {
             calculateAndPushSimulatedGear();
         }
     }
 
     private void calculateAndPushSimulatedGear() {
-        String baseGear = convertGearValueToString(mCurrentSensorGearValue);
-        if (baseGear == null)
-            baseGear = "P";
+        calculateAndPushSimulatedGear(false);
+    }
 
-        String calculated = DrivingShift.getInstance().calculateGear(
-                mCurrentSpeed,
-                mCurrentRpm,
-                baseGear);
+    private void calculateAndPushSimulatedGear(boolean forceImmediate) {
+        String baseGear = mapRawGearToChar(mCachedGear != -1 ? mCachedGear : 2097712); // Default P
+
+        String calculated = cn.navitool.DrivingShift.getInstance().calculateGear(
+                mCachedSpeed,
+                mCachedRpm,
+                baseGear,
+                forceImmediate);
 
         if (mPresentation != null) {
             mMainHandler.post(() -> mPresentation.updateGear(calculated));
@@ -2161,10 +2255,10 @@ public class ClusterHudManager
     public void setSnowMode(boolean enabled) {
         ConfigManager.getInstance().setBoolean("hud_snow_mode", enabled);
     }
-    
+
     // --- HUD Green Background Logic ---
     private boolean mIsHudGreenBgExposed = false;
-    
+
     public void setHudGreenBgEnabled(boolean enabled) {
         mIsHudGreenBgExposed = enabled;
         if (mPresentation != null) {
@@ -2283,11 +2377,12 @@ public class ClusterHudManager
             mIsHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", true);
             mIsFloatingEnabled = ConfigManager.getInstance().getBoolean("floating_traffic_light_enabled", false);
             // [FIX] Load Simulated Gear State
-            mIsSimulatedGearEnabled = ConfigManager.getInstance().getBoolean("simulated_gear_enabled", false);
+            mSimulatedGearEnabled = ConfigManager.getInstance().getBoolean("simulated_gear_enabled", false);
             // [NEW] Load Green Background State
             mIsHudGreenBgExposed = ConfigManager.getInstance().getBoolean("hud_green_bg_enabled", false);
             DebugLogger.i(TAG, "Self-Init: Loaded State -> Cluster=" + mIsClusterEnabled + ", HUD=" + mIsHudEnabled
-                    + ", Floating=" + mIsFloatingEnabled + ", SimGear=" + mIsSimulatedGearEnabled + ", GreenBg=" + mIsHudGreenBgExposed);
+                    + ", Floating=" + mIsFloatingEnabled + ", SimGear=" + mSimulatedGearEnabled + ", GreenBg="
+                    + mIsHudGreenBgExposed);
 
             // 2. Load Theme
             mPendingTheme = ConfigManager.getInstance().getInt("cluster_theme_builtin",

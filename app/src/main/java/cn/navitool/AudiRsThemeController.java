@@ -393,9 +393,17 @@ public class AudiRsThemeController {
         DebugLogger.d(TAG, "GuideInfo Updated: Icon=" + info.iconType + " Road=" + info.currentRoadName + " Next="
                 + info.nextRoadName);
 
-        // Use NaviInfoController
-        if (mNaviInfoController != null) {
-            mNaviInfoController.updateGuideInfo(info);
+        // [FIX] Update Distance & ETA Manually (since NaviInfoController binding is
+        // unused)
+        if (mNaviDistance != null) {
+            String distText = cn.navitool.NaviInfoController.formatDistance(info.routeRemainDis);
+            mNaviDistance.setText(distText);
+        }
+
+        if (mNaviEta != null) {
+            String eta = cn.navitool.NaviInfoController.parseEta(info.etaText);
+            String displayEta = eta.isEmpty() ? "" : "ETA " + eta;
+            mNaviEta.setText(displayEta);
         }
     }
 
@@ -569,51 +577,63 @@ public class AudiRsThemeController {
     /**
      * 根据传感器档位值设置显示
      */
+    /**
+     * 根据传感器档位值设置显示
+     */
     public void setGear(int gearValue) {
         String gearStr = "P"; // 默认P档
 
         if (gearValue == GEAR_DRIVE || gearValue == TRSM_GEAR_DRIVE) {
             gearStr = "D";
-            mCurrentGearIndex = 3; // D在数组中的索引
         } else if (gearValue == GEAR_REVERSE || gearValue == TRSM_GEAR_RVS) {
             gearStr = "R";
-            mCurrentGearIndex = 1;
         } else if (gearValue == GEAR_NEUTRAL || gearValue == TRSM_GEAR_NEUT) {
             gearStr = "N";
-            mCurrentGearIndex = 2;
         } else if (gearValue == GEAR_PARK || gearValue == TRSM_GEAR_PARK) {
             gearStr = "P";
-            mCurrentGearIndex = 0;
         }
 
-        updateGearDisplay();
+        setGear(gearStr);
     }
 
     /**
-     * 更新档位显示
+     * 直接设置档位字符串 (支持 D1, D2, M1 等)
+     */
+    public void setGear(String gearCode) {
+        if (mGearText != null && gearCode != null) {
+            mGearText.setText(gearCode);
+
+            // 根据档位设置颜色和索引
+            int color = android.graphics.Color.WHITE;
+
+            if (gearCode.startsWith("D")) {
+                color = android.graphics.Color.GREEN;
+                mCurrentGearIndex = 3;
+            } else if (gearCode.startsWith("R")) {
+                color = android.graphics.Color.RED;
+                mCurrentGearIndex = 1;
+            } else if (gearCode.startsWith("N")) {
+                color = android.graphics.Color.YELLOW;
+                mCurrentGearIndex = 2;
+            } else if (gearCode.startsWith("P")) {
+                color = android.graphics.Color.WHITE;
+                mCurrentGearIndex = 0;
+            } else if (gearCode.startsWith("M") || gearCode.startsWith("S")) {
+                // 手动/运动模式 - 青色
+                color = android.graphics.Color.CYAN;
+                mCurrentGearIndex = 3;
+            }
+
+            mGearText.setTextColor(color);
+        }
+    }
+
+    /**
+     * 更新档位显示 (用于 cycleGear 内部逻辑)
      */
     private void updateGearDisplay() {
-        if (mGearText != null) {
-            String gear = GEARS[mCurrentGearIndex];
-            mGearText.setText(gear);
-
-            // 根据档位设置颜色
-            int color;
-            switch (gear) {
-                case "R":
-                    color = android.graphics.Color.RED;
-                    break;
-                case "N":
-                    color = android.graphics.Color.YELLOW;
-                    break;
-                case "D":
-                    color = android.graphics.Color.GREEN;
-                    break;
-                default: // P
-                    color = android.graphics.Color.WHITE;
-                    break;
-            }
-            mGearText.setTextColor(color);
+        if (mCurrentGearIndex >= 0 && mCurrentGearIndex < GEARS.length) {
+            setGear(GEARS[mCurrentGearIndex]);
         }
     }
 

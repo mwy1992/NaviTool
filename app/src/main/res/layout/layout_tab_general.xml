@@ -67,20 +67,20 @@
                 android:progress="100"/>
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnSunshadeNightOnly"
-                style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="8dp"
-                android:padding="0dp"
-                android:minWidth="0dp"
+                android:minHeight="40dp"
+                android:minWidth="120dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
                 android:text="@string/sunshade_sensor_open"
                 android:textSize="12sp"
-                android:textColor="@android:color/black"
                 app:icon="@drawable/ic_check"
                 app:iconGravity="textStart"
                 app:iconPadding="4dp"
-                app:iconSize="24dp"
-                app:iconTint="?android:attr/textColorPrimary"/>
+                app:iconSize="18dp"
+                app:iconTint="@android:color/white"/>
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/swSunshadeAutoOpen"
                 android:layout_width="wrap_content"
@@ -206,14 +206,40 @@
             android:minHeight="60dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
-            <TextView
+            
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="@string/simulated_gear_title"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary"/>
+                android:orientation="horizontal">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/simulated_gear_title"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"/>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="感谢群友大胖提供代码"
+                    android:textSize="12sp"
+                    android:textColor="?android:attr/textColorSecondary"
+                    android:layout_marginStart="6dp"/>
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnTransmissionType"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="我是8AT车型"
+                android:textSize="12sp"
+                android:layout_marginEnd="8dp"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:minHeight="40dp"
+                android:minWidth="120dp"/>
+
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/switchSimulatedGear"
                 android:layout_width="wrap_content"

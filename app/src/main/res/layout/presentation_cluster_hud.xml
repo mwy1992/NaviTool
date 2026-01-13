@@ -34,7 +34,7 @@
         android:layout_marginTop="720px"
         android:background="@android:color/transparent"
         android:visibility="gone">
-        
+
     </FrameLayout>
 
     <!-- Debug RPM View (Overlay) - Commented out for release, uncomment for calibration
