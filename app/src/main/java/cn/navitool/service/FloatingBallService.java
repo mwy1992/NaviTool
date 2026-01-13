@@ -22,6 +22,7 @@ import java.util.List;
 
 import cn.navitool.R;
 import cn.navitool.managers.AppLaunchManager;
+import cn.navitool.ConfigManager;
 import cn.navitool.view.AppListAdapter;
 
 public class FloatingBallService extends Service {
@@ -60,8 +61,9 @@ public class FloatingBallService extends Service {
                 PixelFormat.TRANSLUCENT);
 
         mFloatingParams.gravity = Gravity.TOP | Gravity.START;
-        mFloatingParams.x = 100;
-        mFloatingParams.y = 100;
+        // [FIX] Load saved position
+        mFloatingParams.x = cn.navitool.ConfigManager.getInstance().getInt("floating_ball_x", 100);
+        mFloatingParams.y = cn.navitool.ConfigManager.getInstance().getInt("floating_ball_y", 100);
 
         // Implement Drag and Click
         ImageView ivBall = mFloatingView.findViewById(R.id.ivFloatingBall);
@@ -93,6 +95,14 @@ public class FloatingBallService extends Service {
                         long duration = System.currentTimeMillis() - touchStartTime;
                         float dx = event.getRawX() - initialTouchX;
                         float dy = event.getRawY() - initialTouchY;
+
+                        // [FIX] Always save position on drag end
+                        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                            ConfigManager.getInstance().setInt("floating_ball_x", mFloatingParams.x);
+                            ConfigManager.getInstance().setInt("floating_ball_y", mFloatingParams.y);
+                            ConfigManager.getInstance().saveProperties(); // Force write
+                        }
+
                         if (duration < 200 && Math.abs(dx) < 10 && Math.abs(dy) < 10) {
                             toggleMenu();
                         }
@@ -198,6 +208,13 @@ public class FloatingBallService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        // [FIX] Save current position before destroying
+        if (mFloatingParams != null) {
+            cn.navitool.ConfigManager.getInstance().setInt("floating_ball_x", mFloatingParams.x);
+            cn.navitool.ConfigManager.getInstance().setInt("floating_ball_y", mFloatingParams.y);
+            cn.navitool.ConfigManager.getInstance().saveProperties(); // Force write to disk
+        }
+
         if (mFloatingView != null) {
             try {
                 mWindowManager.removeView(mFloatingView);

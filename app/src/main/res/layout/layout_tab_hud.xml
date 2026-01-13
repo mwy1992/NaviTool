@@ -120,6 +120,8 @@
                 android:layout_gravity="center"
                 android:visibility="gone"
                 android:padding="4dp"
+                android:clipChildren="false"
+                android:clipToPadding="false"
                 android:background="@drawable/border_hud_preview">
 
                 <!-- HUD Preview Content Area: 1456x380 -->
@@ -127,6 +129,8 @@
                     android:id="@+id/layoutHudPreview"
                     android:layout_width="1456px"
                     android:layout_height="380px"
+                    android:clipChildren="false"
+                    android:clipToPadding="false"
                     android:background="#000000"
                     android:visibility="gone">
                 </FrameLayout>

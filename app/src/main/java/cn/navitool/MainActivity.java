@@ -238,6 +238,13 @@ public class MainActivity extends AppCompatActivity {
         if (!isNotificationListenerEnabled()) {
             DebugLogger.toastAlways(this, getString(R.string.toast_notification_permission_fix));
         }
+
+        // [FIX] Restore Floating Ball Service on Resume (if enabled)
+        if (ConfigManager.getInstance().getBoolean("floating_ball_enabled", false)) {
+             if (Settings.canDrawOverlays(this)) {
+                 startService(new Intent(this, cn.navitool.service.FloatingBallService.class));
+             }
+        }
     }
 
     private void updatePreviewContainer(android.widget.FrameLayout preview, String type, String text,
@@ -625,17 +632,11 @@ public class MainActivity extends AppCompatActivity {
             });
 
             if (btnPosition != null) {
+                // [FIX] Feature Change: Button now toggles style and shows temporarily
+                btnPosition.setText(getString(R.string.action_switch_style)); 
                 btnPosition.setOnClickListener(v -> {
-                    String currentText = btnPosition.getText().toString();
-                    if (getString(R.string.action_settings).equals(currentText)) {
-                        btnPosition.setText(getString(R.string.action_save));
-                        NaviInfoController.getInstance(this).enterPositionAdjustmentMode(); // Enter
-                        DebugLogger.toast(this, getString(R.string.toast_enter_position_mode));
-                    } else {
-                        btnPosition.setText(getString(R.string.action_settings));
-                        NaviInfoController.getInstance(this).enterPositionAdjustmentMode(); // Exit/Save
-                        DebugLogger.toast(this, getString(R.string.toast_position_saved));
-                    }
+                    NaviInfoController.getInstance(this).toggleFloatingStyle();
+                    DebugLogger.toast(this, "样式已切换，3秒后自动隐藏");
                 });
             }
         }
@@ -653,6 +654,22 @@ public class MainActivity extends AppCompatActivity {
                 ClusterHudManager.getInstance(this).setSimulatedGearEnabled(isChecked);
                 if (isChecked) {
                     DebugLogger.toast(this, getString(R.string.toast_simulated_gear_enabled));
+                }
+            });
+        }
+        
+        // HUD Green Background (Debug)
+        SwitchMaterial switchHudGreenBg = mLayoutGeneral.findViewById(R.id.switchHudGreenBg);
+        if (switchHudGreenBg != null) {
+            boolean isEnabled = ConfigManager.getInstance().getBoolean("hud_green_bg_enabled", false);
+            switchHudGreenBg.setChecked(isEnabled);
+            ClusterHudManager.getInstance(this).setHudGreenBgEnabled(isEnabled);
+
+            switchHudGreenBg.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                ConfigManager.getInstance().setBoolean("hud_green_bg_enabled", isChecked);
+                ClusterHudManager.getInstance(this).setHudGreenBgEnabled(isChecked);
+                if (isChecked) {
+                    DebugLogger.toast(this, "HUD 浅绿底色已开启");
                 }
             });
         }
@@ -920,6 +937,9 @@ public class MainActivity extends AppCompatActivity {
 
         // Load Layout
         loadHudLayout(mHudMode);
+        
+        // [FIX] Force refresh data to generic components immediately
+        ClusterHudManager.getInstance(this).forceNotifyListener();
     }
 
     // --- HUD Editor Logic ---
@@ -1402,9 +1422,11 @@ public class MainActivity extends AppCompatActivity {
             tv.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
 
             // [Sync Issue 10] Apply Dynamic Negative Margin to Preview for WYSIWYG
-            // Logic: -20% of Text Size
-            float currentTextSize = tv.getTextSize();
-            int margin = (int) (-currentTextSize * 0.2f);
+            // REMOVED: Causing clipping issues. Preview should match Presentation logic (which now wraps views).
+            // Logic: -20% of Text Size -> REMOVED
+            // float currentTextSize = tv.getTextSize();
+            // int margin = (int) (-currentTextSize * 0.2f);
+            int margin = 0;
 
             if (view.getLayoutParams() == null) {
                 view.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
@@ -3256,12 +3278,26 @@ public class MainActivity extends AppCompatActivity {
         processNextRepair();
     }
 
+    // [NEW] Helper to check AppOps directly (fixes Android 9 sync issues)
+    private boolean checkOpPermission(String op) {
+        android.app.AppOpsManager appOps = (android.app.AppOpsManager) getSystemService(Context.APP_OPS_SERVICE);
+        int mode = appOps.checkOpNoThrow(op, android.os.Process.myUid(), getPackageName());
+        return mode == android.app.AppOpsManager.MODE_ALLOWED;
+    }
+
     private void processNextRepair() {
         if (!isAutoRepairing)
             return;
 
         // 1. Accessibility Service
         if (!isAccessibilityServiceEnabled()) {
+             // Android 11+ Limitation Check (ADB disabled to prevent crash)
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                DebugLogger.toast(this, "Android 11+ 系统限制，请手动开启无障碍服务");
+                requestAccessibilityPermission();
+                return;
+            }
+
             if (AdbShell.getInstance(this).isConnected()) {
                 String serviceName = new ComponentName(this, KeepAliveAccessibilityService.class).flattenToString();
                 String enabledServices = Settings.Secure.getString(getContentResolver(),
@@ -3292,11 +3328,25 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // 2. Overlay Permission
-        if (!Settings.canDrawOverlays(this)) {
+        if (!android.provider.Settings.canDrawOverlays(this)) {
+             // [Fix] Android 9 Sync Issue: System API says false, but AppOps says allowed
+             if (checkOpPermission(android.app.AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW)) {
+                 DebugLogger.toast(this, "检测到系统缓存不同步，请手动【关闭再开启】一次");
+                 requestOverlayPermission();
+                 return;
+             }
+
+             // Android 11+ Limitation Check
+             if (android.os.Build.VERSION.SDK_INT >= 30) {
+                 DebugLogger.toast(this, "Android 11+ 系统限制，请手动授予悬浮窗权限");
+                 requestOverlayPermission();
+                 return;
+             }
+
             if (AdbShell.getInstance(this).isConnected()) {
                 showRepairingToast(R.string.perm_overlay);
                 AdbShell.getInstance(this).exec("appops set " + getPackageName() + " SYSTEM_ALERT_WINDOW allow");
-                scheduleNextCheck(1000, this::requestOverlayPermission, () -> Settings.canDrawOverlays(this));
+                scheduleNextCheck(1000, this::requestOverlayPermission, () -> android.provider.Settings.canDrawOverlays(this));
                 return;
             }
             showRepairingToast(R.string.perm_overlay);

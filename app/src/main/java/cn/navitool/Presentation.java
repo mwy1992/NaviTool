@@ -16,6 +16,7 @@ import cn.navitool.view.TrafficLightView;
 
 public class Presentation extends android.app.Dialog {
     private static final String TAG = "Presentation";
+    private final android.os.Handler mMainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private View mLayoutCluster;
     private View mLayoutHud;
     private AudiRsThemeController mThemeController;
@@ -57,7 +58,7 @@ public class Presentation extends android.app.Dialog {
         mLayoutHud = findViewById(R.id.layoutHud);
 
         if (mLayoutHud != null) {
-            mLayoutHud.setBackgroundColor(0xFF90EE90);
+            mLayoutHud.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         }
 
         cn.navitool.managers.MemoryMonitor.logMemory("Presentation.onCreate-Start");
@@ -287,18 +288,19 @@ public class Presentation extends android.app.Dialog {
                 private float initialTouchY;
                 private int initialX;
                 private int initialY;
+                private long touchStartTime;
 
                 @Override
                 public boolean onTouch(View view, android.view.MotionEvent event) {
-                    if (!mIsPositioningMode)
-                        return false;
-
+                    // [FIX] Allow drag anytime
+                    
                     switch (event.getAction()) {
                         case android.view.MotionEvent.ACTION_DOWN:
                             initialX = mFloatingParams.x;
                             initialY = mFloatingParams.y;
                             initialTouchX = event.getRawX();
                             initialTouchY = event.getRawY();
+                            touchStartTime = System.currentTimeMillis();
                             return true;
 
                         case android.view.MotionEvent.ACTION_MOVE:
@@ -312,7 +314,9 @@ public class Presentation extends android.app.Dialog {
                             // Save Position
                             ConfigManager.getInstance().setInt("floating_traffic_light_x", mFloatingParams.x);
                             ConfigManager.getInstance().setInt("floating_traffic_light_y", mFloatingParams.y);
-                            return true;
+                            ConfigManager.getInstance().saveProperties(); // Force save
+                            DebugLogger.d(TAG, "Floating Light Position Saved: " + mFloatingParams.x + "," + mFloatingParams.y);
+                            return true; 
                     }
                     return false;
                 }
@@ -331,8 +335,9 @@ public class Presentation extends android.app.Dialog {
             mHudTrafficLightView.setVisibility(mIsHudStyle ? View.VISIBLE : View.GONE);
         }
 
-        if (mIsPositioningMode) {
-            // Positioning Preview
+        // [FIX] Use mIsTempShowing for preview logic
+        if (mIsTempShowing) {
+            // Preview Mode
             if (mIsHudStyle) {
                 // HUD Preview: Red style, Time 14, Straight
                 if (mHudTrafficLightView != null) {
@@ -340,12 +345,17 @@ public class Presentation extends android.app.Dialog {
                 }
             } else {
                 // Dashboard Preview
-                mFloatingLightRed.setImageResource(R.drawable.audi_rs_light_red);
-                mFloatingLightYellow.setImageResource(R.drawable.audi_rs_light_yellow);
-                mFloatingLightGreen.setImageResource(R.drawable.audi_rs_light_green);
-                mFloatingLightRed.setAlpha(1.0f);
-                mFloatingLightYellow.setAlpha(1.0f);
-                mFloatingLightGreen.setAlpha(1.0f);
+                if (mFloatingCountdown != null) {
+                    mFloatingCountdown.setText("60");
+                    mFloatingCountdown.setVisibility(View.VISIBLE);
+                }
+                
+                if (mFloatingLightRed != null) {
+                     mFloatingLightRed.setAlpha(1.0f);
+                     // Set resource if needed, but XML should have default
+                }
+                if (mFloatingLightYellow != null) mFloatingLightYellow.setAlpha(0.3f);
+                if (mFloatingLightGreen != null) mFloatingLightGreen.setAlpha(0.3f);
             }
         }
     }
@@ -353,42 +363,56 @@ public class Presentation extends android.app.Dialog {
     public void setFloatingTrafficLightEnabled(boolean enabled) {
         mIsFloatingEnabled = enabled;
         updateFloatingTrafficLightVisibility();
+        
+        // [FIX] Save position on disable
+        if (!enabled && mFloatingParams != null) {
+             ConfigManager.getInstance().setInt("floating_traffic_light_x", mFloatingParams.x);
+             ConfigManager.getInstance().setInt("floating_traffic_light_y", mFloatingParams.y);
+             ConfigManager.getInstance().saveProperties();
+        }
     }
 
-    public void toggleFloatingTrafficLightPositioning() {
-        mIsPositioningMode = !mIsPositioningMode;
-        if (mIsPositioningMode) {
-            initializeFloatingTrafficLight();
-            if (mFloatingTrafficLightContainer != null) {
-                mFloatingTrafficLightContainer.setVisibility(View.VISIBLE);
-                mFloatingTrafficLightContainer.setBackgroundResource(R.drawable.bg_hud_pending); // Visible bg for
-                                                                                                 // dragging
+    // [FIX] Renamed to reflect new purpose: Style Switch + Temp Show
+    public void toggleFloatingTrafficLightStyle() {
+        // 1. Toggle Style
+        mIsHudStyle = !mIsHudStyle;
+        ConfigManager.getInstance().setBoolean("floating_style_hud", mIsHudStyle);
+        updateFloatingTrafficLightStyle();
+        
+        // 2. Force Show Temporarily
+        forceShowFloatingTrafficLightTemporary();
+    }
 
-                // Show Style Switch
-                if (mBtnFloatingStyleSwitch != null) {
-                    mBtnFloatingStyleSwitch.setVisibility(View.VISIBLE);
-                    mBtnFloatingStyleSwitch.bringToFront(); // Ensure clickable
-                }
+    private Runnable mTempShowRunnable = new Runnable() {
+        @Override
+        public void run() {
+            mIsTempShowing = false;
+            updateFloatingTrafficLightVisibility();
+        }
+    };
+    private boolean mIsTempShowing = false;
 
-                // Force show dummy data
-                if (mFloatingCountdown != null)
-                    mFloatingCountdown.setText("60");
-
-                updateFloatingTrafficLightStyle();
-
-                DebugLogger.toast(getContext(), getContext().getString(R.string.toast_floating_position_instruction));
-            }
-        } else {
-            if (mFloatingTrafficLightContainer != null) {
-                mFloatingTrafficLightContainer.setBackgroundResource(0); // Transparent bg
-
-                // Hide Style Switch
-                if (mBtnFloatingStyleSwitch != null) {
-                    mBtnFloatingStyleSwitch.setVisibility(View.GONE);
-                }
-
-                updateFloatingTrafficLightVisibility(); // Hide if no real data
-                DebugLogger.toast(getContext(), getContext().getString(R.string.toast_position_saved_simple));
+    private void forceShowFloatingTrafficLightTemporary() {
+        if (mFloatingTrafficLightContainer == null) {
+             initializeFloatingTrafficLight();
+        }
+        
+        if (mFloatingTrafficLightContainer != null) {
+            // Cancel pending hide
+            mMainHandler.removeCallbacks(mTempShowRunnable);
+            
+            // Show
+            mIsTempShowing = true;
+            updateFloatingTrafficLightVisibility();
+            
+            // Re-schedule hide
+            mMainHandler.postDelayed(mTempShowRunnable, 3000);
+            
+            // Apply dummy data for preview if no real data
+            if (mLatestTrafficLightInfo == null) {
+                 if (mFloatingCountdown != null) mFloatingCountdown.setText("60");
+                 // Initial style update ensures correct view is visible
+                 updateFloatingTrafficLightStyle(); 
             }
         }
     }
@@ -397,13 +421,17 @@ public class Presentation extends android.app.Dialog {
         if (mFloatingTrafficLightContainer == null)
             return;
 
-        // Show if Positioning Mode OR (Enabled AND Has Data)
-        if (mIsPositioningMode) {
+        // Show if Temp Showing OR (Enabled AND Has Data)
+        // [FIX] Removed mIsPositioningMode, added mIsTempShowing
+        if (mIsTempShowing) {
             mFloatingTrafficLightContainer.setVisibility(View.VISIBLE);
+            // Ensure transparent background always (no more positioning bg)
+            mFloatingTrafficLightContainer.setBackgroundResource(0);
         } else {
-            // Not positioning mode: Only show if enabled AND has valid data
+            // Normal mode: Only show if enabled AND has valid data
             if (mIsFloatingEnabled && mLatestTrafficLightInfo != null) {
                 mFloatingTrafficLightContainer.setVisibility(View.VISIBLE);
+                mFloatingTrafficLightContainer.setBackgroundResource(0);
             } else {
                 mFloatingTrafficLightContainer.setVisibility(View.GONE);
             }
@@ -411,11 +439,6 @@ public class Presentation extends android.app.Dialog {
     }
 
     private void updateFloatingTrafficLightLogic(cn.navitool.NaviInfoController.TrafficLightInfo info) {
-        if (!mIsPositioningMode) {
-            mLatestTrafficLightInfo = info; // Only update tracking if not positioning (or always? Let's say always so
-                                            // we know state on exit)
-        }
-        // Actually always update it so we have state when exiting positioning
         mLatestTrafficLightInfo = info;
 
         if (mFloatingTrafficLightContainer == null)
@@ -423,21 +446,19 @@ public class Presentation extends android.app.Dialog {
         if (mFloatingTrafficLightContainer == null)
             return;
 
-        if (!mIsFloatingEnabled && !mIsPositioningMode) {
+        // [FIX] Use mIsTempShowing instead of mIsPositioningMode
+        if (!mIsFloatingEnabled && !mIsTempShowing) {
             mFloatingTrafficLightContainer.setVisibility(View.GONE);
             return;
         }
 
-        if (info == null && !mIsPositioningMode) {
+        if (info == null && !mIsTempShowing) {
             mFloatingTrafficLightContainer.setVisibility(View.GONE);
             return;
         }
-
-        if (mIsPositioningMode && info == null)
-            return; // Keep dummy data
 
         mFloatingTrafficLightContainer.setVisibility(View.VISIBLE);
-        mFloatingTrafficLightContainer.setBackgroundResource(mIsPositioningMode ? R.drawable.bg_hud_pending : 0);
+        mFloatingTrafficLightContainer.setBackgroundResource(0); // Always transparent now
 
         // Ensure correct visibility of containers
         if (mContainerDashboard != null)
@@ -535,14 +556,21 @@ public class Presentation extends android.app.Dialog {
         }
     }
 
+    public void setHudGreenBg(boolean enabled) {
+        if (mLayoutHud != null) {
+            // 0x3390EE90 = Light Green with ~20% Alpha (Low Opacity)
+            // 0xFF90EE90 = Solid Light Green
+            // User asked for "Light Green Background". Let's use semi-transparent for HUD context.
+            // 0x5090EE90
+            int color = enabled ? 0x5090EE90 : android.graphics.Color.TRANSPARENT;
+            mLayoutHud.setBackgroundColor(color);
+        }
+    }
+
     public void updateDebugMode(boolean isDebug) {
         // [DEBUG] User Request: Light Green Background to wrap content
         if (mLayoutHud != null) {
-            // [配置] HUD 背景颜色
-            // 调试时可改为 0xFF90EE90 (浅绿色) 以观察边界
-            // Default: Transparent (全透明)
-            mLayoutHud.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-            mLayoutHud.setVisibility(View.VISIBLE); // Force visible for debug
+            // Logic handled by setHudGreenBg
         }
 
         // Log Detailed Component Memory
@@ -1164,6 +1192,10 @@ public class Presentation extends android.app.Dialog {
                     // int margin = (int) (-24f * 0.2f);
                     view = tv;
                 } else {
+                    // [FIX] Wrap TextView in FrameLayout to prevent text ghosting/overlap artifacts
+                    android.widget.FrameLayout wrapper = new android.widget.FrameLayout(getContext());
+                    wrapper.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+
                     android.widget.TextView tv = new android.widget.TextView(getContext());
                     tv.setText(data.text);
                     tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
@@ -1197,8 +1229,9 @@ public class Presentation extends android.app.Dialog {
 
                     }
 
-                    // Rule 3: Song Component Layout (Handled by LinearLayout block above)
-                    view = tv;
+                    // Add TextView to Wrapper
+                    wrapper.addView(tv);
+                    view = wrapper;
                 }
 
                 view.setTag(data); // CRITICAL: Tag with Data for updateSpeed loop!
@@ -1424,6 +1457,14 @@ public class Presentation extends android.app.Dialog {
                 } else if (v instanceof android.widget.ImageView && image != null) {
                     ((android.widget.ImageView) v).setImageBitmap(image);
                     ((android.widget.ImageView) v).clearColorFilter();
+                } else if (v instanceof android.widget.FrameLayout && text != null) {
+                    // [FIX] Handle Wrapped TextView
+                    android.widget.FrameLayout fl = (android.widget.FrameLayout) v;
+                    if (fl.getChildCount() > 0 && fl.getChildAt(0) instanceof android.widget.TextView) {
+                        android.widget.TextView tv = (android.widget.TextView) fl.getChildAt(0);
+                        tv.setText(""); // Clear first
+                        tv.setText(text);
+                    }
                 }
             }
         }
@@ -1591,6 +1632,16 @@ public class Presentation extends android.app.Dialog {
     }
 
     public void updateGear(String gearStr) {
+        // [FIX] Sync Simulated Gear with Audi RS Theme
+        if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null && gearStr != null) {
+            int gearCode = 2097712; // Default P (GEAR_PARK)
+            if ("D".equals(gearStr)) gearCode = 2097696; // GEAR_DRIVE
+            else if ("R".equals(gearStr)) gearCode = 2097728; // GEAR_REVERSE
+            else if ("N".equals(gearStr)) gearCode = 2097680; // GEAR_NEUTRAL
+            else if ("P".equals(gearStr)) gearCode = 2097712; // GEAR_PARK
+            mThemeController.setGear(gearCode);
+        }
+
         if (gearStr != null) {
             updateComponentGeneric(mRealHudComponents, "gear", gearStr, null);
 

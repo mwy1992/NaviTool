@@ -566,11 +566,11 @@ public class ClusterHudManager
         }
     }
 
-    public void toggleFloatingTrafficLightPositioning() {
+    public void toggleFloatingTrafficLightStyle() {
         if (mPresentation != null) {
-            mPresentation.toggleFloatingTrafficLightPositioning();
+            mPresentation.toggleFloatingTrafficLightStyle();
         } else {
-            DebugLogger.toast(mContext, "HUD未连接，无法定位");
+            DebugLogger.toast(mContext, "HUD未连接，无法切换样式");
         }
     }
 
@@ -1553,6 +1553,12 @@ public class ClusterHudManager
             DebugLogger.e(TAG, "ensureUiVisible: Context is null! Cannot show UI.");
             return;
         }
+        
+        // [FIX] Check if features are enabled before showing
+        if (!mIsClusterEnabled && !mIsHudEnabled) {
+            DebugLogger.w(TAG, "ensureUiVisible: Ignored. Both Cluster and HUD are disabled.");
+            return;
+        }
         // Use post to ensure we are on main thread (redundant but safe)
         if (Thread.currentThread() == Looper.getMainLooper().getThread()) {
             DebugLogger.d(TAG, "ensureUiVisible: Already on Main Thread, showing now.");
@@ -1624,8 +1630,13 @@ public class ClusterHudManager
                 // a WindowContext associated with that type.
                 Context displayContext;
                 if (android.os.Build.VERSION.SDK_INT >= 30) {
-                    displayContext = mContext.createWindowContext(targetDisplay,
-                            android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null);
+                    try {
+                        displayContext = mContext.createWindowContext(targetDisplay,
+                                android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null);
+                    } catch (NoSuchMethodError e) {
+                        DebugLogger.e(TAG, "createWindowContext missing on API 30+, fallback to createDisplayContext");
+                        displayContext = mContext.createDisplayContext(targetDisplay);
+                    }
                 } else {
                     displayContext = mContext.createDisplayContext(targetDisplay);
                 }
@@ -1684,7 +1695,9 @@ public class ClusterHudManager
                 mPresentation.setClusterVisible(mIsClusterEnabled);
                 mPresentation.setHudVisible(mIsHudEnabled);
                 mPresentation.setFloatingTrafficLightEnabled(mIsFloatingEnabled); // Apply Floating State
+                mPresentation.setFloatingTrafficLightEnabled(mIsFloatingEnabled); // Apply Floating State
                 mPresentation.setMediaPlaying(mIsMediaPlaying); // Sync initial state
+                mPresentation.setHudGreenBg(mIsHudGreenBgExposed); // Apply Green Bg State
 
                 // [FIX Initial State] Sync Day/Night Mode using System Global Configuration
                 int uiMode = android.content.res.Resources.getSystem().getConfiguration().uiMode
@@ -1844,6 +1857,21 @@ public class ClusterHudManager
                     }
                 }
             });
+        }
+    }
+
+    // [New] Public method to force notify listeners (MainActivity Hud Editor) of current data
+    public void forceNotifyListener() {
+        if (mListener != null && mCachedHudComponents != null) {
+            DebugLogger.d(TAG, "forceNotifyListener: Pushing " + mCachedHudComponents.size() + " components to listener");
+             final java.util.List<HudComponentData> snapshot = new java.util.ArrayList<>(mCachedHudComponents);
+             mMainHandler.post(() -> {
+                 if (mListener != null) {
+                     for (HudComponentData data : snapshot) {
+                         mListener.onHudDataChanged(data.type, data.text, data.image);
+                     }
+                 }
+             });
         }
     }
 
@@ -2133,6 +2161,20 @@ public class ClusterHudManager
     public void setSnowMode(boolean enabled) {
         ConfigManager.getInstance().setBoolean("hud_snow_mode", enabled);
     }
+    
+    // --- HUD Green Background Logic ---
+    private boolean mIsHudGreenBgExposed = false;
+    
+    public void setHudGreenBgEnabled(boolean enabled) {
+        mIsHudGreenBgExposed = enabled;
+        if (mPresentation != null) {
+            mMainHandler.post(() -> {
+                if (mPresentation != null) {
+                    mPresentation.setHudGreenBg(enabled);
+                }
+            });
+        }
+    }
 
     public boolean isSnowModeEnabled() {
         return ConfigManager.getInstance().getBoolean("hud_snow_mode", false);
@@ -2240,8 +2282,12 @@ public class ClusterHudManager
             mIsClusterEnabled = ConfigManager.getInstance().getBoolean("switch_cluster", true);
             mIsHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", true);
             mIsFloatingEnabled = ConfigManager.getInstance().getBoolean("floating_traffic_light_enabled", false);
+            // [FIX] Load Simulated Gear State
+            mIsSimulatedGearEnabled = ConfigManager.getInstance().getBoolean("simulated_gear_enabled", false);
+            // [NEW] Load Green Background State
+            mIsHudGreenBgExposed = ConfigManager.getInstance().getBoolean("hud_green_bg_enabled", false);
             DebugLogger.i(TAG, "Self-Init: Loaded State -> Cluster=" + mIsClusterEnabled + ", HUD=" + mIsHudEnabled
-                    + ", Floating=" + mIsFloatingEnabled);
+                    + ", Floating=" + mIsFloatingEnabled + ", SimGear=" + mIsSimulatedGearEnabled + ", GreenBg=" + mIsHudGreenBgExposed);
 
             // 2. Load Theme
             mPendingTheme = ConfigManager.getInstance().getInt("cluster_theme_builtin",

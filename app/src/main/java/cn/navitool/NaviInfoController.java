@@ -60,9 +60,9 @@ public class NaviInfoController {
         ClusterHudManager.getInstance(mContext).setFloatingTrafficLightEnabled(false);
     }
 
-    public void enterPositionAdjustmentMode() {
-        DebugLogger.i(TAG, "enterPositionAdjustmentMode requested");
-        ClusterHudManager.getInstance(mContext).toggleFloatingTrafficLightPositioning();
+    public void toggleFloatingStyle() {
+        DebugLogger.i(TAG, "toggleFloatingStyle requested");
+        ClusterHudManager.getInstance(mContext).toggleFloatingTrafficLightStyle();
     }
 
     /**
