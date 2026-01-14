@@ -134,6 +134,15 @@
                     android:background="#000000"
                     android:visibility="gone">
                 </FrameLayout>
+
+                <!-- Center Guide Line (Fixed) -->
+                <View
+                    android:layout_width="380px"
+                    android:layout_height="4dp"
+                    android:layout_gravity="center"
+                    android:rotation="90"
+                    android:layerType="software"
+                    android:background="@drawable/line_dashed_cyan" />
             </FrameLayout>
         </FrameLayout>
     </LinearLayout>

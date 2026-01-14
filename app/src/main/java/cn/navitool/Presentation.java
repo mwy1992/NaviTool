@@ -827,6 +827,9 @@ public class Presentation extends android.app.Dialog {
         resetTrafficLightsGeneric(mRealHudComponents);
         resetTrafficLightsGeneric(mRealClusterComponents);
 
+        // Clear Cache
+        mLatestTrafficLightInfo = null;
+
         // Reset Floating Light
         if (mFloatingTrafficLightContainer != null && !mIsPositioningMode) {
             mFloatingTrafficLightContainer.setVisibility(View.GONE);
@@ -855,6 +858,10 @@ public class Presentation extends android.app.Dialog {
         if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
             ((AudiRsThemeController) mThemeController).resetNaviInfo();
         }
+        // [FIX] Clear Cache to prevent stale data "ghosting"
+        mCachedNaviArrivalTime = null;
+        mCachedNaviDistance = null;
+
         // [FIX] Reset generic HUD navi info
         resetNaviInfoGeneric(mRealHudComponents);
         resetNaviInfoGeneric(mRealClusterComponents);
@@ -886,6 +893,11 @@ public class Presentation extends android.app.Dialog {
     // Theme Support
     public static final int THEME_DEFAULT = 0;
     public static final int THEME_AUDI_RS = 1;
+
+    // [FIX] Data Cache to prevent flickering during drag/sync
+    private String mCachedNaviArrivalTime = null;
+    private String mCachedNaviDistance = null;
+    // Duplicates removed (mCurrentTheme, mAudiRsController, mAudiRsLayout)
     // Duplicates removed (mCurrentTheme, mAudiRsController, mAudiRsLayout)
 
     public void syncHudLayout(java.util.List<ClusterHudManager.HudComponentData> components) {
@@ -998,6 +1010,15 @@ public class Presentation extends android.app.Dialog {
                         // 转向灯 & 音量 & Auto Hold: 36px (预览中为72px, 保持1:2比例)
                         if (isTurnSignal || isVolume || isAutoHold) {
                             params.height = 36;
+                            // [FIX] Add Fallback Resources if image is missing so they are not invisible
+                            if (data.image == null) {
+                                if (isTurnSignal)
+                                    iv.setImageResource(R.drawable.ic_turn_signal);
+                                else if (isVolume)
+                                    iv.setImageResource(R.drawable.ic_volume);
+                                else if (isAutoHold)
+                                    iv.setImageResource(R.drawable.ic_auto_hold);
+                            }
                         } else {
                             params.height = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
                         }
@@ -1098,6 +1119,8 @@ public class Presentation extends android.app.Dialog {
                     view = pgv;
                     // Use explicit dimensions from gaugeConfig if available [strokeWidth,
                     // viewWidth, viewHeight, ...]
+                    DebugLogger.d(TAG,
+                            "Sync HUD: Adding " + data.type + " at " + data.x + "," + data.y + " text=" + data.text);
                     if (data.gaugeConfig != null && data.gaugeConfig.length >= 3 && data.gaugeConfig[1] > 0
                             && data.gaugeConfig[2] > 0) {
                         int viewW = (int) data.gaugeConfig[1];
@@ -1127,24 +1150,70 @@ public class Presentation extends android.app.Dialog {
                     // Mark tag so it can be updated
                     // We'll trust the generic tag assignment below
                     view = tlv;
+
+                    // [FIX] Apply Cached State immediately to prevent flicker
+                    if (mLatestTrafficLightInfo != null) {
+                        int mappedStatus = cn.navitool.NaviInfoController.mapStatus(mLatestTrafficLightInfo.status);
+                        tlv.updateState(mappedStatus, mLatestTrafficLightInfo.redCountdown,
+                                mLatestTrafficLightInfo.direction);
+                    }
                 } else if ("navi_arrival_time".equals(data.type) || "navi_distance_remaining".equals(data.type)) {
-                    // Navi Info Components - Start GONE until actual navigation data arrives
+                    // Navi Info Components - Fixed width to prevent jitter (Flicker)
                     android.widget.TextView tv = new android.widget.TextView(getContext());
-                    // [FIX] Only show in preview, hide in real HUD until navigation starts
-                    // Preview: text comes from config, Real HUD: starts empty
-                    tv.setText(""); // Start empty in real HUD
-                    tv.setVisibility(View.GONE); // Hide until navigation provides data
+                    // [FIX] Use persisted text or default placeholder, do NOT hide or empty
+                    // PRIORITIZE CACHED DATA over layout data (which is just a placeholder from
+                    // Preview)
+                    String displayText = "--:--";
+                    if ("navi_arrival_time".equals(data.type) && mCachedNaviArrivalTime != null) {
+                        displayText = mCachedNaviArrivalTime;
+                    } else if ("navi_distance_remaining".equals(data.type) && mCachedNaviDistance != null) {
+                        displayText = mCachedNaviDistance;
+                    } else if (data.text != null) {
+                        displayText = data.text;
+                    }
+                    tv.setText(displayText);
+                    tv.setVisibility(View.VISIBLE);
                     tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
                     tv.setTextColor(data.color);
-                    // [FIX] Alignment Settings for Navigation Components
+
                     tv.setPadding(0, 0, 0, 0);
                     tv.setIncludeFontPadding(false);
                     tv.setLineSpacing(0, 1f);
-                    // [FIX] Normal weight, 24px size to match other text
-
                     tv.setTypeface(android.graphics.Typeface.DEFAULT);
                     tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
+
+                    // [Refactor] Reverted fixed width as per user request
+                    // tv.setGravity(android.view.Gravity.CENTER);
+                    // params.width = 180;
+
                     view = tv;
+                } else if ("gear".equals(data.type)) {
+                    android.widget.TextView tv = new android.widget.TextView(getContext());
+                    // Gear needs larger text
+                    tv.setText(data.text != null ? data.text : "P");
+                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 48); // Larger for Gear
+                    tv.setTextColor(data.color);
+                    tv.setGravity(android.view.Gravity.CENTER);
+                    params.width = 100; // Fixed width for gear
+                    view = tv;
+                } else if ("turn_signal".equals(data.type) || "volume".equals(data.type)
+                        || "auto_hold".equals(data.type)) {
+                    android.widget.ImageView iv = new android.widget.ImageView(getContext());
+                    if (data.image != null) {
+                        iv.setImageBitmap(data.image);
+                    } else {
+                        // Fallback resources
+                        if ("turn_signal".equals(data.type))
+                            iv.setImageResource(R.drawable.ic_turn_signal);
+                        else if ("volume".equals(data.type))
+                            iv.setImageResource(R.drawable.ic_volume);
+                        else if ("auto_hold".equals(data.type))
+                            iv.setImageResource(R.drawable.ic_auto_hold);
+                    }
+                    iv.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                    params.width = 48; // Standard icon size (0.5x of 96)
+                    params.height = 48;
+                    view = iv;
                 } else if ("fuel_range".equals(data.type) || "fuel".equals(data.type)) {
                     // [Refactor] Flattened to single TextView for performance and to fix ghosting
                     android.widget.TextView tv = new android.widget.TextView(getContext());
@@ -1154,6 +1223,9 @@ public class Presentation extends android.app.Dialog {
                         valText = "⛽ " + valText;
                     }
                     tv.setText(valText);
+                    tv.setSingleLine(true);
+                    tv.setMaxLines(1);
+                    tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
                     tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24f);
                     tv.setTextColor(data.color);
                     tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
@@ -1180,42 +1252,64 @@ public class Presentation extends android.app.Dialog {
                     if (data.typeface != null) {
                         tv.setTypeface(data.typeface);
                     }
-
-                    // Dynamic Margin REMOVED - Rely on setY tolerance
-                    // int margin = (int) (-24f * 0.2f);
                     view = tv;
-                } else {
-                    // [FIX] Removed FrameLayout wrapper to prevent ghosting
-                    android.widget.TextView tv = new android.widget.TextView(getContext());
-                    tv.setText(data.text);
-                    tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                    tv.setPadding(0, 0, 0, 0);
-                    tv.setIncludeFontPadding(false); // Minimized vertical spacing
-                    tv.setLineSpacing(0, 1f); // Remove line spacing
-                    tv.setTextColor(data.color);
-                    if (data.typeface != null) {
-                        tv.setTypeface(data.typeface);
-                    }
+                } else if ("guide_line".equals(data.type)) {
+                    // [Refactor] Guide Line - Direct Draw for 100% Stability
+                    // Avoids rotation/clipping issues with XML shapes
+                    view = new View(getContext()) {
+                        private final android.graphics.Paint mPaint = new android.graphics.Paint(
+                                android.graphics.Paint.ANTI_ALIAS_FLAG);
+                        {
+                            mPaint.setColor(android.graphics.Color.CYAN);
+                            mPaint.setStyle(android.graphics.Paint.Style.STROKE);
+                            mPaint.setStrokeWidth(4); // Visible Width
+                            // 10px dash, 10px gap for good visibility
+                            mPaint.setPathEffect(new android.graphics.DashPathEffect(new float[] { 10, 10 }, 0));
+                        }
 
-                    // Rule 2: Font size logic - Gear Special Case
-                    if ("gear".equals(data.type)) {
-                        float gearSize = 36f; // [Issue 4] 48 -> 36
-                        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, gearSize);
-                        tv.setGravity(android.view.Gravity.CENTER);
-                        params.width = 80; // Fixed width
-                    } else {
-                        // Generic Text (Speed, etc.)
-                        float textSize = 24f;
-                        tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, textSize);
+                        @Override
+                        protected void onDraw(android.graphics.Canvas canvas) {
+                            super.onDraw(canvas);
+                            float cx = getWidth() / 2f;
+                            // Draw vertical line from top to bottom
+                            canvas.drawLine(cx, 0, cx, getHeight(), mPaint);
+                        }
+                    };
+
+                    // Explicit Size (0.5x of Preview: 100x380 -> 50x190)
+                    params.width = 50;
+                    params.height = 190;
+                } else if ("time".equals(data.type)) {
+                    android.widget.TextClock tc = new android.widget.TextClock(getContext());
+                    tc.setFormat12Hour(data.text);
+                    tc.setFormat24Hour(data.text);
+                    tc.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    tc.setTextColor(data.color);
+                    tc.setPadding(0, 0, 0, 0);
+                    tc.setIncludeFontPadding(false);
+                    tc.setLineSpacing(0, 1f);
+                    tc.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
+                    if (data.typeface != null) {
+                        tc.setTypeface(data.typeface);
                     }
-                    view = tv; // Direct TextView
+                    view = tc;
+                } else {
+                    // Generic Text (Speed, etc.)
+                    android.widget.TextView tvGeneric = new android.widget.TextView(getContext());
+                    tvGeneric.setTextColor(data.color);
+                    tvGeneric.setIncludeFontPadding(false);
+                    // Standard Text Size
+                    float textSize = 24f;
+                    tvGeneric.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, textSize);
+
+                    view = tvGeneric; // Direct TextView
                 }
 
                 view.setTag(data); // CRITICAL: Tag with Data for updateSpeed loop!
                 params.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
                 container.addView(view, params);
 
-                // 应用组件缩放 - 设置缩放中心点为左上角 (与预览一致)
+                // Apply Scale - Set Pivot Top-Left
                 view.setPivotX(0);
                 view.setPivotY(0);
                 view.setScaleX(data.scale);
@@ -1232,12 +1326,24 @@ public class Presentation extends android.app.Dialog {
                     heightSpec = View.MeasureSpec.makeMeasureSpec(100, View.MeasureSpec.EXACTLY);
                 } else if (isTurnSignal) {
                     heightSpec = View.MeasureSpec.makeMeasureSpec(36, View.MeasureSpec.EXACTLY);
+                    // [FIX] Disable View scaling, rely on Bitmap Gap scaling
+                    // We override data.scale here locally for the View property relative to the
+                    // bitmap size
+                    // The bitmap will be larger due to the gap, so fit it 1:1 or let it handle
+                    // itself.
+                    // Actually, we should just set scale to 1.0f on the view so it doesn't zoom the
+                    // pixels.
+                    view.setScaleX(1.0f);
+                    view.setScaleY(1.0f);
                 } else if (isVolume) {
                     heightSpec = View.MeasureSpec.makeMeasureSpec(36, View.MeasureSpec.EXACTLY);
                 } else if ("gauge".equals(data.type) && data.image != null) {
-                    // Gauges use intrinsic image size
                     widthSpec = View.MeasureSpec.makeMeasureSpec(data.image.getWidth(), View.MeasureSpec.EXACTLY);
                     heightSpec = View.MeasureSpec.makeMeasureSpec(data.image.getHeight(), View.MeasureSpec.EXACTLY);
+                } else if ("guide_line".equals(data.type)) {
+                    // [FIX] Ensure Guide Line has explicit size, otherwise it collapses to 0
+                    widthSpec = View.MeasureSpec.makeMeasureSpec(100, View.MeasureSpec.EXACTLY);
+                    heightSpec = View.MeasureSpec.makeMeasureSpec(380, View.MeasureSpec.EXACTLY);
                 }
 
                 view.measure(widthSpec, heightSpec);
@@ -1278,7 +1384,8 @@ public class Presentation extends android.app.Dialog {
                 // view.setTag(data) is already set at line 297
 
                 // Update boolean flags for visibility check
-                isSong = "song".equals(data.type) || "test_media".equals(data.type) || "song_1line".equals(data.type);
+                isSong = "song".equals(data.type) || "test_media".equals(data.type)
+                        || "song_1line".equals(data.type);
                 isMediaCover = "media_cover".equals(data.type) || "test_media_cover".equals(data.type);
 
                 // Apply Media/Volume Visibility Rule immediately
@@ -1373,6 +1480,17 @@ public class Presentation extends android.app.Dialog {
             }
 
             if (viewType != null && viewType.equals(type)) {
+                // [FIX] Update Cache
+                if ("traffic_light".equals(type)) {
+                    // Traffic light uses updateTrafficLight method, but if we get generic text
+                    // update, ignore or log
+                    // actually traffic light update comes via updateTrafficLightStatus() usually
+                } else if ("navi_arrival_time".equals(type)) {
+                    mCachedNaviArrivalTime = text;
+                } else if ("navi_distance_remaining".equals(type)) {
+                    mCachedNaviDistance = text;
+                }
+
                 if (v instanceof android.widget.TextView && text != null) {
                     android.widget.TextView tv = (android.widget.TextView) v;
 
@@ -1476,6 +1594,9 @@ public class Presentation extends android.app.Dialog {
             mClusterRpmPointer = mDefaultDashboardRoot.findViewById(R.id.ivClusterRpmPointer);
         }
     }
+
+    // updateTrafficLightStatus removed - use updateTrafficLight(Info) which updates
+    // mLatestTrafficLightInfo
 
     public void updateSpeed(int speed) {
         // 如果是奥迪RS主题，使用专用控制器
@@ -1599,16 +1720,16 @@ public class Presentation extends android.app.Dialog {
     public void updateGear(String gearStr) {
         // [FIX] Sync Simulated Gear with Audi RS Theme
         if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null && gearStr != null) {
-            int gearCode = 2097712; // Default P (GEAR_PARK)
-            if ("D".equals(gearStr))
-                gearCode = 2097696; // GEAR_DRIVE
-            else if ("R".equals(gearStr))
-                gearCode = 2097728; // GEAR_REVERSE
-            else if ("N".equals(gearStr))
-                gearCode = 2097680; // GEAR_NEUTRAL
-            else if ("P".equals(gearStr))
-                gearCode = 2097712; // GEAR_PARK
-            mThemeController.setGear(gearCode);
+            // Directly pass the string (e.g. "D1", "M", "S") to the controller
+            ((AudiRsThemeController) mThemeController).setGear(gearStr);
+            // Bypass integer conversion logic for Audi RS
+            return;
+        } else if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null) {
+            // If null string, do nothing or let it fall through?
+            // Existing logic did nothing if gearStr was null effectively (gearCode default
+            // P but strict equals checks failed)
+            // We can just return to avoid further processing if we want strict control
+            // But let's just leave the return above.
         }
 
         if (gearStr != null) {
@@ -1650,6 +1771,10 @@ public class Presentation extends android.app.Dialog {
         final int TRSM_GEAR_DRIVE = 13;
         final int TRSM_GEAR_NEUT = 14;
         final int TRSM_GEAR_RVS = 11;
+
+        if (gearValue == -1) {
+            return "M";
+        }
 
         if (gearValue == GEAR_DRIVE || gearValue == TRSM_GEAR_DRIVE) {
             return "D";

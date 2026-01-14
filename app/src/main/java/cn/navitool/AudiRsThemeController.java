@@ -170,10 +170,10 @@ public class AudiRsThemeController {
         if (mCountdownText != null) {
             try {
                 android.graphics.Typeface ledFont = android.graphics.Typeface.createFromAsset(
-                        rootView.getContext().getAssets(), "fonts/DigitalNumbers-Regular.ttf");
+                        rootView.getContext().getAssets(), "fonts/DS-Digital.ttf");
                 mCountdownText.setTypeface(ledFont);
             } catch (Exception e) {
-                DebugLogger.e(TAG, "Failed to load LED font from assets/fonts/DigitalNumbers-Regular.ttf", e);
+                DebugLogger.e(TAG, "Failed to load LED font from assets/fonts/DS-Digital.ttf", e);
             }
         }
 
@@ -583,7 +583,9 @@ public class AudiRsThemeController {
     public void setGear(int gearValue) {
         String gearStr = "P"; // 默认P档
 
-        if (gearValue == GEAR_DRIVE || gearValue == TRSM_GEAR_DRIVE) {
+        if (gearValue == -1) {
+            gearStr = "M"; // [FIX] Map -1 to Manual
+        } else if (gearValue == GEAR_DRIVE || gearValue == TRSM_GEAR_DRIVE) {
             gearStr = "D";
         } else if (gearValue == GEAR_REVERSE || gearValue == TRSM_GEAR_RVS) {
             gearStr = "R";

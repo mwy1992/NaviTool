@@ -44,6 +44,16 @@ public class AppListAdapter extends RecyclerView.Adapter<AppListAdapter.ViewHold
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         AppLaunchManager.AppInfo appInfo = mApps.get(position);
+
+        if (appInfo.packageName.isEmpty()) {
+            holder.itemView.setVisibility(View.INVISIBLE);
+            holder.itemView.setClickable(false);
+            return;
+        } else {
+            holder.itemView.setVisibility(View.VISIBLE);
+            holder.itemView.setClickable(true);
+        }
+
         holder.tvAppName.setText(appInfo.name);
 
         try {

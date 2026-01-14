@@ -354,8 +354,11 @@ public class ThemeBrightnessManager {
 
     public void onSensorEventChanged(int sensorType, int value) {
         if (sensorType == ISensor.SENSOR_TYPE_DAY_NIGHT) {
-            // Polling handles this mostly, but good to have
+            DebugLogger.i(TAG, "Sensor Event: DAY_NIGHT_MODE changed to " + value);
             mLastDayNightSensorValue = value;
+            // [FIX] Immediate update (don't wait for polling)
+            broadcastSensorValues(mLastDayNightSensorValue, mLastAvmValue, mLastBrightnessDayValue,
+                    mLastBrightnessNightValue);
         }
     }
 
@@ -591,9 +594,11 @@ public class ThemeBrightnessManager {
         mLastBrightnessDayValue = bDay;
         mLastBrightnessNightValue = bNight;
 
-        // Notify ClusterHudManager directly
+        // Notify ClusterHudManager directly (Ensure Main Thread)
         boolean isDay = (dayNight == ISensorEvent.DAY_NIGHT_MODE_DAY);
-        ClusterHudManager.getInstance(mContext).updateDayNightMode(isDay);
+        mHandler.post(() -> {
+            ClusterHudManager.getInstance(mContext).updateDayNightMode(isDay);
+        });
 
         Intent intent = new Intent("cn.navitool.ACTION_DAY_NIGHT_STATUS");
         intent.putExtra("mode", mLastThemeMode);

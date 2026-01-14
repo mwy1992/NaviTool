@@ -94,6 +94,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
         cn.navitool.managers.PsdManager.getInstance(this).init();
 
+        // 启动 OneOS 服务 (方控/微信按键) - 必须在 onCreate 调用以确保最快绑定
+        cn.navitool.managers.KeyHandlerManager.getInstance(this).init();
+
         initCar();
     }
 
@@ -193,6 +196,20 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }
     }
 
+    private void checkAndStartMapServices() {
+        if (mIgnitionReady) {
+            // Start General Map Monitors (Tencent, Baidu) - run as long as we are driving
+            try {
+                cn.navitool.managers.TencentMonitorManager.getInstance(this).startMonitoring();
+                cn.navitool.managers.BaiduMonitorManager.getInstance(this).startMonitoring();
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Failed to start Map Monitors", e);
+            }
+        }
+
+        checkAndStartAmapServices();
+    }
+
     private void checkAndStartAmapServices() {
         if (mIsAmapServicesStarted)
             return;
@@ -252,8 +269,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             }
         }, 3000);
 
-        // 3. Check Amap Services
-        checkAndStartAmapServices();
+        // 3. Check Amap Services & Map Monitors
+        checkAndStartMapServices();
 
         // 4. Trigger Sunshade Auto Open
         // Checks internal logic (Enabled? Night Mode?) before acting
@@ -272,6 +289,13 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             cn.navitool.managers.AmapMonitorManager.getInstance(this).stopMonitoring();
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to stop AmapMonitorManager", e);
+        }
+
+        try {
+            cn.navitool.managers.TencentMonitorManager.getInstance(this).stopMonitoring();
+            cn.navitool.managers.BaiduMonitorManager.getInstance(this).stopMonitoring();
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to stop Map Monitors", e);
         }
 
         cn.navitool.managers.ThemeBrightnessManager.getInstance(this).destroy();

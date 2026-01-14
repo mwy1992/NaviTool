@@ -19,6 +19,7 @@ import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.List;
+import java.util.ArrayList;
 
 import cn.navitool.R;
 import cn.navitool.managers.AppLaunchManager;
@@ -118,7 +119,7 @@ public class FloatingBallService extends Service {
     private void createMenuView() {
         // Create a root container to handle "outside click"
         FrameLayout container = new FrameLayout(this);
-        container.setBackgroundColor(0x80000000); // Overlay dim
+        container.setBackgroundColor(android.graphics.Color.TRANSPARENT); // Overlay removed
         container.setOnClickListener(v -> hideMenu());
 
         // Inflate the actual menu dialog
@@ -141,12 +142,33 @@ public class FloatingBallService extends Service {
         mMenuView = container;
 
         // Setup RecyclerView
-        RecyclerView rv = mMenuView.findViewById(R.id.rvAppList);
-        // Use Grid Layout with 4 columns
-        rv.setLayoutManager(new GridLayoutManager(this, 4));
-
+        // Setup RecyclerViews
         List<AppLaunchManager.AppInfo> apps = AppLaunchManager.getInstalledApps(this);
-        AppListAdapter adapter = new AppListAdapter(this, apps, appInfo -> {
+
+        // Split apps into Top Row (First 6) and Scrollable List (Rest)
+        List<AppLaunchManager.AppInfo> topApps = new ArrayList<>();
+        List<AppLaunchManager.AppInfo> scrollableApps = new ArrayList<>();
+
+        if (apps.size() >= 6) {
+            topApps.addAll(apps.subList(0, 6));
+            scrollableApps.addAll(apps.subList(6, apps.size()));
+        } else {
+            topApps.addAll(apps);
+        }
+
+        // Setup Top Row (Fixed)
+        RecyclerView rvTop = mMenuView.findViewById(R.id.rvTopRow);
+        rvTop.setLayoutManager(new GridLayoutManager(this, 6));
+        rvTop.setAdapter(new AppListAdapter(this, topApps, appInfo -> {
+            AppLaunchManager.launchApp(this, appInfo.packageName);
+            hideMenu();
+        }));
+
+        // Setup Scrollable List (Remaining Apps)
+        RecyclerView rv = mMenuView.findViewById(R.id.rvAppList);
+        // Use Grid Layout with 6 columns (4 rows visible)
+        rv.setLayoutManager(new GridLayoutManager(this, 6));
+        AppListAdapter adapter = new AppListAdapter(this, scrollableApps, appInfo -> {
             AppLaunchManager.launchApp(this, appInfo.packageName);
             hideMenu();
         });

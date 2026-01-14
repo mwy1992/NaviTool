@@ -40,121 +40,128 @@
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/layoutClusterContent"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="8dp">
+            android:orientation="vertical">
 
-            <Button
-                android:id="@+id/btnClusterTestSpeed"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/action_test_speed"/>
-
-            <Button
-                android:id="@+id/btnClusterTestRpm"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
-                android:text="@string/action_test_rpm"/>
-            
-            <Button
-                android:id="@+id/btnClusterTestGear"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
-                android:text="@string/action_test_gear"/>
-        </LinearLayout>
-
-        <!-- 2. Body: Theme Selector -->
-        <Button
-            android:id="@+id/btnImportTheme"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/action_import_themes"
-            android:layout_marginTop="8dp"/>
-
-        <!-- 2. Body: Theme Selector -->
-        <HorizontalScrollView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp">
-            
             <LinearLayout
-                android:id="@+id/layoutThemeContainer"
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:layout_marginTop="8dp">
 
-                <!-- Item 1 (Built-in) -->
-                <FrameLayout
-                    android:id="@+id/layoutClusterTheme1"
-                    android:layout_width="480px"
-                    android:layout_height="180px"
-                    android:background="@drawable/bg_cluster_selected"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:layout_marginEnd="16dp">
-                    
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/theme_style_1_default"
-                        android:layout_gravity="center"
-                        android:textColor="#CCCCCC"/>
+                <Button
+                    android:id="@+id/btnClusterTestSpeed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/action_test_speed"/>
 
-                    <ImageView
-                        android:id="@+id/ivClusterCheck1"
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
-                        android:src="@drawable/ic_check"
-                        android:layout_gravity="top|end"
-                        android:layout_margin="8dp"
-                        android:tint="#4CAF50"/>
-                </FrameLayout>
+                <Button
+                    android:id="@+id/btnClusterTestRpm"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:text="@string/action_test_rpm"/>
                 
-                <!-- Item 2: Audi RS Theme -->
-                <FrameLayout
-                    android:id="@+id/layoutClusterThemeAudiRs"
-                    android:layout_width="480px"
-                    android:layout_height="180px"
-                    android:background="@drawable/bg_cluster_normal"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:layout_marginEnd="16dp">
-                    
-                    <ImageView
-                        android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:alpha="1.0"
-                        android:background="@android:color/transparent"
-                        android:scaleType="fitCenter"
-                        android:src="@drawable/audi_rs_bg_day" />
-                    
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/theme_audi_rs"
-                        android:layout_gravity="center"
-                        android:textColor="#FF0000"
-                        android:textStyle="bold"
-                        android:textSize="16sp"/>
-
-                    <ImageView
-                        android:id="@+id/ivClusterCheckAudiRs"
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
-                        android:src="@drawable/ic_check"
-                        android:layout_gravity="top|end"
-                        android:layout_margin="8dp"
-                        android:tint="#4CAF50"
-                        android:visibility="gone"/>
-                </FrameLayout>
-                
-                <!-- Dynamic Items will be added here -->
-
+                <Button
+                    android:id="@+id/btnClusterTestGear"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:text="@string/action_test_gear"/>
             </LinearLayout>
-        </HorizontalScrollView>
+
+            <!-- 2. Body: Theme Selector -->
+            <Button
+                android:id="@+id/btnImportTheme"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_import_themes"
+                android:layout_marginTop="8dp"/>
+
+            <!-- 2. Body: Theme Selector -->
+            <HorizontalScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp">
+                
+                <LinearLayout
+                    android:id="@+id/layoutThemeContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <!-- Item 1 (Built-in) -->
+                    <FrameLayout
+                        android:id="@+id/layoutClusterTheme1"
+                        android:layout_width="480px"
+                        android:layout_height="180px"
+                        android:background="@drawable/bg_cluster_selected"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:layout_marginEnd="16dp">
+                        
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/theme_style_1_default"
+                            android:layout_gravity="center"
+                            android:textColor="#CCCCCC"/>
+
+                        <ImageView
+                            android:id="@+id/ivClusterCheck1"
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:src="@drawable/ic_check"
+                            android:layout_gravity="top|end"
+                            android:layout_margin="8dp"
+                            android:tint="#4CAF50"/>
+                    </FrameLayout>
+                    
+                    <!-- Item 2: Audi RS Theme -->
+                    <FrameLayout
+                        android:id="@+id/layoutClusterThemeAudiRs"
+                        android:layout_width="480px"
+                        android:layout_height="180px"
+                        android:background="@drawable/bg_cluster_normal"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:layout_marginEnd="16dp">
+                        
+                        <ImageView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:alpha="1.0"
+                            android:background="@android:color/transparent"
+                            android:scaleType="fitCenter"
+                            android:src="@drawable/audi_rs_bg_day" />
+                        
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/theme_audi_rs"
+                            android:layout_gravity="center"
+                            android:textColor="#FF0000"
+                            android:textStyle="bold"
+                            android:textSize="16sp"/>
+
+                        <ImageView
+                            android:id="@+id/ivClusterCheckAudiRs"
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:src="@drawable/ic_check"
+                            android:layout_gravity="top|end"
+                            android:layout_margin="8dp"
+                            android:tint="#4CAF50"
+                            android:visibility="gone"/>
+                    </FrameLayout>
+                    
+                    <!-- Dynamic Items will be added here -->
+
+                </LinearLayout>
+            </HorizontalScrollView>
+        </LinearLayout>
     </LinearLayout>
 </ScrollView>

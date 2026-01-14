@@ -128,7 +128,31 @@ public class AppLaunchManager {
                 apps.add(new AppInfo(label, packageName));
             }
         }
-        Collections.sort(apps, (a, b) -> a.name.compareToIgnoreCase(b.name));
+        java.text.Collator collator = java.text.Collator.getInstance(java.util.Locale.CHINA);
+        Collections.sort(apps, (a, b) -> collator.compare(a.name, b.name));
+
+        // [FIX] Move "cn.navitool" to first position
+        AppInfo naviTool = null;
+        java.util.Iterator<AppInfo> it = apps.iterator();
+        while (it.hasNext()) {
+            AppInfo info = it.next();
+            if ("cn.navitool".equals(info.packageName)) {
+                naviTool = info;
+                it.remove();
+                break;
+            }
+        }
+
+        // Add Placeholders (5 if NaviTool found, 6 otherwise)
+        int placeholders = (naviTool != null) ? 5 : 6;
+        for (int i = 0; i < placeholders; i++) {
+            apps.add(0, new AppInfo("", ""));
+        }
+
+        // Add NaviTool at very top (Index 0)
+        if (naviTool != null) {
+            apps.add(0, naviTool);
+        }
         return apps;
     }
 

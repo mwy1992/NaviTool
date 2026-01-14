@@ -9,8 +9,8 @@
 
     <ImageView
         android:id="@+id/ivAppIcon"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
+        android:layout_width="64dp"
+        android:layout_height="64dp"
         android:scaleType="fitCenter" />
 
     <TextView
@@ -19,7 +19,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
         android:textColor="#FFFFFF"
-        android:textSize="12sp"
+        android:textSize="16sp"
         android:singleLine="true"
         android:ellipsize="end" />
 

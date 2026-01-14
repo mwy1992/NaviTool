@@ -364,27 +364,48 @@
 
 
 
-                    <!-- 模拟发动机启动按钮 -->
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnSimulateEngineStart"
+                    <!-- 调试按钮组 (三个按钮同一行) -->
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="16dp"
-                        android:text="@string/btn_simulate_engine_start"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        app:icon="@drawable/ic_check"
-                        app:iconGravity="textStart"/>
+                        android:orientation="horizontal">
 
-                    <!-- Delete Logs Button -->
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnDeleteLogs"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="16dp"
-                        android:text="@string/btn_delete_logs"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        app:icon="@drawable/ic_close"
-                        app:iconGravity="start"/>
+                        <!-- 模拟发动机启动按钮 -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSimulateEngineStart"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/btn_simulate_engine_start"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            app:icon="@drawable/ic_check"
+                            app:iconGravity="textStart"/>
+
+                        <!-- HUD浅绿底色调试按钮 -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnHudGreenBg"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:text="HUD浅绿底色"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            app:icon="@drawable/ic_close"
+                            app:iconGravity="textStart"/>
+
+
+
+                        <!-- Delete Logs Button -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDeleteLogs"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:text="@string/btn_delete_logs"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            app:icon="@drawable/ic_close"
+                            app:iconGravity="start"/>
+
+                    </LinearLayout>
 
                 </LinearLayout>
             </ScrollView>

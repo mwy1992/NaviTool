@@ -146,6 +146,32 @@ public class SoundPromptManager {
     // Actually, traditionally we used USAGE_NAVIGATION. Let's make the "Navigation"
     // option default.
 
+    // [ECARX] ECARX 车机系统定义的音频通道
+    // 这些通道对应系统设置中可独立控制音量的 4 个通道中的 2 个
+    public static final int ECARX_CHANNEL_ENT = 0; // 娱乐/媒体通道 (Entertainment)
+    public static final int ECARX_CHANNEL_NAVI = 1; // 导航通道 (Navigation)
+    public static final int ECARX_CHANNEL_BEEP = 2; // 提示音通道 (Beep)
+
+    private int mEcarxChannel = ECARX_CHANNEL_NAVI; // 默认使用导航通道
+
+    /**
+     * 设置 ECARX 音频通道
+     * 
+     * @param channel ECARX_CHANNEL_ENT (0) = 媒体通道, ECARX_CHANNEL_NAVI (1) = 导航通道
+     */
+    public void setEcarxChannel(int channel) {
+        mEcarxChannel = channel;
+        // 同时更新 AudioStreamType 以保持兼容性
+        if (channel == ECARX_CHANNEL_ENT) {
+            mAudioStreamType = android.media.AudioManager.STREAM_MUSIC;
+        } else {
+            mAudioStreamType = android.media.AudioManager.STREAM_NOTIFICATION;
+        }
+        DebugLogger.d(TAG, "ECARX Audio Channel Changed: " +
+                (channel == ECARX_CHANNEL_ENT ? "ENT (媒体=0)"
+                        : channel == ECARX_CHANNEL_NAVI ? "NAVI (导航=1)" : "BEEP (提示=2)"));
+    }
+
     public void setAudioStreamType(int streamType) {
         mAudioStreamType = streamType;
         DebugLogger.d(TAG, "Audio Stream Type Changed: " +
@@ -217,8 +243,8 @@ public class SoundPromptManager {
                             .build();
                     int focusResult = am.requestAudioFocus(mFocusRequest);
                     DebugLogger.d(TAG, "Audio Focus Requested (" + (mIsDirectPlaybackMode ? "DIRECT" : "MIX")
-                            + ", Stream="
-                            + (mAudioStreamType == android.media.AudioManager.STREAM_MUSIC ? "MEDIA" : "NAVI")
+                            + ", ECARX Channel=" + mEcarxChannel
+                            + " [" + (mEcarxChannel == ECARX_CHANNEL_ENT ? "ENT/媒体" : "NAVI/导航") + "]"
                             + "), result=" + focusResult);
                 } else {
                     int focusType;

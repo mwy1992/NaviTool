@@ -95,29 +95,18 @@ public class ClusterHudManager
 
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
 
-    // [FIX] Traffic Light Timeout - Auto-clear if Amap process exits without
-    // broadcast
-    private static final long TRAFFIC_LIGHT_TIMEOUT_MS = 3000; // 3 seconds (Optimized from 10s)
+    // [FIX] Traffic Light Timeout - Auto-clear traffic light UI only
+    // Note: Navigation state is now managed solely by onNaviStatusUpdate(state==2)
+    private static final long TRAFFIC_LIGHT_TIMEOUT_MS = 3000; // 3 seconds
     private final Runnable mTrafficLightTimeoutRunnable = new Runnable() {
         @Override
         public void run() {
-            DebugLogger.d(TAG, "Traffic Light Timeout (3s) - Auto-clearing");
+            DebugLogger.d(TAG, "Traffic Light Timeout (3s) - Clearing traffic light UI only");
             if (mPresentation != null) {
                 mPresentation.resetTrafficLights();
             }
-            // [Issue 3 Fix] Notify that navigation data has stopped
-            updateNaviInputState(false);
-        }
-    };
-
-    // [FIX] Navi Info Timeout - Auto-clear distance/ETA if no updates
-    private final Runnable mNaviInfoTimeoutRunnable = new Runnable() {
-        @Override
-        public void run() {
-            DebugLogger.d(TAG, "Navi Info Timeout - Auto-clearing");
-            if (mPresentation != null) {
-                mPresentation.resetNaviInfo();
-            }
+            // [REMOVED] No longer changes navigation state here
+            // Navigation state is controlled by onNaviStatusUpdate(state==2)
         }
     };
 
@@ -199,10 +188,8 @@ public class ClusterHudManager
                     @Override
                     public void onGuideInfoUpdate(
                             cn.navitool.NaviInfoController.GuideInfo info) {
-                        // [FIX] Reset timeout timer on each guide info update
-                        mMainHandler.removeCallbacks(mNaviInfoTimeoutRunnable);
-                        mMainHandler.postDelayed(mNaviInfoTimeoutRunnable, TRAFFIC_LIGHT_TIMEOUT_MS);
-
+                        // [SIMPLIFIED] No timeout logic - data is cleared by
+                        // onNaviStatusUpdate(state==2)
                         if (mPresentation != null) {
                             mPresentation.updateGuideInfo(info);
                         }
@@ -211,14 +198,32 @@ public class ClusterHudManager
                     @Override
                     public void onNaviStatusUpdate(int state) {
                         DebugLogger.d(TAG, "Navi Status Update: " + state);
-                        // Reset lights on Stop (2), Start (9), Emulator (8), or Route Init (39)
-                        // EXCLUDING state 3 (Pause/Background) to prevent flicker
-                        if (state == 2 || state == 9 || state == 39 || state == 8) {
+
+                        // [FIX] Determine Navigation State for Theme Background
+                        // 1: Navigating, 8: Emulator, 9: Start Guide
+                        // 2: Stop, 39: Route Init (Planning)
+                        boolean isNavigating = (state == 1 || state == 8 || state == 9);
+                        boolean isStop = (state == 2);
+
+                        mMainHandler.post(() -> {
                             if (mPresentation != null) {
-                                mPresentation.resetTrafficLights();
-                                mPresentation.resetNaviInfo();
+                                // Apply Navigation State
+                                if (isNavigating) {
+                                    mPresentation.setNavigating(true);
+                                } else if (isStop) {
+                                    mPresentation.setNavigating(false);
+                                }
+                                // Note: Other states (3, 39, etc.) retain current state to avoid flicker
+
+                                // [UNIFIED] Only reset on Navigation Stop (state==2)
+                                // Other states (9=StartGuide, 39=RoutePlanning, 8=Emulator) should NOT clear
+                                // data
+                                if (state == 2) {
+                                    mPresentation.resetTrafficLights();
+                                    mPresentation.resetNaviInfo();
+                                }
                             }
-                        }
+                        });
                     }
                 });
 
@@ -588,10 +593,66 @@ public class ClusterHudManager
         return mTransparentBitmap;
     }
 
+    /**
+     * 为 Bitmap 叠加居中垂直定位线（仅用于预览，帮助定位宽组件）
+     * 
+     * @param original 原始 Bitmap
+     * @return 叠加了居中定位线的新 Bitmap（不修改原图）
+     */
+    /**
+     * 为 Bitmap 叠加居中垂直定位线（仅用于预览，帮助定位宽组件）
+     * 
+     * @param original 原始 Bitmap
+     * @return 叠加了居中定位线的新 Bitmap（不修改原图）
+     */
+    public android.graphics.Bitmap addCenterLineOverlay(android.graphics.Bitmap original) {
+        if (original == null)
+            return null;
+
+        try {
+            int width = original.getWidth();
+            int height = original.getHeight();
+            android.graphics.Bitmap canvasBitmap;
+
+            // 如果是 1x1 的占位图（关闭状态），创建一个全尺寸透明图用于显示定位线
+            if (width <= 10 || height <= 10) {
+                // 默认尺寸 (Scale 1.0): 72(L) + 90(Gap) + 72(R) = 234, Height = 72
+                width = 234;
+                height = 72;
+                canvasBitmap = android.graphics.Bitmap.createBitmap(width, height,
+                        android.graphics.Bitmap.Config.ARGB_8888);
+            } else {
+                // 创建副本以避免修改原图
+                canvasBitmap = original.copy(android.graphics.Bitmap.Config.ARGB_8888, true);
+            }
+
+            android.graphics.Canvas canvas = new android.graphics.Canvas(canvasBitmap);
+
+            // 设置定位线样式：半透明青色虚线
+            android.graphics.Paint paint = new android.graphics.Paint();
+            paint.setColor(android.graphics.Color.argb(255, 0, 255, 255)); // 青色 (不透明以便在预览中清晰)
+            paint.setStrokeWidth(2);
+            paint.setStyle(android.graphics.Paint.Style.STROKE);
+            paint.setPathEffect(new android.graphics.DashPathEffect(new float[] { 8, 4 }, 0)); // 虚线
+
+            // 在中心绘制垂直线
+            float centerX = canvasBitmap.getWidth() / 2f;
+            canvas.drawLine(centerX, 0, centerX, canvasBitmap.getHeight(), paint);
+
+            return canvasBitmap;
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to add center line overlay", e);
+            return original; // 失败时返回原图
+        }
+    }
+
     private class ECarFunctionListener implements ICarFunction.IFunctionValueWatcher {
         @Override
         public void onFunctionValueChanged(int funcId, int zone, int value) {
             boolean isOn = (value == 1);
+            // [DEBUG] Log ALL function changes to find potential hidden IDs
+            DebugLogger.d(TAG, "onFunctionValueChanged: funcId=" + funcId + ", zone=" + zone + ", value=" + value);
+
             if (funcId == FUNC_LEFT_TRUN_SIGNAL) {
                 if (mLeftTurnOn != isOn) {
                     DebugLogger.d(TAG, "TurnSignal API: Left Changed -> " + isOn);
@@ -603,7 +664,7 @@ public class ClusterHudManager
                     updateTurnSignal(false, isOn);
                 }
             } else if (funcId == FUNC_AUTOHOLD_STATUS) {
-                DebugLogger.d(TAG, "AutoHold API: Changed -> " + value);
+                DebugLogger.e(TAG, "AutoHold API (33661): Changed -> " + value + " (IsOn=" + isOn + ")");
                 mIsAutoHoldOn = (value == 1);
                 android.graphics.Bitmap bitmap = getAutoHoldBitmap(mIsAutoHoldOn);
                 // 使用通用 updateComponentImage 更新，组件 key 为 "auto_hold"
@@ -643,16 +704,24 @@ public class ClusterHudManager
 
     // Helper to get/create bitmap
     public android.graphics.Bitmap getTurnSignalBitmap(boolean left, boolean right) {
+        float scale = 1.0f;
+        if (mCachedHudComponents != null) {
+            for (HudComponentData data : mCachedHudComponents) {
+                if ("turn_signal".equals(data.type)) {
+                    scale = data.scale;
+                    break;
+                }
+            }
+        }
+        return getTurnSignalBitmap(left, right, scale);
+    }
+
+    public android.graphics.Bitmap getTurnSignalBitmap(boolean left, boolean right, float scale) {
         if (!left && !right)
             return null;
 
-        // Return cached if available
-        if (left && right && mBitmapHazard != null)
-            return mBitmapHazard;
-        if (left && !right && mBitmapLeft != null)
-            return mBitmapLeft;
-        if (!left && right && mBitmapRight != null)
-            return mBitmapRight;
+        // Note: We deliberately skip cache (mBitmapHazard, etc.) here
+        // because we want to force generation with the provided 'scale'.
 
         try {
             android.graphics.drawable.Drawable drawable = mContext.getDrawable(R.drawable.ic_turn_signal);
@@ -662,7 +731,9 @@ public class ClusterHudManager
             // Updated Size: 72px (Standard for 2x Preview)
             int width = 72;
             int height = 72;
-            int gap = 90; // Scaled gap
+            int gap = 90; // Base gap
+
+            gap = (int) (gap * scale); // Apply scale to gap only
 
             // Fix: Always use full width to maintain position
             int totalWidth = width * 2 + gap;
@@ -1608,6 +1679,9 @@ public class ClusterHudManager
                         text = "HH:mm";
                     }
 
+                    // [FIX] JSON contains already scaled coordinates (from MainActivity's 0.5x
+                    // logic).
+                    // Do NOT scale by 0.5f again, otherwise we get 0.25x scaling (double halving).
                     HudComponentData data = new HudComponentData(type, text, x * 0.5f, y * 0.5f, color);
                     data.scale = scale;
                     syncList.add(data);
@@ -1979,6 +2053,12 @@ public class ClusterHudManager
         if (mPresentation != null) {
             mPresentation.syncClusterLayout(mCachedClusterComponents);
             updateTurnSignal(); // Force update
+        }
+    }
+
+    public List<HudComponentData> getCachedHudComponents() {
+        synchronized (this) {
+            return mCachedHudComponents != null ? new ArrayList<>(mCachedHudComponents) : null;
         }
     }
 
@@ -2373,8 +2453,10 @@ public class ClusterHudManager
     private void loadSavedState() {
         try {
             // 1. Load Enabled States
-            mIsClusterEnabled = ConfigManager.getInstance().getBoolean("switch_cluster", true);
-            mIsHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", true);
+            // [FIX] 默认值从true改为false，与MainActivity保持一致
+            // 避免在用户从未开启功能时，外部触发switchNaviMode(3)导致仪表意外显示
+            mIsClusterEnabled = ConfigManager.getInstance().getBoolean("switch_cluster", false);
+            mIsHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", false);
             mIsFloatingEnabled = ConfigManager.getInstance().getBoolean("floating_traffic_light_enabled", false);
             // [FIX] Load Simulated Gear State
             mSimulatedGearEnabled = ConfigManager.getInstance().getBoolean("simulated_gear_enabled", false);

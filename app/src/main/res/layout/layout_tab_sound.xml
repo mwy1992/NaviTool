@@ -44,90 +44,97 @@
                 android:layout_height="wrap_content"/>
         </LinearLayout>
 
-        <!-- Combined Horizontal Sound Settings Card -->
+        <!-- Wrapped Content for Visibility Control -->
         <LinearLayout
+            android:id="@+id/layoutSoundContent"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginBottom="12dp"
-            android:padding="12dp"
-            android:background="@drawable/bg_card_rounded">
+            android:orientation="vertical">
 
-            <!-- Title & Controls Row -->
+            <!-- Combined Horizontal Sound Settings Card -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:orientation="vertical"
+                android:layout_marginBottom="12dp"
+                android:padding="12dp"
+                android:background="@drawable/bg_card_rounded">
 
-                <!-- Playback Mode -->
-                <TextView
-                    android:layout_width="wrap_content"
+                <!-- Title & Controls Row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="@string/sound_playback_mode_title"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="?android:attr/textColorPrimary"
-                    android:layout_marginEnd="12dp"/>
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
 
-                <RadioGroup
-                    android:id="@+id/rgSoundPlaybackMode"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-
-                    <RadioButton
-                        android:id="@+id/rbSoundModeMix"
+                    <!-- Playback Mode -->
+                    <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/sound_mode_mix"
+                        android:text="@string/sound_playback_mode_title"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="?android:attr/textColorPrimary"
                         android:layout_marginEnd="12dp"/>
 
-                    <RadioButton
-                        android:id="@+id/rbSoundModeDirect"
+                    <RadioGroup
+                        android:id="@+id/rgSoundPlaybackMode"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/sound_mode_direct"/>
-                </RadioGroup>
+                        android:orientation="horizontal">
 
-                <!-- Spacer between groups -->
-                <Space
-                    android:layout_width="48dp"
-                    android:layout_height="wrap_content" />
+                        <RadioButton
+                            android:id="@+id/rbSoundModeMix"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/sound_mode_mix"
+                            android:layout_marginEnd="12dp"/>
 
-                <!-- Sound Channel -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/sound_channel_title"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:textColor="?android:attr/textColorPrimary"
-                    android:layout_marginEnd="12dp"/>
+                        <RadioButton
+                            android:id="@+id/rbSoundModeDirect"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/sound_mode_direct"/>
+                    </RadioGroup>
 
-                <RadioGroup
-                    android:id="@+id/rgSoundChannel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
+                    <!-- Spacer between groups -->
+                    <Space
+                        android:layout_width="48dp"
+                        android:layout_height="wrap_content" />
 
-                    <RadioButton
-                        android:id="@+id/rbSoundChannelNavi"
+                    <!-- Sound Channel -->
+                    <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/sound_channel_navi"
+                        android:text="@string/sound_channel_title"
+                        android:textSize="14sp"
+                        android:textStyle="bold"
+                        android:textColor="?android:attr/textColorPrimary"
                         android:layout_marginEnd="12dp"/>
 
-                    <RadioButton
-                        android:id="@+id/rbSoundChannelMedia"
+                    <RadioGroup
+                        android:id="@+id/rgSoundChannel"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/sound_channel_media"/>
-                </RadioGroup>
+                        android:orientation="horizontal">
+
+                        <RadioButton
+                            android:id="@+id/rbSoundChannelNavi"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/sound_channel_navi"
+                            android:layout_marginEnd="12dp"/>
+
+                        <RadioButton
+                            android:id="@+id/rbSoundChannelMedia"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/sound_channel_media"/>
+                    </RadioGroup>
+                </LinearLayout>
+
+                <!-- Hints Row Removed per user request -->
             </LinearLayout>
-
-            <!-- Hints Row Removed per user request -->
-        </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -518,6 +525,7 @@
                 </LinearLayout>
 
             </LinearLayout>
+        </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 </ScrollView>
