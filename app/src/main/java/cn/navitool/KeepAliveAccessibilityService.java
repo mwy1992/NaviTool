@@ -210,6 +210,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         checkAndStartAmapServices();
     }
 
+
+
     private void checkAndStartAmapServices() {
         if (mIsAmapServicesStarted)
             return;
@@ -248,6 +250,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         mEngineStarted = true; // [FIX] Ensure flag is set so gear sounds can play
 
         DebugLogger.i(TAG, "Ignition DRIVING detected! triggering AutoStart and scheduling Heavy Sensors...");
+
+        // Bug 4 Fix: Delayed start for Floating Ball to avoid conflicts on boot
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            startFloatingBallIfEnabled();
+        }, 3500);
 
         // 1. Trigger Lightweight Auto Start
         triggerAutoStart();
@@ -412,7 +419,6 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     // Sound Prompt States
     private int mLastIgnition = -1;
     private int mLastGear = -1;
-    private int mLastDoor = -1;
     private boolean mEngineStarted = false; // Bug 7: 只有发动机启动后才播放声音
     private boolean mInitialGearSkipped = false; // Bug 7: 忽略启动时的第一次P档事件
 
@@ -527,6 +533,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                         } else if (sensorType == SENSOR_TYPE_DIM_CAR_SPEED) {
                             // DIM速度与实际车速格式相同，都需要乘以3.6转换为km/h
                             int speedKmh = (int) (value * 3.6f);
+                            // [DEBUG] Log Speed Update Frequency
+                            DebugLogger.d(TAG, "Sensor Speed Update: " + speedKmh + " km/h");
                             ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
                                     .updateSpeed(speedKmh);
                         }
@@ -656,6 +664,24 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             mAutoStartPending = false;
         }, 5000);
     }
+
+    private void startFloatingBallIfEnabled() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 23 && !android.provider.Settings.canDrawOverlays(this)) {
+                DebugLogger.w(TAG, "Cannot start FloatingBall: Overlay Permission Missing");
+                return;
+            }
+
+            if (ConfigManager.getInstance().getBoolean("floating_ball_enabled", false)) {
+                DebugLogger.i(TAG, "Starting FloatingBallService...");
+                startService(new Intent(this, cn.navitool.service.FloatingBallService.class));
+            }
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error starting FloatingBall", e);
+        }
+    }
+
+
 
     private void registerFunctionListeners() {
         try {

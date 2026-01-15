@@ -15,6 +15,7 @@ import cn.navitool.R;
 public class KeyHandlerManager {
     private static final String TAG = "KeyHandlerManager";
     private static volatile KeyHandlerManager instance;
+    private boolean mIsInitialized = false; // Prevention flag
     private Context mContext;
     private final android.os.Handler mHandler = new android.os.Handler(android.os.Looper.getMainLooper());
 
@@ -41,7 +42,8 @@ public class KeyHandlerManager {
     private static final int ONEOS_KEY_WECHAT = 200400;
 
     private KeyHandlerManager(Context context) {
-        this.mContext = context.getApplicationContext();
+        // [FIX] Use Service Context directly to allow background callbacks (Bug 5)
+        this.mContext = context; // context.getApplicationContext();
     }
 
     public static KeyHandlerManager getInstance(Context context) {
@@ -56,6 +58,11 @@ public class KeyHandlerManager {
     }
 
     public void init() {
+        if (mIsInitialized) {
+            DebugLogger.d(TAG, "Already initialized, skipping.");
+            return;
+        }
+        mIsInitialized = true;
         DebugLogger.i(TAG, "KeyHandlerManager Initializing...");
         bindOneOSService();
     }
@@ -175,6 +182,9 @@ public class KeyHandlerManager {
                         if (mOneOSInputManager != null) {
                             try {
                                 currentIndex = mOneOSInputManager.getControlIndex();
+                                // [RESTORED LOGS]
+                                DebugLogger.d(TAG, "onKeyEvent: Code=" + keyCode + ", Event=" + event +
+                                        ", Controller=" + keyController + ", CurrentIndex=" + currentIndex);
                             } catch (Exception e) {
                                 DebugLogger.e(TAG, "Failed to get control index", e);
                             }
@@ -342,10 +352,12 @@ public class KeyHandlerManager {
             audioManager.dispatchMediaKeyEvent(keyEvent);
         }
 
+        /* [FIX] Commented out Method 2 to prevent Double Trigger (Bug 5)
         Intent mediaIntent = new Intent(Intent.ACTION_MEDIA_BUTTON);
         mediaIntent.putExtra(Intent.EXTRA_KEY_EVENT, keyEvent);
         mediaIntent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
         mediaIntent.addFlags(Intent.FLAG_ACTIVITY_PREVIOUS_IS_TOP);
         mContext.sendBroadcast(mediaIntent);
+        */
     }
 }

@@ -58,6 +58,15 @@ public class ClusterHudManager
     private float mCachedFuelLiters = 0f;
     private float mCachedRangeKm = 0f;
     private int mCachedSpeed = 0;
+    private float mCachedRpm = 0f;
+
+    // Bug 2 Fix: Independent timeout for navigation info
+    private static final long NAVI_INFO_TIMEOUT_MS = 10000;
+    private final Runnable mNaviInfoTimeoutRunnable = () -> {
+        if (mPresentation != null) {
+            mPresentation.resetNaviInfo();
+        }
+    };
     private int mCachedGear = -1; // -1 for unknown
     // [Fix Cold Boot] Add tracking for actually applied theme to avoid redundant
     // resets
@@ -65,7 +74,7 @@ public class ClusterHudManager
 
     // [Fix] Simulated Gear Support
     private boolean mSimulatedGearEnabled = false;
-    private float mCachedRpm = 0f;
+    // private float mCachedRpm = 0f; // Moved up
 
     private List<HudComponentData> mCachedHudComponents;
     private List<HudComponentData> mCachedClusterComponents;
@@ -190,9 +199,8 @@ public class ClusterHudManager
                             cn.navitool.NaviInfoController.GuideInfo info) {
                         // [SIMPLIFIED] No timeout logic - data is cleared by
                         // onNaviStatusUpdate(state==2)
-                        if (mPresentation != null) {
-                            mPresentation.updateGuideInfo(info);
-                        }
+                        // Call the new public method
+                        ClusterHudManager.this.onGuideInfoUpdate(info);
                     }
 
                     @Override
@@ -2075,6 +2083,14 @@ public class ClusterHudManager
         updateMediaPlayingState(true); // Force show for testing
     }
 
+    public void onGuideInfoUpdate(cn.navitool.NaviInfoController.GuideInfo info) {
+        // DebugLogger.d(TAG, "onGuideInfoUpdate: " + info.toString());
+        mMainHandler.removeCallbacks(mNaviInfoTimeoutRunnable);
+        mMainHandler.postDelayed(mNaviInfoTimeoutRunnable, NAVI_INFO_TIMEOUT_MS);
+        if (mPresentation != null) {
+            mPresentation.updateGuideInfo(info);
+        }
+    }
     public void clearHudComponents() {
         DebugLogger.i(TAG, "Clearing HUD/Cluster components cache");
         if (mPresentation != null) {
@@ -2189,6 +2205,10 @@ public class ClusterHudManager
     }
 
     public void updateSpeed(int speed) {
+        // [DEBUG] Log updateSpeed call
+        if (mSimulatedGearEnabled) {
+             DebugLogger.d(TAG, "updateSpeed called: " + speed + ", invoking SimGearCalc");
+        }
         mCachedSpeed = speed;
         if (mPresentation != null) {
             mMainHandler.post(() -> {
@@ -2203,11 +2223,14 @@ public class ClusterHudManager
     }
 
     private void calculateAndPushSimulatedGear() {
+        // [DEBUG] Log calculation trigger
+        DebugLogger.d(TAG, "Triggering Simulated Gear Calculation (Force=False)");
         calculateAndPushSimulatedGear(false);
     }
 
     private void calculateAndPushSimulatedGear(boolean forceImmediate) {
-        String baseGear = mapRawGearToChar(mCachedGear != -1 ? mCachedGear : 2097712); // Default P
+        // [FIX] 即使是 -1 也传递给转换函数，因为 -1 代表 M 档，不应替换为 P
+        String baseGear = mapRawGearToChar(mCachedGear);
 
         String calculated = cn.navitool.DrivingShift.getInstance().calculateGear(
                 mCachedSpeed,
@@ -2221,6 +2244,11 @@ public class ClusterHudManager
     }
 
     private String convertGearValueToString(int gearValue) {
+        // M Gear support: Priority check for -1
+        if (gearValue == -1) {
+            return "M";
+        }
+
         // Gear constants (Duplicated from Presentation/SoundPromptManager)
         final int GEAR_PARK = 2097712;
         final int GEAR_REVERSE = 2097728;
@@ -2239,9 +2267,6 @@ public class ClusterHudManager
             return "N";
         if (gearValue == GEAR_PARK || gearValue == TRSM_GEAR_PARK)
             return "P";
-
-        // M Gear support
-        // if (gearValue == M?) -> "M"
 
         return "P"; // Default
     }
@@ -2459,7 +2484,8 @@ public class ClusterHudManager
             mIsHudEnabled = ConfigManager.getInstance().getBoolean("switch_hud", false);
             mIsFloatingEnabled = ConfigManager.getInstance().getBoolean("floating_traffic_light_enabled", false);
             // [FIX] Load Simulated Gear State
-            mSimulatedGearEnabled = ConfigManager.getInstance().getBoolean("simulated_gear_enabled", false);
+            // [FIX] Default to TRUE so users can see M1-M8 without manual config
+            mSimulatedGearEnabled = ConfigManager.getInstance().getBoolean("simulated_gear_enabled", true);
             // [NEW] Load Green Background State
             mIsHudGreenBgExposed = ConfigManager.getInstance().getBoolean("hud_green_bg_enabled", false);
             DebugLogger.i(TAG, "Self-Init: Loaded State -> Cluster=" + mIsClusterEnabled + ", HUD=" + mIsHudEnabled

@@ -1326,7 +1326,8 @@ public class Presentation extends android.app.Dialog {
                     heightSpec = View.MeasureSpec.makeMeasureSpec(100, View.MeasureSpec.EXACTLY);
                 } else if (isTurnSignal) {
                     heightSpec = View.MeasureSpec.makeMeasureSpec(36, View.MeasureSpec.EXACTLY);
-                    // [FIX] Disable View scaling, rely on Bitmap Gap scaling
+                    // [FIX] Removed forced scale set to 1.0f to allow user customization to apply
+                    /*
                     // We override data.scale here locally for the View property relative to the
                     // bitmap size
                     // The bitmap will be larger due to the gap, so fit it 1:1 or let it handle
@@ -1334,7 +1335,8 @@ public class Presentation extends android.app.Dialog {
                     // Actually, we should just set scale to 1.0f on the view so it doesn't zoom the
                     // pixels.
                     view.setScaleX(1.0f);
-                    view.setScaleY(1.0f);
+                    view.setScaleY(1.0f); 
+                    */
                 } else if (isVolume) {
                     heightSpec = View.MeasureSpec.makeMeasureSpec(36, View.MeasureSpec.EXACTLY);
                 } else if ("gauge".equals(data.type) && data.image != null) {

@@ -310,6 +310,8 @@ public class DrivingShift {
     }
 
     private String smoothGearOutput(String newGear) {
+        // [DEBUG] Smoothing Input
+        Log.d(TAG, "Smoothing Logic: Input=" + newGear + ", History=" + gearHistory + ", LastValid=" + lastValidGear);
         gearHistory.add(newGear);
         if (gearHistory.size() > maxHistorySize) {
             gearHistory.remove(0);
