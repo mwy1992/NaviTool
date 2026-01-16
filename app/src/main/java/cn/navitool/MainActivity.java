@@ -1041,7 +1041,9 @@ public class MainActivity extends AppCompatActivity {
                 try {
                     JSONObject obj = new JSONObject();
                     // Determine Type
-                    String type = tag.toString().replace("type_", "");
+                    // [FIX] 处理包含":scale_"后缀的tag，只提取基础类型名称
+                    String rawType = tag.toString().replace("type_", "");
+                    String type = rawType.contains(":") ? rawType.substring(0, rawType.indexOf(":")) : rawType;
                     obj.put("type", type);
 
                     String text = "";
@@ -1069,7 +1071,18 @@ public class MainActivity extends AppCompatActivity {
                     obj.put("x", child.getX());
                     obj.put("y", child.getY());
                     // [FIX Bug 5] Save scale
-                    obj.put("scale", child.getScaleX());
+                    // [FIX] 对于转向灯等特殊组件，缩放值存储在tag后缀中，需要从tag提取
+                    float scale = child.getScaleX();
+                    if (rawType.contains(":scale_")) {
+                        try {
+                            String scaleStr = rawType.substring(rawType.indexOf(":scale_") + 7);
+                            scale = Float.parseFloat(scaleStr);
+                        } catch (NumberFormatException e) {
+                            // 解析失败则使用默认值
+                            scale = 1.0f;
+                        }
+                    }
+                    obj.put("scale", scale);
                     jsonArray.put(obj);
                 } catch (JSONException e) {
                     DebugLogger.e("HUD", "Failed to serialize component", e);
@@ -1173,11 +1186,29 @@ public class MainActivity extends AppCompatActivity {
                     createAndAddHudComponent(type, text, x, y);
 
                     // Apply scale to the newly created view (last child)
-                    // Apply scale to the newly created view (last child)
                     if (preview != null && preview.getChildCount() > 0) {
                         View lastChild = preview.getChildAt(preview.getChildCount() - 1);
-                        lastChild.setScaleX(scale);
-                        lastChild.setScaleY(scale);
+                        
+                        // [FIX] 转向灯组件不使用视图缩放，而是通过Bitmap间距实现
+                        // 转向灯的scale只影响箭头之间的间距，不影响箭头图片大小
+                        if ("turn_signal".equals(type)) {
+                            // 不设置setScaleX/Y，保持视图1:1
+                            // scale已在createAndAddHudComponent中通过tag传递
+                            // 重新生成带正确间距的Bitmap
+                            if (lastChild instanceof android.widget.ImageView) {
+                                android.graphics.Bitmap bmp = ClusterHudManager.getInstance(this)
+                                        .getTurnSignalBitmap(true, true, scale);
+                                if (bmp != null) {
+                                    bmp = ClusterHudManager.getInstance(this).addCenterLineOverlay(bmp);
+                                    ((android.widget.ImageView) lastChild).setImageBitmap(bmp);
+                                }
+                            }
+                            // 更新tag以包含scale信息
+                            lastChild.setTag("type_turn_signal:scale_" + scale);
+                        } else {
+                            lastChild.setScaleX(scale);
+                            lastChild.setScaleY(scale);
+                        }
                     }
 
                     int color = mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF;
@@ -4260,18 +4291,21 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private SimulateFunction mSimulateFunction;
+
     private void setupSimulateEngineStartButton() {
-        View btnSimulate = findViewById(R.id.btnSimulateEngineStart);
-        if (btnSimulate != null) {
-            btnSimulate.setOnClickListener(v -> {
-                DebugLogger.i("MainActivity", "Simulating Engine Start - Sending broadcast");
-                DebugLogger.toast(this, "模拟发动机启动");
-                android.content.Intent intent = new android.content.Intent("cn.navitool.ACTION_SIMULATE_ENGINE_START");
-                // Use explicit package/component if needed, or just standard broadcast
-                intent.setPackage(getPackageName());
-                sendBroadcast(intent);
-            });
+        // 初始化模拟功能管理器
+        if (mSimulateFunction == null) {
+            mSimulateFunction = new SimulateFunction(this);
         }
+        
+        // 设置模拟发动机启动按钮
+        View btnSimulate = findViewById(R.id.btnSimulateEngineStart);
+        mSimulateFunction.setupEngineStartButton(btnSimulate);
+        
+        // 设置模拟转向灯按钮
+        com.google.android.material.button.MaterialButton btnTurnSignal = findViewById(R.id.btnSimulateTurnSignal);
+        mSimulateFunction.setupTurnSignalButton(btnTurnSignal);
 
         // [NEW] HUD 浅绿底色调试按钮 (Toggle Button)
         com.google.android.material.button.MaterialButton btnHudGreenBg = findViewById(R.id.btnHudGreenBg);

@@ -53,7 +53,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
     // Dynamic Receiver for ADB Simulation (Avoids Android 8+ Background Execution
     // Limits)
-    private SimulateIgnitionReceiver mSimulateReceiver;
+    private SimulateFunction.IgnitionReceiver mSimulateReceiver;
 
     // ... existing fields ...
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (sharedPreferences, key) -> {
@@ -155,17 +155,31 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
         // Register Simulation Receiver dynamically
         try {
-            mSimulateReceiver = new SimulateIgnitionReceiver();
+            mSimulateReceiver = new SimulateFunction.IgnitionReceiver();
             IntentFilter simFilter = new IntentFilter("cn.navitool.ACTION_SIMULATE_ENGINE_START");
             if (Build.VERSION.SDK_INT >= 33) {
                 registerReceiver(mSimulateReceiver, simFilter, Context.RECEIVER_EXPORTED);
             } else {
                 registerReceiver(mSimulateReceiver, simFilter);
             }
-            DebugLogger.i(TAG, "Dynamic SimulateIgnitionReceiver Registered");
+            DebugLogger.i(TAG, "Dynamic SimulateFunction.IgnitionReceiver Registered");
         } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to register SimulateIgnitionReceiver", e);
+            DebugLogger.e(TAG, "Failed to register SimulateFunction.IgnitionReceiver", e);
         }
+
+        // [FIX] 备用悬浮球启动：延迟5秒后检查悬浮球是否已启动，如果没有则尝试启动
+        // 这是为了处理点火状态检测延迟或失败的情况
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            if (ConfigManager.getInstance().getBoolean("floating_ball_enabled", false)) {
+                // 使用静态变量检查服务状态，O(1)复杂度，无IPC开销
+                if (!cn.navitool.service.FloatingBallService.isRunning()) {
+                    DebugLogger.i(TAG, "[Backup] FloatingBall not running, starting now...");
+                    startFloatingBallIfEnabled();
+                } else {
+                    DebugLogger.d(TAG, "[Backup] FloatingBall already running, skipping");
+                }
+            }
+        }, 5000);
     }
 
     // ... onDestroy ...
@@ -319,7 +333,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 mSimulateReceiver = null;
             }
         } catch (Exception e) {
-            DebugLogger.e(TAG, "Error unregistering SimulateIgnitionReceiver", e);
+            DebugLogger.e(TAG, "Error unregistering SimulateFunction.IgnitionReceiver", e);
         }
 
         // The following catch block and assignment were part of the mPsdPresentation

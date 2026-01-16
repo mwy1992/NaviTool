@@ -66,6 +66,15 @@
             </intent-filter>
         </receiver>
 
+        <!-- 模拟发动机点火广播接收器 -->
+        <receiver
+            android:name=".SimulateFunction$IgnitionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="cn.navitool.ACTION_SIMULATE_ENGINE_START" />
+            </intent-filter>
+        </receiver>
+
 
 
 

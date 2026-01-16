@@ -28,6 +28,13 @@ import cn.navitool.view.AppListAdapter;
 
 public class FloatingBallService extends Service {
 
+    // [NEW] 静态变量追踪服务运行状态，消耗极小（1字节），读取O(1)
+    private static volatile boolean sIsRunning = false;
+
+    public static boolean isRunning() {
+        return sIsRunning;
+    }
+
     private WindowManager mWindowManager;
     private View mFloatingView;
     private View mMenuView;
@@ -39,6 +46,7 @@ public class FloatingBallService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        sIsRunning = true; // 标记服务已启动
         mWindowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         createFloatingView();
         createMenuView();
@@ -230,6 +238,7 @@ public class FloatingBallService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        sIsRunning = false; // 标记服务已停止
         // [FIX] Save current position before destroying
         if (mFloatingParams != null) {
             cn.navitool.ConfigManager.getInstance().setInt("floating_ball_x", mFloatingParams.x);

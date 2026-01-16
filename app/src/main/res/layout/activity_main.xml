@@ -381,6 +381,17 @@
                             app:icon="@drawable/ic_check"
                             app:iconGravity="textStart"/>
 
+                        <!-- 模拟转向灯按钮 -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSimulateTurnSignal"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:text="模拟转向灯"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            app:icon="@drawable/ic_close"
+                            app:iconGravity="textStart"/>
+
                         <!-- HUD浅绿底色调试按钮 -->
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnHudGreenBg"

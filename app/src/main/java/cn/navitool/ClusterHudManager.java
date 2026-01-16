@@ -72,6 +72,9 @@ public class ClusterHudManager
     // resets
     private int mCurrentAppliedTheme = -1;
 
+    // [NEW] 点火状态标志 - 仅在收到点火信号后才允许显示Presentation
+    private boolean mIgnitionReady = false;
+
     // [Fix] Simulated Gear Support
     private boolean mSimulatedGearEnabled = false;
     // private float mCachedRpm = 0f; // Moved up
@@ -147,6 +150,9 @@ public class ClusterHudManager
         // Load persisted sensor data
         loadSensorCache();
 
+        // [NEW] 从磁盘加载HUD布局，支持Headless启动
+        loadHudLayoutFromDisk();
+
         initAdaptApi();
         initDimInteraction(); // Restore missing call for Real HUD Mode Switch
 
@@ -168,10 +174,9 @@ public class ClusterHudManager
 
         registerDisplayListener();
 
-        // Cold Boot Robustness: Check for presentation after init
-        // Cold Boot Robustness: Check for presentation after init
-        // Cold Boot Robustness: Check for presentation after init
-        mMainHandler.post(this::ensureUiVisible);
+        // [FIX] 移除自动显示逻辑 - 仅在点火启动后才显示Presentation
+        // 原代码: mMainHandler.post(this::ensureUiVisible);
+        // 现在由 KeepAliveAccessibilityService.handleIgnitionDriving() 触发
 
         // Register for System Theme Changes
         mContext.registerComponentCallbacks(this);
@@ -1121,9 +1126,15 @@ public class ClusterHudManager
         }
     }
 
-    // Pending Media State (Wait for Cache Load)
+    // Pending State (Wait for Cache Load)
     private String mPendingSongText = null;
     private android.graphics.Bitmap mPendingCoverArt = null;
+    // [FIX] 添加传感器数据的pending缓存
+    private String mPendingTempOutText = null;
+    private String mPendingTempInText = null;
+    private String mPendingFuelText = null;
+    private String mPendingRangeText = null;
+    private String mPendingGearText = null;
 
     private void updateComponent(String type, String newText, android.graphics.Bitmap newImage) {
         // [HUD FIX] 改用 isEmpty() 检查，因为缓存已初始化为空列表
@@ -1140,6 +1151,16 @@ public class ClusterHudManager
                     if (newImage != null) {
                         mPendingCoverArt = newImage;
                     }
+                } else if ("temp_out".equals(type)) {
+                    mPendingTempOutText = newText;
+                } else if ("temp_in".equals(type)) {
+                    mPendingTempInText = newText;
+                } else if ("fuel".equals(type)) {
+                    mPendingFuelText = newText;
+                } else if ("range".equals(type)) {
+                    mPendingRangeText = newText;
+                } else if ("gear".equals(type)) {
+                    mPendingGearText = newText;
                 }
             }
             return;
@@ -1499,6 +1520,11 @@ public class ClusterHudManager
 
     private void checkAndShowPresentation() {
         mMainHandler.post(() -> {
+            // [FIX] 仅在收到点火信号后才显示
+            if (!mIgnitionReady) {
+                DebugLogger.d(TAG, "checkAndShowPresentation: Ignition not ready, skipping");
+                return;
+            }
             if (mIsClusterEnabled || mIsHudEnabled) {
                 if (mPresentation == null) {
                     showPresentation();
@@ -1715,6 +1741,10 @@ public class ClusterHudManager
             return;
         }
 
+        // [FIX] 调用ensureUiVisible时标记点火就绪
+        // 因为此方法只应由handleIgnitionDriving触发
+        mIgnitionReady = true;
+
         // [FIX] Check if features are enabled before showing
         if (!mIsClusterEnabled && !mIsHudEnabled) {
             DebugLogger.w(TAG, "ensureUiVisible: Ignored. Both Cluster and HUD are disabled.");
@@ -1728,6 +1758,22 @@ public class ClusterHudManager
             DebugLogger.d(TAG, "ensureUiVisible: Posting to Main Thread handler.");
             mMainHandler.post(this::showPresentation);
         }
+    }
+
+    /**
+     * [NEW] 设置点火状态
+     * 由KeepAliveAccessibilityService在收到点火信号时调用
+     */
+    public void setIgnitionReady(boolean ready) {
+        mIgnitionReady = ready;
+        DebugLogger.i(TAG, "setIgnitionReady: " + ready);
+    }
+
+    /**
+     * [NEW] 获取点火状态
+     */
+    public boolean isIgnitionReady() {
+        return mIgnitionReady;
     }
 
     private void updatePresentation() {
@@ -2011,6 +2057,32 @@ public class ClusterHudManager
                 updateComponentImage("media_cover", mPendingCoverArt);
                 updateComponentImage("test_media_cover", mPendingCoverArt);
                 mPendingCoverArt = null; // Clear
+            }
+            // [FIX] 应用pending的传感器数据
+            if (mPendingTempOutText != null) {
+                DebugLogger.d(TAG, "Applying pending temp_out: " + mPendingTempOutText);
+                updateComponentText("temp_out", mPendingTempOutText);
+                mPendingTempOutText = null;
+            }
+            if (mPendingTempInText != null) {
+                DebugLogger.d(TAG, "Applying pending temp_in: " + mPendingTempInText);
+                updateComponentText("temp_in", mPendingTempInText);
+                mPendingTempInText = null;
+            }
+            if (mPendingFuelText != null) {
+                DebugLogger.d(TAG, "Applying pending fuel: " + mPendingFuelText);
+                updateComponentText("fuel", mPendingFuelText);
+                mPendingFuelText = null;
+            }
+            if (mPendingRangeText != null) {
+                DebugLogger.d(TAG, "Applying pending range: " + mPendingRangeText);
+                updateComponentText("range", mPendingRangeText);
+                mPendingRangeText = null;
+            }
+            if (mPendingGearText != null) {
+                DebugLogger.d(TAG, "Applying pending gear: " + mPendingGearText);
+                updateComponentText("gear", mPendingGearText);
+                mPendingGearText = null;
             }
         }
         if (mPresentation != null) {
@@ -2396,6 +2468,55 @@ public class ClusterHudManager
         mCachedRangeText = ConfigManager.getInstance().getString("last_range_text", "--km");
         mCachedTempOutText = ConfigManager.getInstance().getString("last_temp_out_text", "--°C");
         mCachedTempInText = ConfigManager.getInstance().getString("last_temp_in_text", "--°C");
+    }
+
+    /**
+     * [NEW] 从磁盘加载HUD布局配置
+     * 在Headless启动时自动调用，无需用户进入MainActivity
+     */
+    private void loadHudLayoutFromDisk() {
+        // 获取当前HUD模式 (0=WHUD, 1=AR)
+        int hudMode = ConfigManager.getInstance().getInt("hud_current_mode", 0);
+        String key = (hudMode == 0) ? "hud_layout_whud" : "hud_layout_ar";
+        String jsonStr = ConfigManager.getInstance().getString(key, null);
+        
+        if (jsonStr == null || jsonStr.isEmpty()) {
+            DebugLogger.d(TAG, "loadHudLayoutFromDisk: No saved layout found for key=" + key);
+            return;
+        }
+        
+        try {
+            org.json.JSONArray jsonArray = new org.json.JSONArray(jsonStr);
+            if (jsonArray.length() == 0) {
+                DebugLogger.d(TAG, "loadHudLayoutFromDisk: Empty layout array");
+                return;
+            }
+            
+            java.util.List<HudComponentData> components = new java.util.ArrayList<>();
+            boolean isSnowMode = ConfigManager.getInstance().getBoolean("hud_snow_mode", false);
+            int color = isSnowMode ? 0xFF00FFFF : 0xFFFFFFFF;
+            
+            for (int i = 0; i < jsonArray.length(); i++) {
+                org.json.JSONObject obj = jsonArray.getJSONObject(i);
+                String type = obj.optString("type", "text");
+                String text = obj.optString("text", "Text");
+                // 坐标已经是HUD坐标（728x190），无需再缩放
+                float x = (float) obj.optDouble("x", 0) * 0.5f;
+                float y = (float) obj.optDouble("y", 0) * 0.5f;
+                float scale = (float) obj.optDouble("scale", 1.0f);
+                
+                HudComponentData data = new HudComponentData(type, text, x, y, color);
+                data.scale = scale;
+                components.add(data);
+            }
+            
+            if (!components.isEmpty()) {
+                mCachedHudComponents = new java.util.ArrayList<>(components);
+                DebugLogger.i(TAG, "loadHudLayoutFromDisk: Loaded " + components.size() + " components from disk");
+            }
+        } catch (org.json.JSONException e) {
+            DebugLogger.e(TAG, "loadHudLayoutFromDisk: Failed to parse layout JSON", e);
+        }
     }
 
     private void saveSensorCache(String key, String value) {

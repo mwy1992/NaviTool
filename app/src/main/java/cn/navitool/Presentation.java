@@ -1011,13 +1011,17 @@ public class Presentation extends android.app.Dialog {
                         if (isTurnSignal || isVolume || isAutoHold) {
                             params.height = 36;
                             // [FIX] Add Fallback Resources if image is missing so they are not invisible
+                            // [FIX] 转向灯除外：当没有image时应该隐藏（表示关闭状态），不显示fallback
                             if (data.image == null) {
-                                if (isTurnSignal)
-                                    iv.setImageResource(R.drawable.ic_turn_signal);
-                                else if (isVolume)
+                                if (isTurnSignal) {
+                                    // 转向灯：image为null表示两边都关闭，不显示任何图像
+                                    // 设置透明图像而不是fallback资源
+                                    iv.setImageDrawable(null);
+                                } else if (isVolume) {
                                     iv.setImageResource(R.drawable.ic_volume);
-                                else if (isAutoHold)
+                                } else if (isAutoHold) {
                                     iv.setImageResource(R.drawable.ic_auto_hold);
+                                }
                             }
                         } else {
                             params.height = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
@@ -1312,8 +1316,16 @@ public class Presentation extends android.app.Dialog {
                 // Apply Scale - Set Pivot Top-Left
                 view.setPivotX(0);
                 view.setPivotY(0);
-                view.setScaleX(data.scale);
-                view.setScaleY(data.scale);
+                
+                // [FIX] 转向灯组件不使用视图缩放，scale已通过Bitmap间距实现
+                // 转向灯的scale只影响箭头之间的间距，不影响箭头图片大小
+                if (isTurnSignal) {
+                    view.setScaleX(1.0f);
+                    view.setScaleY(1.0f);
+                } else {
+                    view.setScaleX(data.scale);
+                    view.setScaleY(data.scale);
+                }
 
                 // Measure
                 int widthSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
@@ -1325,18 +1337,9 @@ public class Presentation extends android.app.Dialog {
                     widthSpec = View.MeasureSpec.makeMeasureSpec(100, View.MeasureSpec.EXACTLY);
                     heightSpec = View.MeasureSpec.makeMeasureSpec(100, View.MeasureSpec.EXACTLY);
                 } else if (isTurnSignal) {
+                    // [FIX] 使用WRAP_CONTENT让Bitmap的实际尺寸（包含间距）生效
+                    widthSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
                     heightSpec = View.MeasureSpec.makeMeasureSpec(36, View.MeasureSpec.EXACTLY);
-                    // [FIX] Removed forced scale set to 1.0f to allow user customization to apply
-                    /*
-                    // We override data.scale here locally for the View property relative to the
-                    // bitmap size
-                    // The bitmap will be larger due to the gap, so fit it 1:1 or let it handle
-                    // itself.
-                    // Actually, we should just set scale to 1.0f on the view so it doesn't zoom the
-                    // pixels.
-                    view.setScaleX(1.0f);
-                    view.setScaleY(1.0f); 
-                    */
                 } else if (isVolume) {
                     heightSpec = View.MeasureSpec.makeMeasureSpec(36, View.MeasureSpec.EXACTLY);
                 } else if ("gauge".equals(data.type) && data.image != null) {
