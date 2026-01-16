@@ -1034,8 +1034,15 @@ public class Presentation extends android.app.Dialog {
                     view = iv;
                 } else if ("time".equals(data.type)) {
                     android.widget.TextClock tc = new android.widget.TextClock(getContext());
-                    tc.setFormat12Hour(data.text);
-                    tc.setFormat24Hour(data.text);
+                    // [FIX] Validate format string. If users save "12:27" as text in Preview,
+                    // TextClock uses it as a literal format string, freezing the time.
+                    // Only use data.text if it looks like a format (contains H/h/m).
+                    String format = "HH:mm"; // Default
+                    if (data.text != null && (data.text.contains("H") || data.text.contains("h"))) {
+                        format = data.text;
+                    }
+                    tc.setFormat12Hour(format);
+                    tc.setFormat24Hour(format);
                     tc.setBackgroundColor(android.graphics.Color.TRANSPARENT);
                     tc.setTextColor(data.color);
                     tc.setPadding(0, 0, 0, 0);

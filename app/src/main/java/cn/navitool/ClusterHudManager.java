@@ -46,7 +46,7 @@ public class ClusterHudManager
     private ICar mCar;
     private ISensor mSensorManager;
     private ICarFunction mCarFunction;
-    private ECarSensorListener mSensorListener;
+    // [Refactor] ECarSensorListener removed
     private ECarFunctionListener mFunctionListener;
 
     // Media & Volume
@@ -89,22 +89,9 @@ public class ClusterHudManager
     private static final int FUNC_LEFT_TRUN_SIGNAL = 553980160;
     private static final int FUNC_RIGHT_TRUN_SIGNAL = 553980416;
     private static final int FUNC_AUTOHOLD_STATUS = 33661;
-
-    // Additional Sensor IDs
-    private static final int SENSOR_TYPE_ODOMETER = 1050368;
-    private static final int TYPE_INS_FUEL_CONSUMPTION = 4194816;
-    private static final int TYPE_AVG_FUEL_CONSUMPTION = 4194560;
-    // Tire Pressure
-    private static final int TIRE_PRESSURE_FRONT_LEFT = 5243136;
-    private static final int TIRE_PRESSURE_FRONT_RIGHT = 5243392;
-    private static final int TIRE_PRESSURE_REAR_LEFT = 5243648;
-    private static final int TIRE_PRESSURE_REAR_RIGHT = 5243904;
-    // Tire Temp
-    private static final int TIRE_TEMPERATURE_FRONT_LEFT = 5244160;
-    private static final int TIRE_TEMPERATURE_FRONT_RIGHT = 5244416;
-    private static final int TIRE_TEMPERATURE_REAR_LEFT = 5244672;
-    private static final int TIRE_TEMPERATURE_REAR_RIGHT = 5244928;
-
+    
+    // [Refactor] Sensor Constants Removed - Logic moved to VehicleSensorManager
+    
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
 
     // [FIX] Traffic Light Timeout - Auto-clear traffic light UI only
@@ -142,13 +129,14 @@ public class ClusterHudManager
         this.mCachedClusterComponents = new ArrayList<>();
 
         // [Self-Init] Load all saved configurations immediately
+        // [Self-Init] Load all saved configurations immediately
         loadSavedState();
 
         // Register Sensor Listener (including TPMS)
         VehicleSensorManager.getInstance(mContext).addListener(this);
 
-        // Load persisted sensor data
-        loadSensorCache();
+        // [Refactor] Load initial sensor data directly from Manager (No more disk cache)
+        loadInitialSensorData();
 
         // [NEW] 从磁盘加载HUD布局，支持Headless启动
         loadHudLayoutFromDisk();
@@ -285,14 +273,8 @@ public class ClusterHudManager
         cn.navitool.managers.CarServiceManager.getInstance(mContext).registerListener(() -> {
             mCar = cn.navitool.managers.CarServiceManager.getInstance(mContext).getCar();
             if (mCar != null) {
-                // Use getSensor() from manager (handles reflection fallback)
-                mSensorManager = cn.navitool.managers.CarServiceManager.getInstance(mContext).getSensor();
-                if (mSensorManager != null) {
-                    registerSensors();
-                } else {
-                    DebugLogger.e(TAG, "Shared SensorManager is null");
-                }
-
+                // [Refactor] Sensor Logic moved to VehicleSensorManager
+                
                 mCarFunction = cn.navitool.managers.CarServiceManager.getInstance(mContext).getCarFunction();
                 if (mCarFunction != null) {
                     registerFunctions();
@@ -303,69 +285,9 @@ public class ClusterHudManager
         // Ensure init is called (safe to call multiple times)
         cn.navitool.managers.CarServiceManager.getInstance(mContext).init();
     }
-
-    private void registerSensors() {
-        if (mSensorManager == null)
-            return;
-
-        // [FIX] Prevent duplicate registration
-        if (mSensorsRegistered) {
-            DebugLogger.w(TAG, "Sensors already registered, skipping duplicate registration.");
-            return;
-        }
-
-        mSensorListener = new ECarSensorListener();
-        try {
-            // Register Fuel Level
-            mSensorManager.registerListener(mSensorListener, ISensor.SENSOR_TYPE_FUEL_LEVEL, ISensor.RATE_NORMAL);
-            // Register Ambient Temp (Outside)
-            mSensorManager.registerListener(mSensorListener, ISensor.SENSOR_TYPE_TEMPERATURE_AMBIENT,
-                    ISensor.RATE_NORMAL);
-            // Register Indoor Temp (Inside)
-            mSensorManager.registerListener(mSensorListener, ISensor.SENSOR_TYPE_TEMPERATURE_INDOOR,
-                    ISensor.RATE_NORMAL);
-            // Register Gear
-            mSensorManager.registerListener(mSensorListener, ISensor.SENSOR_TYPE_GEAR, ISensor.RATE_NORMAL);
-            // Register Range (Endurance) - Try Standard and Fuel variants
-            mSensorManager.registerListener(mSensorListener, ISensor.SENSOR_TYPE_ENDURANCE_MILEAGE,
-                    ISensor.RATE_NORMAL);
-            // mSensorManager.registerListener(mSensorListener,
-            // ISensor.SENSOR_TYPE_ENDURANCE_MILEAGE_FUEL, ISensor.RATE_NORMAL);
-
-            // Register Speed (RPM only - CAR_SPEED is handled by
-            // KeepAliveAccessibilityService with ×3.72 conversion)
-            mSensorManager.registerListener(mSensorListener, ISensor.SENSOR_TYPE_RPM, ISensor.RATE_UI);
-            // [FIX] Removed ISensor.SENSOR_TYPE_CAR_SPEED - was causing oscillation due to
-            // duplicate registration
-
-            // Register Additional Sensors for Future Use (Odometer, Fuel, Tire)
-            mSensorManager.registerListener(mSensorListener, SENSOR_TYPE_ODOMETER, ISensor.RATE_NORMAL);
-            mSensorManager.registerListener(mSensorListener, TYPE_INS_FUEL_CONSUMPTION, ISensor.RATE_NORMAL);
-            mSensorManager.registerListener(mSensorListener, TYPE_AVG_FUEL_CONSUMPTION, ISensor.RATE_NORMAL);
-
-            // Register Tire Sensors
-            mSensorManager.registerListener(mSensorListener, TIRE_PRESSURE_FRONT_LEFT, ISensor.RATE_NORMAL);
-            mSensorManager.registerListener(mSensorListener, TIRE_PRESSURE_FRONT_RIGHT, ISensor.RATE_NORMAL);
-            mSensorManager.registerListener(mSensorListener, TIRE_PRESSURE_REAR_LEFT, ISensor.RATE_NORMAL);
-            mSensorManager.registerListener(mSensorListener, TIRE_PRESSURE_REAR_RIGHT, ISensor.RATE_NORMAL);
-
-            mSensorManager.registerListener(mSensorListener, TIRE_TEMPERATURE_FRONT_LEFT, ISensor.RATE_NORMAL);
-            mSensorManager.registerListener(mSensorListener, TIRE_TEMPERATURE_FRONT_RIGHT, ISensor.RATE_NORMAL);
-            mSensorManager.registerListener(mSensorListener, TIRE_TEMPERATURE_REAR_LEFT, ISensor.RATE_NORMAL);
-            mSensorManager.registerListener(mSensorListener, TIRE_TEMPERATURE_REAR_RIGHT, ISensor.RATE_NORMAL);
-
-            DebugLogger.i(TAG, "ECarX Sensors Registered");
-
-            // [FIX] Register Missing Sensors (Fuel & Outside Temp)
-            mSensorManager.registerListener(mSensorListener, SENSOR_TYPE_FUEL_LEVEL, ISensor.RATE_NORMAL);
-            mSensorManager.registerListener(mSensorListener, SENSOR_TYPE_ENV_OUTSIDE_TEMPERATURE, ISensor.RATE_NORMAL);
-
-            mSensorsRegistered = true;
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Error registering sensors", e);
-        }
-    }
-
+    
+    // [Refactor] registerSensors() removed - Logic moved to VehicleSensorManager
+    
     private void registerFunctions() {
         if (mCarFunction == null)
             return;
@@ -384,111 +306,7 @@ public class ClusterHudManager
 
     // --- Traffic Light Listener (AIDL) ---
 
-    // --- ECarX Sensor Listener ---
-    private class ECarSensorListener implements ISensor.ISensorListener {
-        private long mLastTireUpdateTime = 0;
-
-        @Override
-        public void onSensorEventChanged(int sensorType, int eventValue) {
-            // Handle Integer Events (Gear, etc.)
-            try {
-                if (sensorType == ISensor.SENSOR_TYPE_GEAR) {
-                    updateComponentText("gear", getGearString(eventValue));
-                }
-            } catch (Exception e) {
-                DebugLogger.e(TAG, "Error handling sensor event changed", e);
-            }
-        }
-
-        @Override
-        public void onSensorValueChanged(int sensorType, float value) {
-            // Handle Float Values (Temp, Fuel, Range)
-            try {
-                if (sensorType == SENSOR_TYPE_FUEL_LEVEL) {
-                    // [FIX] Sensor returns ml, convert to liters
-                    float liters = value / 1000f;
-                    DebugLogger.d(TAG, "Fuel Level Raw: " + value + " ml -> " + liters + " L");
-                    mCachedFuelLiters = liters;
-                    updateComponentText("fuel", String.format("%.0fL", liters));
-                    updateFuelRangeComponent();
-                } else if (sensorType == ISensor.SENSOR_TYPE_TEMPERATURE_AMBIENT) {
-                    // [FIX] Formatting: Integer + Unit, no text prefix
-                    updateComponentText("temp_out", String.format("%.0f°C", value));
-                } else if (sensorType == ISensor.SENSOR_TYPE_TEMPERATURE_INDOOR) {
-                    // [FIX] Formatting: Integer + Unit, no text prefix
-                    updateComponentText("temp_in", String.format("%.0f°C", value));
-                } else if (sensorType == ISensor.SENSOR_TYPE_ENDURANCE_MILEAGE) {
-                    mCachedRangeKm = value;
-                    updateComponentText("range", String.format("%.0fkm", value));
-                    updateFuelRangeComponent();
-                } else if (sensorType == ISensor.SENSOR_TYPE_RPM) {
-                    updateRpm(value);
-                }
-                // [FIX] Removed ISensor.SENSOR_TYPE_CAR_SPEED handler - handled by
-                // KeepAliveAccessibilityService
-                else if (sensorType == SENSOR_TYPE_ODOMETER) {
-                    updateComponentText("odometer", String.format("%.0fkm", value));
-                } else if (sensorType == TYPE_INS_FUEL_CONSUMPTION) {
-                    updateComponentText("fuel_inst", String.format("%.1fL/100km", value));
-                } else if (sensorType == TYPE_AVG_FUEL_CONSUMPTION) {
-                    updateComponentText("fuel_avg", String.format("%.1fL/100km", value));
-                } else {
-                    // [FIX] Removed Throttling for Real-Time Updates
-
-                    // [DEBUG] Log TPMS sensor data
-                    DebugLogger.d(TAG, "TPMS Sensor: type=" + sensorType + ", value=" + value);
-
-                    // [FIX] Post UI updates to Main Thread
-                    mMainHandler.post(() -> {
-                        try {
-                            if (sensorType == TIRE_PRESSURE_FRONT_LEFT) {
-                                updateComponentText("tire_p_fl", String.format("%.0f kPa", value));
-                                if (mPresentation != null)
-                                    mPresentation.updateTirePressure(0, value);
-                            } else if (sensorType == TIRE_PRESSURE_FRONT_RIGHT) {
-                                updateComponentText("tire_p_fr", String.format("%.0f kPa", value));
-                                if (mPresentation != null)
-                                    mPresentation.updateTirePressure(1, value);
-                            } else if (sensorType == TIRE_PRESSURE_REAR_LEFT) {
-                                updateComponentText("tire_p_rl", String.format("%.0f kPa", value));
-                                if (mPresentation != null)
-                                    mPresentation.updateTirePressure(2, value);
-                            } else if (sensorType == TIRE_PRESSURE_REAR_RIGHT) {
-                                updateComponentText("tire_p_rr", String.format("%.0f kPa", value));
-                                if (mPresentation != null)
-                                    mPresentation.updateTirePressure(3, value);
-                            } else if (sensorType == TIRE_TEMPERATURE_FRONT_LEFT) {
-                                updateComponentText("tire_t_fl", String.format("%.0f°C", value));
-                                if (mPresentation != null)
-                                    mPresentation.updateTireTemp(0, value);
-                            } else if (sensorType == TIRE_TEMPERATURE_FRONT_RIGHT) {
-                                updateComponentText("tire_t_fr", String.format("%.0f°C", value));
-                                if (mPresentation != null)
-                                    mPresentation.updateTireTemp(1, value);
-                            } else if (sensorType == TIRE_TEMPERATURE_REAR_LEFT) {
-                                updateComponentText("tire_t_rl", String.format("%.0f°C", value));
-                                if (mPresentation != null)
-                                    mPresentation.updateTireTemp(2, value);
-                            } else if (sensorType == TIRE_TEMPERATURE_REAR_RIGHT) {
-                                updateComponentText("tire_t_rr", String.format("%.0f°C", value));
-                                if (mPresentation != null)
-                                    mPresentation.updateTireTemp(3, value);
-                            }
-                        } catch (Exception e) {
-                            DebugLogger.e(TAG, "Error updating TPMS UI", e);
-                        }
-                    });
-                }
-            } catch (Exception e) {
-                DebugLogger.e(TAG, "Error handling sensor value changed", e);
-            }
-        }
-
-        @Override
-        public void onSensorSupportChanged(int sensorType, FunctionStatus status) {
-            // Not used
-        }
-    }
+    // [Refactor] ECarSensorListener class removed logic moved to switch case using VehicleSensorManager.Listener
 
     private boolean mLeftTurnOn = false;
     private boolean mRightTurnOn = false;
@@ -1028,22 +846,87 @@ public class ClusterHudManager
         }
     }
 
+    // --- VehicleSensorManager Listener Logic ---
+
+    // [Refactor] Using unified VehicleSensorManager instead of internal Listener
+    @Override
+    public void onSpeedChanged(float speedKmh) {
+        // [FIX] Ensure speed update triggers simulated gear calculation
+        updateSpeed((int) speedKmh);
+    }
+
+    @Override
+    public void onRpmChanged(float rpm) {
+        // [FIX] Ensure RPM update triggers simulated gear calculation
+        updateRpm(rpm);
+    }
+
+    @Override
+    public void onFuelChanged(float fuel, float percent) {
+        mCachedFuelLiters = fuel; // Already converted to L in Manager
+        updateFuelRangeComponent();
+        updateComponentText("fuel", String.format(Locale.US, "%.0fL", fuel));
+    }
+
+    @Override
+    public void onRangeChanged(float range) {
+        mCachedRangeKm = range;
+        updateFuelRangeComponent();
+        updateComponentText("range", String.format(Locale.US, "%.0fkm", range));
+    }
+
+    @Override
+    public void onTemperatureChanged(float indoor, float outdoor) {
+        updateComponentText("temp_in", String.format(Locale.US, "%.1f°C", indoor));
+        updateComponentText("temp_out", String.format(Locale.US, "%.1f°C", outdoor));
+    }
+
+    @Override
+    public void onGearChanged(int gear) {
+        updateGear(gear);
+    }
+
+    @Override
+    public void onTireDataChanged(int index, float pressure, float temp) {
+         if (mPresentation != null) {
+            mMainHandler.post(() -> {
+                if (mPresentation != null) {
+                    mPresentation.updateTirePressure(index, pressure);
+                    mPresentation.updateTireTemp(index, temp);
+                }
+            });
+        }
+    }
+    
+    // [Refactor] Removed internal ECarSensorListener class and registerSensors method
+
     private String getGearString(int gearValue) {
-        // [FIX] Use cached speed and RPM for simulated gear calculation
-        if (mSimulatedGearEnabled && (gearValue == ISensorEvent.GEAR_DRIVE || gearValue == 13)) { // 13=TRSM_GEAR_DRIVE
-            // DebugLogger.d(TAG, "Simulated Gear Enabled. Speed: " + mCachedSpeed + ", RPM:
-            // " + mCachedRpm);
-            String sensorGear = "D"; // We only simulate for Drive
-            return cn.navitool.DrivingShift.getInstance().calculateGear(mCachedSpeed, mCachedRpm, sensorGear);
-        } else if (mSimulatedGearEnabled && (gearValue == 2097744)) { // Manual Mode?
-            // Handle Manual if needed, or pass through
-            return mapRawGearToChar(gearValue);
+        // [FIX] Stagnation and Deadlock Fix
+        // Always try to calculate simulated gear if enabled, even if currently "P" or "N"
+        // This allows recovery if the state was stuck.
+        if (mSimulatedGearEnabled) {
+            // Pass current raw logic result as "CurrentSensorGear"
+            String baseGear = mapRawGearToChar(gearValue);
+            
+            // Force "D" as base if we are in raw "D" mode (13) to allow D1-D8 calculation
+            // If raw is -1 (M), baseGear is "M", DrivingShift handles "M" -> "M1" etc.
+            if (gearValue == ISensorEvent.GEAR_DRIVE || gearValue == 13) {
+                baseGear = "D";
+            }
+            
+            // Call calculation. Note: DrivingShift handles the logic:
+            // if baseGear is P/R/N, it returns P/R/N (unless snow mode override).
+            // if baseGear is D, it calculates D1-D8.
+            return cn.navitool.DrivingShift.getInstance().calculateGear(mCachedSpeed, mCachedRpm, baseGear);
         } else {
             return mapRawGearToChar(gearValue);
         }
     }
 
     private String mapRawGearToChar(int gearValue) {
+        // [FIX] Add -1 mapping for Manual Mode
+        if (gearValue == -1) return "M";
+
         switch (gearValue) {
             case ISensorEvent.GEAR_PARK:
             case 15:
@@ -1078,14 +961,13 @@ public class ClusterHudManager
                 return "D"; // Fallback
         }
     }
-
-    /**
-     * 更新油量续航组合组件，格式: "32L|280km"
-     */
+    
+    // ... (Existing updateFuelRangeComponent) ...
     private void updateFuelRangeComponent() {
         String text = String.format("⛽ %.0fL|%.0fkm", mCachedFuelLiters, mCachedRangeKm);
         updateComponentText("fuel_range", text);
     }
+
 
     // --- Listener for Preview UI ---
     public interface OnHudDataChangedListener {
@@ -1346,42 +1228,14 @@ public class ClusterHudManager
         // Use the new Listener mechanism
         cn.navitool.managers.CarServiceManager.getInstance(mContext).registerListener(() -> {
             mCarFunction = cn.navitool.managers.CarServiceManager.getInstance(mContext).getCarFunction();
-            ISensor sensor = cn.navitool.managers.CarServiceManager.getInstance(mContext).getSensor();
-
+            // ISensor logic moved to VehicleSensorManager
+            
             // Register Functions
             registerFunctions();
-
-            // Register Sensors
-            registerSensors(sensor);
 
             // Register Volume Listener
             initVolumeListener();
         });
-    }
-
-    private void registerSensors(ISensor sensor) {
-        if (sensor != null && mSensorListener != null) {
-            // Register Fuel Level (Using internal ID or reflection if needed, assuming
-            // Standard ID for now)
-            // But wait, ISensor doesn't have standard FUEL?
-            // User context said "SENSOR_TYPE_FUEL_LEVEL" found in adaptAPI interaction.
-            // Let's assume standard IDs from my task list analysis.
-            // SENSOR_TYPE_FUEL_LEVEL = 2101760; SENSOR_TYPE_ENV_OUTSIDE_TEMPERATURE =
-            // 2100992 (Light) .. wait
-            // My Task List: Found SENSOR_TYPE_FUEL_LEVEL,
-            // SENSOR_TYPE_ENV_OUTSIDE_TEMPERATURE.
-            // I should use the constants if defined in ISensor or hardcode them if I know
-            // them.
-            // Let's just use ISensor.SENSOR_TYPE_GEAR etc for now if I want safety,
-            // or trust `mSensorListener` handles specific IDs.
-            // Actually, `registerSensors` implementation was likely lost, I should restore
-            // basic registrations.
-            // Gear, Speed, Rpm are handled elsewhere? No, Speed/RPM is CAN usually?
-            // Wait, Gear is Sensor.
-            sensor.registerListener(mSensorListener, ISensor.SENSOR_TYPE_GEAR);
-            // Fuel?
-            // sensor.registerListener(mSensorListener, 2101760); // Example
-        }
     }
 
     private void initDimInteraction() {
@@ -2451,23 +2305,40 @@ public class ClusterHudManager
         return ConfigManager.getInstance().getBoolean("hud_snow_mode", false);
     }
 
-    // --- Sensor Data Persistence ---
-    private boolean mSensorsRegistered = false; // [FIX] Prevent duplicate registration
-    // [FIX] Corrected Fuel Level Sensor ID (was 2101760, actual API value is
-    // 1050112)
-    private static final int SENSOR_TYPE_FUEL_LEVEL = 1050112; // Fuel Level (ISensor.SENSOR_TYPE_FUEL_LEVEL)
-    private static final int SENSOR_TYPE_ENV_OUTSIDE_TEMPERATURE = 2100992; // Outside Temp
+    // --- Sensor Data Variables ---
+    // [Note] Duplicate declarations removed.
+    // The active declarations are below this block.
+
+    // --- Sensor Data Persistence [REMOVED] ---
+    private boolean mSensorsRegistered = false; 
 
     private String mCachedFuelText = "⛽ --L";
     private String mCachedRangeText = "--km";
     private String mCachedTempOutText = "--°C";
     private String mCachedTempInText = "--°C";
 
-    private void loadSensorCache() {
-        mCachedFuelText = ConfigManager.getInstance().getString("last_fuel_text", "⛽ --L");
-        mCachedRangeText = ConfigManager.getInstance().getString("last_range_text", "--km");
-        mCachedTempOutText = ConfigManager.getInstance().getString("last_temp_out_text", "--°C");
-        mCachedTempInText = ConfigManager.getInstance().getString("last_temp_in_text", "--°C");
+    /**
+     * [NEW] Initialize sensor data from VehicleSensorManager
+     * Direct data fetching, no disk cache.
+     */
+    private void loadInitialSensorData() {
+        VehicleSensorManager manager = VehicleSensorManager.getInstance(mContext);
+        
+        // Fuel
+        float fuel = manager.getFuel();
+        updateFuelWithValue(fuel);
+        
+        // Range
+        float range = manager.getRange();
+        updateRange(String.format(Locale.US, "%.0fkm", range));
+        
+        // Temp
+        updateTempOut(String.format(Locale.US, "%.0f°C", manager.getTempOutdoor()));
+        updateTempIn(String.format(Locale.US, "%.0f°C", manager.getTempIndoor()));
+        
+        // Gear
+        // Note: Gear is event-based, but we can try to get last known state if exposed,
+        // or wait for update. DrivingShift/SimulateFunction handles initial "D" usually.
     }
 
     /**
@@ -2519,13 +2390,9 @@ public class ClusterHudManager
         }
     }
 
-    private void saveSensorCache(String key, String value) {
-        ConfigManager.getInstance().setString(key, value);
-    }
-
     public void updateFuel(String text) {
         mCachedFuelText = text;
-        saveSensorCache("last_fuel_text", text);
+        // saveSensorCache("last_fuel_text", text); [REMOVED]
         if (mPresentation != null) {
             updateComponentText("fuel", text);
         }
@@ -2539,7 +2406,7 @@ public class ClusterHudManager
         mCachedFuelLiters = liters;
         String text = String.format("⛽ %.0fL", liters);
         mCachedFuelText = text;
-        saveSensorCache("last_fuel_text", text);
+        // saveSensorCache("last_fuel_text", text); [REMOVED]
         if (mPresentation != null) {
             updateComponentText("fuel", text);
             updateFuelRangeComponent();
@@ -2548,7 +2415,7 @@ public class ClusterHudManager
 
     public void updateRange(String text) {
         mCachedRangeText = text;
-        saveSensorCache("last_range_text", text);
+        // saveSensorCache("last_range_text", text); [REMOVED]
         if (mPresentation != null) {
             updateComponentText("range", text);
             updateComponentText("fuel_range", mCachedFuelText + "|" + mCachedRangeText); // Update combined too
@@ -2557,7 +2424,7 @@ public class ClusterHudManager
 
     public void updateTempOut(String text) {
         mCachedTempOutText = text;
-        saveSensorCache("last_temp_out_text", text);
+        // saveSensorCache("last_temp_out_text", text); [REMOVED]
         if (mPresentation != null) {
             updateComponentText("temp_out", text);
         }
@@ -2565,7 +2432,7 @@ public class ClusterHudManager
 
     public void updateTempIn(String text) {
         mCachedTempInText = text;
-        saveSensorCache("last_temp_in_text", text);
+        // saveSensorCache("last_temp_in_text", text); [REMOVED]
         if (mPresentation != null) {
             updateComponentText("temp_in", text);
         }

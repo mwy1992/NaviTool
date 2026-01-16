@@ -35,6 +35,10 @@ public class VehicleSensorManager {
     public static final int SENSOR_TYPE_RANGE = 1050624; // 续航里程
     public static final int SENSOR_TYPE_ODOMETER = 1050368; // 总里程
     public static final int SENSOR_TYPE_LIGHT = 0x200F00; // 光照传感器
+    
+    // 新增油耗相关
+    public static final int SENSOR_TYPE_FUEL_CONSUMPTION_INS = 4194816; // 瞬时油耗
+    public static final int SENSOR_TYPE_FUEL_CONSUMPTION_AVG = 4194560; // 平均油耗
 
     // --- 胎压监测系统 (TPMS) ---
     // 胎压 (Pressure)
@@ -60,6 +64,8 @@ public class VehicleSensorManager {
     private float mRpm = 0;
     private float mFuel = 0;
     private float mFuelPercent = 0;
+    private float mFuelIns = 0; // Instantaneous Fuel Consumption
+    private float mFuelAvg = 0; // Average Fuel Consumption
     private float mTempIndoor = 0;
     private float mTempOutdoor = 0;
     private float mRange = 0;
@@ -76,45 +82,23 @@ public class VehicleSensorManager {
 
     // --- 监听器 ---
     private final List<Listener> mListeners = new ArrayList<>();
-    private ISensor.ISensorListener mSensorListener; // Promoted to member variable
+    private ISensor.ISensorListener mSensorListener;
 
     public interface Listener {
-        default void onSpeedChanged(float speedKmh) {
-        }
-
-        default void onRpmChanged(float rpm) {
-        }
-
-        default void onFuelChanged(float fuel, float percent) {
-        }
-
-        default void onTemperatureChanged(float indoor, float outdoor) {
-        }
-
-        default void onRangeChanged(float range) {
-        }
-
-        default void onGearChanged(int gear) {
-        }
-
-        default void onIgnitionChanged(int state) {
-        }
-
-        default void onDayNightChanged(int mode) {
-        }
-
-        default void onLightChanged(float light) {
-        }
-
-        /**
-         * 胎压监测数据变化回调
-         * 
-         * @param index    0:左前, 1:右前, 2:左后, 3:右后
-         * @param pressure 胎压值 (KPa?)
-         * @param temp     胎温值 (°C)
-         */
-        default void onTireDataChanged(int index, float pressure, float temp) {
-        }
+        default void onSpeedChanged(float speedKmh) {}
+        default void onRpmChanged(float rpm) {}
+        default void onFuelChanged(float fuel, float percent) {}
+        // 新增: 油耗回调
+        default void onFuelConsumptionChanged(float instant, float average) {}
+        default void onTemperatureChanged(float indoor, float outdoor) {}
+        default void onRangeChanged(float range) {}
+        // 新增: 里程回调
+        default void onOdometerChanged(float odometer) {}
+        default void onGearChanged(int gear) {}
+        default void onIgnitionChanged(int state) {}
+        default void onDayNightChanged(int mode) {}
+        default void onLightChanged(float light) {}
+        default void onTireDataChanged(int index, float pressure, float temp) {}
     }
 
     // --- 单例获取 ---
@@ -149,9 +133,8 @@ public class VehicleSensorManager {
     }
 
     private void registerSensors() {
-        if (mSensor == null)
-            return;
-
+        if (mSensor == null) return;
+        
         if (mSensorListener == null) {
             mSensorListener = new ISensor.ISensorListener() {
                 @Override
@@ -171,22 +154,25 @@ public class VehicleSensorManager {
             };
         }
 
-        // 注册事件类型传感器
+        // 注册事件类型传感器 (保持不变)
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_IGNITION);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_GEAR);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_DAY_NIGHT);
 
-        // 注册数值类型传感器
+        // 注册数值类型传感器 (添加新传感器)
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_SPEED, ISensor.RATE_UI);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_RPM, ISensor.RATE_UI);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL_PERCENT, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL_CONSUMPTION_INS, ISensor.RATE_NORMAL);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL_CONSUMPTION_AVG, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TEMP_INDOOR, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TEMP_OUTDOOR, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_RANGE, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_ODOMETER, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_LIGHT, ISensor.RATE_NORMAL);
 
-        // 注册 TPMS 传感器
+        // 注册 TPMS 传感器 (保持不变)
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_FL, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_FR, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_RL, ISensor.RATE_NORMAL);
@@ -197,9 +183,7 @@ public class VehicleSensorManager {
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_RL, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_RR, ISensor.RATE_NORMAL);
 
-        DebugLogger.i(TAG, "All sensors registered");
-
-        // 获取初始值
+        DebugLogger.i(TAG, "All sensors registered (including Fuel Consumption)");
         refreshAllValues();
     }
 
@@ -245,12 +229,30 @@ public class VehicleSensorManager {
                 }
                 break;
             case SENSOR_TYPE_FUEL:
-                mFuel = value;
+                // [FIX] 统一单位转换: ml -> L
+                // 假设原始值小于1000则已经是L，否则是ml需要除以1000 (安全策略)
+                // 原 ClusterHudManager 逻辑: String.format("%.0fL", value / 1000.0f)
+                // 这里我们统一存储为 L (Float)
+                float fuelL;
+                if (value > 200.0f) { // 阈值判断，通常油箱不会超过200L，如果数值很大说明是ml
+                     fuelL = value / 1000.0f;
+                } else {
+                     fuelL = value;
+                }
+                mFuel = fuelL;
                 notifyFuelChanged(mFuel, mFuelPercent);
                 break;
             case SENSOR_TYPE_FUEL_PERCENT:
                 mFuelPercent = value;
                 notifyFuelChanged(mFuel, mFuelPercent);
+                break;
+            case SENSOR_TYPE_FUEL_CONSUMPTION_INS:
+                mFuelIns = value;
+                notifyFuelConsumptionChanged(mFuelIns, mFuelAvg);
+                break;
+            case SENSOR_TYPE_FUEL_CONSUMPTION_AVG:
+                mFuelAvg = value;
+                notifyFuelConsumptionChanged(mFuelIns, mFuelAvg);
                 break;
             case SENSOR_TYPE_TEMP_INDOOR:
                 mTempIndoor = value;
@@ -266,58 +268,45 @@ public class VehicleSensorManager {
                 break;
             case SENSOR_TYPE_ODOMETER:
                 mOdometer = value;
+                // [FIX] Add notification for Odometer
+                notifyOdometerChanged(value);
                 break;
             case SENSOR_TYPE_LIGHT:
                 mLight = value;
                 notifyLightChanged(value);
                 break;
 
-            // TPMS Logic
-            case SENSOR_TYPE_TIRE_PRESSURE_FL:
-                mTirePressure[0] = value;
-                notifyTireDataChanged(0);
-                break;
-            case SENSOR_TYPE_TIRE_PRESSURE_FR:
-                mTirePressure[1] = value;
-                notifyTireDataChanged(1);
-                break;
-            case SENSOR_TYPE_TIRE_PRESSURE_RL:
-                mTirePressure[2] = value;
-                notifyTireDataChanged(2);
-                break;
-            case SENSOR_TYPE_TIRE_PRESSURE_RR:
-                mTirePressure[3] = value;
-                notifyTireDataChanged(3);
-                break;
-            case SENSOR_TYPE_TIRE_TEMP_FL:
-                mTireTemp[0] = value;
-                notifyTireDataChanged(0);
-                break;
-            case SENSOR_TYPE_TIRE_TEMP_FR:
-                mTireTemp[1] = value;
-                notifyTireDataChanged(1);
-                break;
-            case SENSOR_TYPE_TIRE_TEMP_RL:
-                mTireTemp[2] = value;
-                notifyTireDataChanged(2);
-                break;
-            case SENSOR_TYPE_TIRE_TEMP_RR:
-                mTireTemp[3] = value;
-                notifyTireDataChanged(3);
-                break;
+            // TPMS Logic (Preserved)
+            case SENSOR_TYPE_TIRE_PRESSURE_FL: mTirePressure[0] = value; notifyTireDataChanged(0); break;
+            case SENSOR_TYPE_TIRE_PRESSURE_FR: mTirePressure[1] = value; notifyTireDataChanged(1); break;
+            case SENSOR_TYPE_TIRE_PRESSURE_RL: mTirePressure[2] = value; notifyTireDataChanged(2); break;
+            case SENSOR_TYPE_TIRE_PRESSURE_RR: mTirePressure[3] = value; notifyTireDataChanged(3); break;
+            case SENSOR_TYPE_TIRE_TEMP_FL: mTireTemp[0] = value; notifyTireDataChanged(0); break;
+            case SENSOR_TYPE_TIRE_TEMP_FR: mTireTemp[1] = value; notifyTireDataChanged(1); break;
+            case SENSOR_TYPE_TIRE_TEMP_RL: mTireTemp[2] = value; notifyTireDataChanged(2); break;
+            case SENSOR_TYPE_TIRE_TEMP_RR: mTireTemp[3] = value; notifyTireDataChanged(3); break;
         }
     }
 
-    // --- 主动刷新 (参考 DmService 的 getSensorLatestValue) ---
     public void refreshAllValues() {
-        if (mSensor == null)
-            return;
-
+        if (mSensor == null) return;
         try {
             mSpeed = mSensor.getSensorLatestValue(SENSOR_TYPE_SPEED) * 3.6f;
             mRpm = mSensor.getSensorLatestValue(SENSOR_TYPE_RPM);
-            mFuel = mSensor.getSensorLatestValue(SENSOR_TYPE_FUEL);
+            
+            // Fuel Logic with safety check
+            float rawFuel = mSensor.getSensorLatestValue(SENSOR_TYPE_FUEL);
+             if (rawFuel > 200.0f) {
+                 mFuel = rawFuel / 1000.0f;
+            } else {
+                 mFuel = rawFuel;
+            }
             mFuelPercent = mSensor.getSensorLatestValue(SENSOR_TYPE_FUEL_PERCENT);
+            
+            // New Fuel Cons
+            mFuelIns = mSensor.getSensorLatestValue(SENSOR_TYPE_FUEL_CONSUMPTION_INS);
+            mFuelAvg = mSensor.getSensorLatestValue(SENSOR_TYPE_FUEL_CONSUMPTION_AVG);
+
             mTempIndoor = mSensor.getSensorLatestValue(SENSOR_TYPE_TEMP_INDOOR);
             mTempOutdoor = mSensor.getSensorLatestValue(SENSOR_TYPE_TEMP_OUTDOOR);
             mRange = mSensor.getSensorLatestValue(SENSOR_TYPE_RANGE);
@@ -345,53 +334,21 @@ public class VehicleSensorManager {
     }
 
     // --- Getter 方法 ---
-    public float getSpeed() {
-        return mSpeed;
-    }
+    public float getSpeed() { return mSpeed; }
+    public float getRpm() { return mRpm; }
+    public float getFuel() { return mFuel; }
+    public float getFuelPercent() { return mFuelPercent; }
+    public float getTempIndoor() { return mTempIndoor; }
+    public float getTempOutdoor() { return mTempOutdoor; }
+    public float getRange() { return mRange; }
+    public float getOdometer() { return mOdometer; }
+    public float getLight() { return mLight; }
+    public int getIgnition() { return mIgnition; }
+    public int getGear() { return mGear; }
+    public int getDayNight() { return mDayNight; }
 
-    public float getRpm() {
-        return mRpm;
-    }
-
-    public float getFuel() {
-        return mFuel;
-    }
-
-    public float getFuelPercent() {
-        return mFuelPercent;
-    }
-
-    public float getTempIndoor() {
-        return mTempIndoor;
-    }
-
-    public float getTempOutdoor() {
-        return mTempOutdoor;
-    }
-
-    public float getRange() {
-        return mRange;
-    }
-
-    public float getOdometer() {
-        return mOdometer;
-    }
-
-    public float getLight() {
-        return mLight;
-    }
-
-    public int getIgnition() {
-        return mIgnition;
-    }
-
-    public int getGear() {
-        return mGear;
-    }
-
-    public int getDayNight() {
-        return mDayNight;
-    }
+    public float getFuelIns() { return mFuelIns; }
+    public float getFuelAvg() { return mFuelAvg; }
 
     public boolean isIgnitionOn() {
         return mIgnition == ISensorEvent.IGNITION_STATE_DRIVING;
@@ -414,53 +371,51 @@ public class VehicleSensorManager {
 
     // --- 通知方法 ---
     private void notifySpeedChanged(float speed) {
-        for (Listener l : mListeners)
-            l.onSpeedChanged(speed);
+        for (Listener l : mListeners) l.onSpeedChanged(speed);
     }
 
     private void notifyRpmChanged(float rpm) {
-        for (Listener l : mListeners)
-            l.onRpmChanged(rpm);
+        for (Listener l : mListeners) l.onRpmChanged(rpm);
     }
 
     private void notifyFuelChanged(float fuel, float percent) {
-        for (Listener l : mListeners)
-            l.onFuelChanged(fuel, percent);
+        for (Listener l : mListeners) l.onFuelChanged(fuel, percent);
+    }
+
+    private void notifyFuelConsumptionChanged(float instant, float average) {
+        for (Listener l : mListeners) l.onFuelConsumptionChanged(instant, average);
     }
 
     private void notifyTemperatureChanged(float indoor, float outdoor) {
-        for (Listener l : mListeners)
-            l.onTemperatureChanged(indoor, outdoor);
+        for (Listener l : mListeners) l.onTemperatureChanged(indoor, outdoor);
     }
 
     private void notifyRangeChanged(float range) {
-        for (Listener l : mListeners)
-            l.onRangeChanged(range);
+        for (Listener l : mListeners) l.onRangeChanged(range);
+    }
+
+    private void notifyOdometerChanged(float odometer) {
+        for (Listener l : mListeners) l.onOdometerChanged(odometer);
     }
 
     private void notifyGearChanged(int gear) {
-        for (Listener l : mListeners)
-            l.onGearChanged(gear);
+        for (Listener l : mListeners) l.onGearChanged(gear);
     }
 
     private void notifyIgnitionChanged(int state) {
-        for (Listener l : mListeners)
-            l.onIgnitionChanged(state);
+        for (Listener l : mListeners) l.onIgnitionChanged(state);
     }
 
     private void notifyDayNightChanged(int mode) {
-        for (Listener l : mListeners)
-            l.onDayNightChanged(mode);
+        for (Listener l : mListeners) l.onDayNightChanged(mode);
     }
 
     private void notifyLightChanged(float light) {
-        for (Listener l : mListeners)
-            l.onLightChanged(light);
+        for (Listener l : mListeners) l.onLightChanged(light);
     }
 
     private void notifyTireDataChanged(int index) {
-        for (Listener l : mListeners)
-            l.onTireDataChanged(index, mTirePressure[index], mTireTemp[index]);
+        for (Listener l : mListeners) l.onTireDataChanged(index, mTirePressure[index], mTireTemp[index]);
     }
 
     public void destroy() {
@@ -476,5 +431,6 @@ public class VehicleSensorManager {
         mSensorListener = null;
         mSensor = null;
         mIsInitialized = false;
+        sInstance = null;
     }
 }
