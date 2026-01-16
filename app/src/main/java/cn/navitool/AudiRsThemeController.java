@@ -288,6 +288,9 @@ public class AudiRsThemeController {
 
         // 3. Update Arrow Rotation
         if (mDirectionArrow != null) {
+            // [FIX] Restore image resource (in case it was cleared by resetTrafficLights)
+            mDirectionArrow.setImageResource(R.drawable.ic_direction_arrow);
+            
             float rotation = 0;
             switch (info.direction) {
                 case 1:
@@ -371,8 +374,36 @@ public class AudiRsThemeController {
 
     public void resetTrafficLights() {
         stopTrafficLightFlash(); // Ensure flashing stops on reset
+
+        // [FIX] 仅隐藏红绿灯相关组件，不要隐藏整个容器，以免误伤导航信息 (ETA/Distance)
+        if (mLightRed != null) {
+            mLightRed.setAlpha(0.3f); // 恢复为变暗状态或完全隐藏，视需求而定。此处设为变暗以保持占位，或者设为不可见
+            // 为了彻底“消失”的效果，建议设为透明，与原逻辑保持视觉一致
+            mLightRed.setAlpha(0f);
+        }
+        if (mLightYellow != null) {
+            mLightYellow.setAlpha(0f);
+        }
+        if (mLightGreen != null) {
+            mLightGreen.setAlpha(0f);
+        }
+        if (mCountdownText != null) {
+            mCountdownText.setText("");
+        }
+        if (mDirectionArrow != null) {
+            mDirectionArrow.setImageDrawable(null);
+            // 或者如果不希望它占位：
+            // mDirectionArrow.setVisibility(View.INVISIBLE);
+        }
+
+        // 检查导航信息是否为空，如果 ETA 和 Distance 也都没有，才隐藏容器 (可选)
+        // 但为了安全起见，只要容器存在，我们暂时保持它可见 (View.VISIBLE)，
+        // 因为 resetNaviInfo 才会负责清空 ETA/Dist 文本
         if (mNaviTrafficContainer != null) {
-            mNaviTrafficContainer.setVisibility(View.GONE);
+             // 确保容器可见，因为可能只有红绿灯没了但导航还在
+            if (mNaviTrafficContainer.getVisibility() != View.VISIBLE) {
+                mNaviTrafficContainer.setVisibility(View.VISIBLE);
+            }
         }
     }
 
@@ -392,6 +423,11 @@ public class AudiRsThemeController {
         mCurrentManeuverIcon = info.iconType;
         DebugLogger.d(TAG, "GuideInfo Updated: Icon=" + info.iconType + " Road=" + info.currentRoadName + " Next="
                 + info.nextRoadName);
+
+        // [FIX] Ensure container is visible when data arrives (handles initial GONE state)
+        if (mNaviTrafficContainer != null && mNaviTrafficContainer.getVisibility() != View.VISIBLE) {
+            mNaviTrafficContainer.setVisibility(View.VISIBLE);
+        }
 
         // [FIX] Update Distance & ETA Manually (since NaviInfoController binding is
         // unused)

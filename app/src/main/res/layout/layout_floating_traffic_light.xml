@@ -79,17 +79,5 @@
         android:layout_height="wrap_content"
         android:visibility="gone"/>
 
-    <Button
-        android:id="@+id/btnFloatingStyleSwitch"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/action_switch_style"
-        android:textSize="12sp"
-        android:padding="4dp"
-        android:minHeight="0dp"
-        android:minWidth="0dp"
-        android:layout_marginTop="4dp"
-        android:background="#80000000"
-        android:textColor="#FFFFFF"
-        android:visibility="gone"/>
+
 </LinearLayout>

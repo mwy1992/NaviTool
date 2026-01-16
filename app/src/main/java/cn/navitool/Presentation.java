@@ -39,7 +39,7 @@ public class Presentation extends android.app.Dialog {
     private boolean mFloatingFlashOn = true;
     private Runnable mFloatingFlashRunnable; // Flashing Logic Runnable
     private boolean mIsHudStyle = false; // false = Dashboard (AudiRS), true = HUD (Simple)
-    private View mBtnFloatingStyleSwitch;
+
     // HUD Style Views
     private View mContainerDashboard;
     private cn.navitool.view.TrafficLightView mHudTrafficLightView;
@@ -267,20 +267,9 @@ public class Presentation extends android.app.Dialog {
             mContainerDashboard = mFloatingTrafficLightContainer.findViewById(R.id.containerDashboard);
             mHudTrafficLightView = mFloatingTrafficLightContainer.findViewById(R.id.hudTrafficLightView);
 
-            mBtnFloatingStyleSwitch = mFloatingTrafficLightContainer.findViewById(R.id.btnFloatingStyleSwitch);
-
             // Load Style
             mIsHudStyle = ConfigManager.getInstance().getBoolean("floating_style_hud", false);
             updateFloatingTrafficLightStyle();
-
-            // Style Switch Click
-            if (mBtnFloatingStyleSwitch != null) {
-                mBtnFloatingStyleSwitch.setOnClickListener(v -> {
-                    mIsHudStyle = !mIsHudStyle;
-                    ConfigManager.getInstance().setBoolean("floating_style_hud", mIsHudStyle);
-                    updateFloatingTrafficLightStyle();
-                });
-            }
 
             // Drag Listener
             mFloatingTrafficLightContainer.setOnTouchListener(new android.view.View.OnTouchListener() {
@@ -1363,8 +1352,9 @@ public class Presentation extends android.app.Dialog {
                 measuredHeight = view.getMeasuredHeight();
 
                 // Bounds Clamp, using dynamic maxWidth/maxHeight - 使用缩放后的尺寸
-                float scaledWidth = measuredWidth * data.scale;
-                float scaledHeight = measuredHeight * data.scale;
+                float effectiveScale = isTurnSignal ? 1.0f : data.scale;
+                float scaledWidth = measuredWidth * effectiveScale;
+                float scaledHeight = measuredHeight * effectiveScale;
 
                 // [FIX] Allow overshoot for TextViews to match Preview logic (Visual Margin
                 // Compensation)

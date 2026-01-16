@@ -1779,7 +1779,8 @@ public class MainActivity extends AppCompatActivity {
             if (tag == null || !tag.startsWith("type_"))
                 continue;
 
-            String type = tag.replace("type_", "");
+            String rawType = tag.replace("type_", "");
+            String type = rawType.contains(":") ? rawType.substring(0, rawType.indexOf(":")) : rawType;
             String text = "";
 
             if (child instanceof TextView) {

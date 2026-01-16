@@ -61,7 +61,7 @@ public class ClusterHudManager
     private float mCachedRpm = 0f;
 
     // Bug 2 Fix: Independent timeout for navigation info
-    private static final long NAVI_INFO_TIMEOUT_MS = 10000;
+    private static final long NAVI_INFO_TIMEOUT_MS = 5000;
     private final Runnable mNaviInfoTimeoutRunnable = () -> {
         if (mPresentation != null) {
             mPresentation.resetNaviInfo();

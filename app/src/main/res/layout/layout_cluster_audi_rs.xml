@@ -132,10 +132,10 @@
     <!-- Navigation & Traffic Light Container (3 Rows) -->
     <LinearLayout
         android:id="@+id/audiRsNaviTrafficContainer"
-        android:layout_width="wrap_content"
+        android:layout_width="250dp"
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
-        android:layout_marginStart="55dp"
+        android:layout_marginStart="0dp"
         android:layout_marginTop="108dp"
         android:orientation="vertical"
         android:gravity="center_horizontal">
@@ -172,7 +172,7 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
-            android:layout_marginBottom="25dp">
+            android:layout_marginBottom="30dp">
 
             <ImageView
                 android:id="@+id/audiRsLightRed"
@@ -201,26 +201,42 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:gravity="center">
+            android:gravity="center_horizontal|bottom"
+            android:baselineAligned="true">
 
             <TextView
                 android:id="@+id/audiRsNaviDistance"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="12.5km"
+                android:maxWidth="125dp"
+                android:gravity="bottom|end"
+                android:paddingEnd="2dp"
+                android:text="1250.5km"
                 android:textColor="#FFFFFF"
                 android:textSize="18sp"
-                android:textStyle="bold" />
+                android:textStyle="bold"
+                android:autoSizeTextType="uniform"
+                android:autoSizeMinTextSize="9sp"
+                android:autoSizeMaxTextSize="18sp"
+                android:autoSizeStepGranularity="1sp"
+                android:maxLines="1" />
 
             <TextView
                 android:id="@+id/audiRsNaviEta"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="10dp"
+                android:maxWidth="125dp"
+                android:gravity="bottom|start"
+                android:paddingStart="2dp"
                 android:text="10:30"
                 android:textColor="#FFFFFF"
                 android:textSize="18sp"
-                android:textStyle="bold" />
+                android:textStyle="bold"
+                android:autoSizeTextType="uniform"
+                android:autoSizeMinTextSize="9sp"
+                android:autoSizeMaxTextSize="18sp"
+                android:autoSizeStepGranularity="1sp"
+                android:maxLines="1" />
         </LinearLayout>
 
     </LinearLayout>
