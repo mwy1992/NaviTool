@@ -23,14 +23,18 @@ public class PsdManager {
     private static final int ZONE_ALL = 0x80000000;
 
     // Timing Constants
-    // 9分59秒950毫秒 = 599950ms
-    private static final long DELAY_BURST_MS = 9 * 60 * 1000 + 59 * 1000 + 950;
-    private static final int BURST_COUNT = 100;
+    // 9分59秒900毫秒 = 599900ms (Trigger Point)
+    private static final long CYCLE_DURATION_MS = 10 * 60 * 1000;
+    private static final long TRIGGER_OFFSET_MS = 9 * 60 * 1000 + 59 * 1000 + 900;
+    
+    // Burst Config: 200ms duration, 1ms interval
+    private static final int BURST_COUNT = 200; 
     private static final int BURST_INTERVAL_MS = 1;
 
     // State
     private boolean mIsPsdAlwaysOnEnabled = false;
     private PowerManager.WakeLock mWakeLock;
+    private long mLoopBaseTime = 0; // 0 means aligned to Boot Time
 
     // Handlers
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
@@ -116,10 +120,31 @@ public class PsdManager {
                     int status = carFunc.getFunctionValue(FUNC_PSD_SCREEN_SWITCH, ZONE_ALL);
                     if (status != -1) {
                         DebugLogger.i(TAG, "Initial PSD Status: " + status);
-                        broadcastPsdStatus(status);
+                        
+                        // [NEW Logic] Loop Alignment
+                        if (status == 0) {
+                             // OFF -> Turn ON immediately and Record Time
+                             DebugLogger.i(TAG, "Initial OFF detected. Turning ON and aligning loop to NOW.");
+                             broadcastPsdStatus(status); // Broadcast the OFF state before fixing it
+                             setPsdOn();
+                             mLoopBaseTime = SystemClock.elapsedRealtime(); // Loop relative to NOW
+                        } else {
+                             // ON -> Align to Boot Time
+                             DebugLogger.i(TAG, "Initial ON detected. Aligning loop to BOOT time.");
+                             mLoopBaseTime = 0;
+                        }
+
+                        // Broadcast status is done above for OFF, or here for general log?
+                        // Original logic did broadcastPsdStatus(status) unconditionally. 
+                        // But now we might have changed it to ON.
+                        // Let's keep original broadcast for logging/UI awareness of *initial* state.
+                        if (status != 0) broadcastPsdStatus(status); 
+                        
                         // Also trigger keep-alive logic check
-                        if (mIsPsdAlwaysOnEnabled && status == 0) {
-                            onPsdStatusChanged(status);
+                        if (mIsPsdAlwaysOnEnabled) {
+                             // If enabled, we need to restart/reschedule the loop with new BaseTime
+                             mWorkHandler.removeCallbacks(mMethod1Runnable);
+                             scheduleMethod1Loop();
                         }
                     }
                 } catch (Exception e) {
@@ -278,8 +303,7 @@ public class PsdManager {
         }
     }
 
-    private static final long METHOD1_INTERVAL_MS = 10 * 60 * 1000;
-    private static final long METHOD1_OFFSET_MS = 50; // trigger at 10m - 50ms
+
 
     private final Runnable mMethod1Runnable = new Runnable() {
         @Override
@@ -292,21 +316,30 @@ public class PsdManager {
     };
 
     private void scheduleMethod1Loop() {
-        long uptime = SystemClock.elapsedRealtime();
-        // Calculate next target: (Cycle + 1) * 10min - 50ms
-        // Example: uptime=1min. Cycle=0. Next=10min-50ms. Delay=9min.
-        // Example: uptime=10min+1ms. Cycle=1. Next=20min-50ms. Delay=9min...
-        long cycle = uptime / METHOD1_INTERVAL_MS;
-        long nextTarget = (cycle + 1) * METHOD1_INTERVAL_MS - METHOD1_OFFSET_MS;
-
-        long delay = nextTarget - uptime;
-        if (delay <= 0) {
-            // Should not happen if logic is correct, but safety net: skip to next
-            nextTarget += METHOD1_INTERVAL_MS;
-            delay = nextTarget - uptime;
+        long now = SystemClock.elapsedRealtime();
+        
+        // Calculate relative time in the cycle
+        long relativeTime = now - mLoopBaseTime;
+        if (relativeTime < 0) relativeTime = 0; // Integrity check
+        
+        long currentCycleIndex = relativeTime / CYCLE_DURATION_MS;
+        long cycleStartTime = mLoopBaseTime + currentCycleIndex * CYCLE_DURATION_MS;
+        
+        // The trigger point for THIS cycle
+        long targetTimeInThisCycle = cycleStartTime + TRIGGER_OFFSET_MS;
+        
+        long delay;
+        if (now < targetTimeInThisCycle) {
+            // We are before the trigger in current cycle
+            delay = targetTimeInThisCycle - now;
+        } else {
+            // We missed this cycle's trigger, aim for next cycle
+            long nextCycleStartTime = mLoopBaseTime + (currentCycleIndex + 1) * CYCLE_DURATION_MS;
+            delay = (nextCycleStartTime + TRIGGER_OFFSET_MS) - now;
         }
 
-        DebugLogger.i(TAG, "Method 1 Loop: Next burst scheduled in " + delay + "ms (" + (delay / 1000) + "s)");
+        DebugLogger.i(TAG, "Method 1 Loop: mLoopBaseTime=" + mLoopBaseTime + ", Next burst in " + delay + "ms (" + (delay / 1000) + "s)");
+        
         mWorkHandler.removeCallbacks(mMethod1Runnable);
         mWorkHandler.postDelayed(mMethod1Runnable, delay);
     }
@@ -324,26 +357,21 @@ public class PsdManager {
 
             // 1. Record OFF Time & Immediate ON
             setPsdOn();
-
-            // 2. Schedule Burst from NOW (Off time)
-            DebugLogger.i(TAG, "Scheduling Burst for OFF event in " + DELAY_BURST_MS + "ms");
-
-            // Cancel pending bursts to avoid overlap/spam?
-            // The requirement implies specific bursts for specific events.
-            // But if we turn ON now, the timeout resets.
-            // So executing a burst scheduled from Boot might be redundant if we just
-            // toggled it?
-            // "In the above two times... " implies we handle both triggers.
-            // I will simply post the delayed task.
-            // Note: If multiple OFF events happen, we might stack bursts.
-            // But if we turn it ON, it shouldn't turn OFF again until timeout.
-            // So we cancel previous off-event bursts to be safe/clean?
-            // "Monitor OFF status... record time... In the above...".
-            // It suggests unique scheduling per event. I will remove previous *Off-Event*
-            // bursts but keep Boot burst?
-            // Simplest is to just postDelayed.
-            mWorkHandler.removeCallbacks(this::executeBurst); // Reset timer
-            mWorkHandler.postDelayed(this::executeBurst, DELAY_BURST_MS);
+            
+            // Note: Currently we do NOT reset the loop base time on random OFF events during the drive.
+            // Requirement was only "On Startup query...".
+            // So we stick to the initial base time.
+            
+            // Trigger an immediate burst (or scheduled burst) to ensure it stays ON?
+            // Existing logic scheduled a burst. We can execute immediate burst here too to force it.
+            // But if we just toggled it ON, maybe that's enough?
+            // User did not specify behavior for subsequent OFF events, only "Loop" logic.
+            // I will keep the immediate ON logic, but remove the separate delayed burst scheduling
+            // because the main loop covers the keep-alive.
+            
+            // If the user *wants* to re-align loop on EVERY off, then I should update mLoopBaseTime here.
+            // "如果为关，则发送1次开...然后记录发送开的这个时间作为循环开始时间" - This was in context of "当软件启动后".
+            // So strictly speaking, only on startup.
         }
     }
 

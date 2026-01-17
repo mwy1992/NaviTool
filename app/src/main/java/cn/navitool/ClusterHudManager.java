@@ -1023,13 +1023,13 @@ public class ClusterHudManager
         if (mCachedHudComponents.isEmpty() && mCachedClusterComponents.isEmpty()) {
             // Store pending updates if no layout is synced yet
             synchronized (this) {
-                if ("song".equals(type) || "test_media".equals(type)) {
+                if ("song_2line".equals(type)) {
                     mPendingSongText = newText;
                     // 减少日志输出，只在首次存储时记录
                     if (mPendingSongText == null || !mPendingSongText.equals(newText)) {
                         DebugLogger.d(TAG, "Pending song text: " + newText);
                     }
-                } else if ("media_cover".equals(type) || "test_media_cover".equals(type)) {
+                } else if ("song_cover".equals(type)) {
                     if (newImage != null) {
                         mPendingCoverArt = newImage;
                     }
@@ -1121,8 +1121,7 @@ public class ClusterHudManager
                         if (artist != null && !artist.isEmpty()) {
                             display = title + "\n" + artist;
                         }
-                        updateComponentText("song", display);
-                        updateComponentText("test_media", display);
+                        updateComponentText("song_2line", display);
                         updateComponentText("song_1line", title == null ? "" : title);
 
                         // Update Playing State
@@ -1131,16 +1130,14 @@ public class ClusterHudManager
                         // Update Cover (Byte Array)
                         boolean hasArtwork = intent.getBooleanExtra("has_artwork", true); // Default true
                         if (!hasArtwork) {
-                            updateComponentImage("media_cover", null);
-                            updateComponentImage("test_media_cover", null);
+                            updateComponentImage("song_cover", null);
                         } else {
                             byte[] artwork = intent.getByteArrayExtra("artwork");
                             if (artwork != null) {
                                 android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(artwork, 0,
                                         artwork.length);
                                 if (bmp != null) {
-                                    updateComponentImage("media_cover", bmp);
-                                    updateComponentImage("test_media_cover", bmp);
+                                    updateComponentImage("song_cover", bmp);
                                 }
                             }
                         }
@@ -1192,8 +1189,7 @@ public class ClusterHudManager
                 if (artist != null && !artist.isEmpty()) {
                     display = title + "\n" + artist;
                 }
-                updateComponentText("song", display);
-                updateComponentText("test_media", display);
+                updateComponentText("song_2line", display);
                 updateComponentText("song_1line", title == null ? "" : title);
 
                 // Update Playing State
@@ -1202,16 +1198,14 @@ public class ClusterHudManager
                 // Update Cover (Byte Array)
                 boolean hasArtwork = intent.getBooleanExtra("has_artwork", true); // Default true
                 if (!hasArtwork) {
-                    updateComponentImage("media_cover", null);
-                    updateComponentImage("test_media_cover", null);
+                    updateComponentImage("song_cover", null);
                 } else {
                     byte[] artwork = intent.getByteArrayExtra("artwork");
                     if (artwork != null) {
                         android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(artwork, 0,
                                 artwork.length);
                         if (bmp != null) {
-                            updateComponentImage("media_cover", bmp);
-                            updateComponentImage("test_media_cover", bmp);
+                            updateComponentImage("song_cover", bmp);
                         }
                     }
                 }
@@ -1902,14 +1896,12 @@ public class ClusterHudManager
             // Logic Fix: Apply Pending Media (from Startup Race Condition)
             if (mPendingSongText != null) {
                 DebugLogger.d(TAG, "Applying pending song text from cache: " + mPendingSongText);
-                updateComponentText("song", mPendingSongText);
-                updateComponentText("test_media", mPendingSongText);
+                updateComponentText("song_2line", mPendingSongText);
                 mPendingSongText = null; // Clear
             }
             if (mPendingCoverArt != null) {
                 DebugLogger.d(TAG, "Applying pending cover art from cache");
-                updateComponentImage("media_cover", mPendingCoverArt);
-                updateComponentImage("test_media_cover", mPendingCoverArt);
+                updateComponentImage("song_cover", mPendingCoverArt);
                 mPendingCoverArt = null; // Clear
             }
             // [FIX] 应用pending的传感器数据
@@ -2004,8 +1996,8 @@ public class ClusterHudManager
         art.eraseColor(android.graphics.Color.RED);
 
         String display = "测试歌词 Lyric\n" + title + " - " + artist;
-        updateComponentText("song", display);
-        updateComponentImage("media_cover", art);
+        updateComponentText("song_2line", display);
+        updateComponentImage("song_cover", art);
         updateMediaPlayingState(true); // Force show for testing
     }
 
@@ -2268,8 +2260,8 @@ public class ClusterHudManager
     }
 
     public static class HudComponentData {
-        public String type; // "text", "time", "song", "fuel", "temp_out", "temp_in", "range", "gear",
-                            // "media_cover", "turn_signal", "volume", "gauge"
+        public String type; // "text", "time", "song_2line", "song_1line", "fuel", "temp_out", "temp_in", "range", "gear",
+                            // "song_cover", "turn_signal", "volume", "gauge"
         public String text;
         public android.graphics.Bitmap image;
         public float x;

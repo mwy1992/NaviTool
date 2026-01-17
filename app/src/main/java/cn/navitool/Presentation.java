@@ -957,12 +957,12 @@ public class Presentation extends android.app.Dialog {
             // Add new
             for (ClusterHudManager.HudComponentData data : components) {
                 View view;
-                boolean isSong = "song".equals(data.type) || "test_media".equals(data.type)
+                boolean isSong = "song_2line".equals(data.type)
                         || "song_1line".equals(data.type);
                 boolean isTurnSignal = "turn_signal".equals(data.type);
                 boolean isVolume = "volume".equals(data.type);
                 boolean isAutoHold = "auto_hold".equals(data.type);
-                boolean isMediaCover = "media_cover".equals(data.type) || "test_media_cover".equals(data.type);
+                boolean isMediaCover = "song_cover".equals(data.type);
                 int measuredWidth = 0;
                 int measuredHeight = 0;
 
@@ -990,7 +990,9 @@ public class Presentation extends android.app.Dialog {
                     tvTitle.setTextColor(data.color);
                     tvTitle.setSingleLine(true);
                     tvTitle.setMaxLines(1);
-                    tvTitle.setEllipsize(android.text.TextUtils.TruncateAt.END); // 使用...省略，不滚动
+                    tvTitle.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
+                    tvTitle.setMarqueeRepeatLimit(-1);
+                    tvTitle.setSelected(true);
                     tvTitle.setIncludeFontPadding(false);
                     tvTitle.setPadding(0, 0, 0, 0);
                     tvTitle.setLineSpacing(0, 1f);
@@ -1004,7 +1006,9 @@ public class Presentation extends android.app.Dialog {
                         tvArtist.setTextColor(data.color);
                         tvArtist.setSingleLine(true);
                         tvArtist.setMaxLines(1);
-                        tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.END); // 使用...省略，不滚动
+                        tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
+                        tvArtist.setMarqueeRepeatLimit(-1);
+                        tvArtist.setSelected(true);
                         tvArtist.setIncludeFontPadding(false);
                         tvArtist.setPadding(0, 0, 0, 0);
                         tvArtist.setLineSpacing(0, 1f);
@@ -1256,8 +1260,8 @@ public class Presentation extends android.app.Dialog {
                             iv.setImageResource(R.drawable.ic_auto_hold);
                     }
                     iv.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-                    params.width = 48; // Standard icon size (0.5x of 96)
-                    params.height = 48;
+                    params.width = 36; // Standard icon size (0.5x of 72)
+                    params.height = 36;
                     view = iv;
                 } else if ("fuel_range".equals(data.type) || "fuel".equals(data.type)) {
                     // [Refactor] Use LinearLayout for perfect vertical alignment of mixed sizes
@@ -1411,10 +1415,28 @@ public class Presentation extends android.app.Dialog {
                 float scaledHeight = measuredHeight * effectiveScale;
 
                 // [FIX] Allow overshoot for TextViews to match Preview logic (Visual Margin Compensation)
-                float tolerance = 0f;
-                if (view instanceof android.widget.TextView) {
+                // Split into Top and Bottom tolerance for independent control
+                float toleranceTop = 0f;
+                float toleranceBottom = 0f;
+                
+                // 可在此处手动修改上下边距的倍率
+                // You can manually modify the top/bottom margin factors here
+                float FACTOR_TOP = 0.18f;
+                float FACTOR_BOTTOM = 0.2f;
+
+                // [FIX] Separate settings for Music Components to prevent clipping
+                // Music components use setIncludeFontPadding(false) so they cannot afford negative margins.
+                boolean isMusicComponent = "song_2line".equals(data.type) || "song_cover".equals(data.type)
+                        || "song_1line".equals(data.type);
+
+                if (isMusicComponent) {
+                    // 单独设置：歌曲组件不应用 Visual Margin Compensation (0.2f)，防止贴边裁剪
+                    toleranceTop = 0f;
+                    toleranceBottom = 0f;
+                } else if (view instanceof android.widget.TextView) {
                     float currentSize = ((android.widget.TextView) view).getTextSize();
-                    tolerance = currentSize * 0.2f * data.scale;
+                    toleranceTop = currentSize * FACTOR_TOP * data.scale;
+                    toleranceBottom = currentSize * FACTOR_BOTTOM * data.scale;
                 } else if (view instanceof android.view.ViewGroup) {
                     // [FIX] For Container Views (like Fuel LinearLayout), find max text size for tolerance
                     android.view.ViewGroup vg = (android.view.ViewGroup) view;
@@ -1423,17 +1445,19 @@ public class Presentation extends android.app.Dialog {
                         View child = vg.getChildAt(k);
                         if (child instanceof android.widget.TextView) {
                             float size = ((android.widget.TextView) child).getTextSize();
-                            if (size > maxTextSize) maxTextSize = size;
+                            if (size > maxTextSize)
+                                maxTextSize = size;
                         }
                     }
                     if (maxTextSize > 0) {
-                         tolerance = maxTextSize * 0.2f * data.scale;
+                        toleranceTop = maxTextSize * FACTOR_TOP * data.scale;
+                        toleranceBottom = maxTextSize * FACTOR_BOTTOM * data.scale;
                     }
                 }
 
                 float clampedX = Math.max(0, Math.min(data.x, maxWidth - scaledWidth));
-                // Allow Y to go slightly negative or beyond bottom to hide padding
-                float clampedY = Math.max(-tolerance, Math.min(data.y, maxHeight - scaledHeight + tolerance));
+                // Allow Y to go slightly negative (by toleranceTop) or beyond bottom (by toleranceBottom) to hide padding
+                float clampedY = Math.max(-toleranceTop, Math.min(data.y, maxHeight - scaledHeight + toleranceBottom));
 
                 view.setX(clampedX);
                 view.setY(clampedY);
@@ -1453,9 +1477,9 @@ public class Presentation extends android.app.Dialog {
                 // view.setTag(data) is already set at line 297
 
                 // Update boolean flags for visibility check
-                isSong = "song".equals(data.type) || "test_media".equals(data.type)
+                isSong = "song_2line".equals(data.type)
                         || "song_1line".equals(data.type);
-                isMediaCover = "media_cover".equals(data.type) || "test_media_cover".equals(data.type);
+                isMediaCover = "song_cover".equals(data.type);
 
                 // Apply Media/Volume Visibility Rule immediately
                 if (isSong || isMediaCover) {
@@ -1510,8 +1534,8 @@ public class Presentation extends android.app.Dialog {
 
             if (viewType != null) {
                 if ("media".equals(group)) {
-                    if (viewType.equals("song") || viewType.equals("media_cover") || viewType.equals("test_media")
-                            || viewType.equals("test_media_cover") || viewType.equals("song_1line")) {
+                    if (viewType.equals("song_2line") || viewType.equals("song_cover")
+                            || viewType.equals("song_1line")) {
                         v.setVisibility(visible ? View.VISIBLE : View.GONE);
                     }
                 } else if ("volume".equals(group)) {

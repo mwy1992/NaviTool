@@ -303,7 +303,7 @@ public class MainActivity extends AppCompatActivity {
                     if (child instanceof TextView && text != null) {
                         ((TextView) child).setText(text);
                     } else if (child instanceof android.widget.LinearLayout
-                            && ("song".equals(type) || "test_media".equals(type))) {
+                            && ("song_2line".equals(type))) {
                         android.widget.LinearLayout ll = (android.widget.LinearLayout) child;
                         String[] parts = (text != null ? text : "").split("\n");
                         String title = parts.length > 0 ? parts[0] : "";
@@ -1295,14 +1295,14 @@ public class MainActivity extends AppCompatActivity {
         // mHudTestComponent = null;
 
         View view;
-        boolean isMediaCover = "media_cover".equals(type) || "test_media_cover".equals(type);
+        boolean isMediaCover = "song_cover".equals(type);
         boolean isTurnSignal = "turn_signal".equals(type);
         boolean isVolume = "volume".equals(type);
         boolean isAutoHold = "auto_hold".equals(type);
 
 
 
-        if ("song".equals(type) || "test_media".equals(type) || "song_1line".equals(type)) {
+        if ("song_2line".equals(type) || "song_1line".equals(type)) {
             android.widget.LinearLayout ll = new android.widget.LinearLayout(this);
             ll.setOrientation(android.widget.LinearLayout.VERTICAL);
             ll.setBackgroundColor(android.graphics.Color.TRANSPARENT);
@@ -1315,7 +1315,7 @@ public class MainActivity extends AppCompatActivity {
             // Title
             android.widget.TextView tvTitle = new android.widget.TextView(this);
             tvTitle.setText(title);
-            tvTitle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 48);
+            tvTitle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 44);
             tvTitle.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
             tvTitle.setSingleLine(true);
             tvTitle.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
@@ -1328,7 +1328,7 @@ public class MainActivity extends AppCompatActivity {
             if (!artist.isEmpty()) {
                 android.widget.TextView tvArtist = new android.widget.TextView(this);
                 tvArtist.setText(artist);
-                tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 48);
+                tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 44);
                 tvArtist.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
                 tvArtist.setSingleLine(true);
                 tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
@@ -1409,7 +1409,6 @@ public class MainActivity extends AppCompatActivity {
                 }
                 // Unified Logic: Physical Sizing (2x Real HUD Size)
                 // Real HUD Turn Signal Height = 36px -> Preview Height = 72px
-                // Real HUD Volume Height = 36px -> Preview Height = 72px
                 int h = 72; // Fixed 72px height
                 int w = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
 
@@ -1530,25 +1529,25 @@ public class MainActivity extends AppCompatActivity {
             // Real HUD Gear = 48px -> Preview = 96px
             // Real HUD Other = 24px -> Preview = 48px
             if ("gear".equals(type)) {
-                // [Sync Issue 4] Gear: 36px * 2 = 72px
-                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 72);
+                // [Sync Issue 4] Gear: 48px * 2 = 96px
+                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 96);
 
                 // [UI Fix] Add Center Line Overlay && Remove Border
-                // Create background with center line (Fixed Width 160px)
-                android.graphics.Bitmap bgCb = android.graphics.Bitmap.createBitmap(160, 96,
+                // Create background with center line (Fixed Width 200px)
+                android.graphics.Bitmap bgCb = android.graphics.Bitmap.createBitmap(200, 96,
                         android.graphics.Bitmap.Config.ARGB_8888);
                 if (bgCb != null) {
                     bgCb = ClusterHudManager.getInstance(this).addCenterLineOverlay(bgCb);
                     tv.setBackground(new android.graphics.drawable.BitmapDrawable(getResources(), bgCb));
                 }
 
-                // [Sync Issue 4] Fixed Width 80px * 2 = 160px, Center
+                // [Sync Issue 4] Fixed Width 100px * 2 = 200px, Center
                 if (view.getLayoutParams() == null) {
                     view.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
                             android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
                             android.widget.FrameLayout.LayoutParams.WRAP_CONTENT));
                 }
-                view.getLayoutParams().width = 160;
+                view.getLayoutParams().width = 200;
                 tv.setGravity(android.view.Gravity.CENTER);
             } else if ("temp_out".equals(type) || "temp_in".equals(type)) {
                 // [Sync Issue 10] Temp: Standard Font 48px
@@ -1584,7 +1583,7 @@ public class MainActivity extends AppCompatActivity {
             tvParams.topMargin = margin;
             tvParams.bottomMargin = margin;
 
-            if ("song".equals(type) || "test_media".equals(type)) {
+            if ("song_2line".equals(type)) {
                 // Preview width = 600px (HUD 300px * 2)
                 if (view.getLayoutParams() == null) {
                     view.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
@@ -1656,14 +1655,31 @@ public class MainActivity extends AppCompatActivity {
                         if (newX + viewWidth > parentWidth)
                             newX = parentWidth - viewWidth;
 
-                        // [FIX] Consistently apply negative margin logic to Boundary Check
+                            // [FIX] Consistently apply negative margin logic to Boundary Check
                         // Allow dragging "out of bounds" by the same amount as the visual negative
                         // margin
-                        float verticalOffset = 0;
+                        // Split into Top and Bottom offsets
+                        float offsetTop = 0;
+                        float offsetBottom = 0;
+                        
+                        // 可在此处手动修改预览拖拽的边距倍率
+                        // You can manually modify the preview drag margin factors here
+                        float FACTOR_TOP = 0.18f;
+                        float FACTOR_BOTTOM = 0.2f;
 
                         // [Feature] Guide Line: Lock Y Axis & Update Text
                         String tagStr = (view.getTag() != null) ? view.getTag().toString() : "";
-                        if (tagStr.contains("type_guide_line")) {
+                        
+                        // [FIX] Separate settings for Music Components to prevent clipping
+                        boolean isMusicComponent = tagStr.contains("type_song_2line")
+                                || tagStr.contains("type_song_cover")
+                                || tagStr.contains("type_song_1line");
+
+                        if (isMusicComponent) {
+                            // 单独设置：歌曲组件强制 margin 为 0，防止贴边裁剪
+                             offsetTop = 0;
+                             offsetBottom = 0;
+                        } else if (tagStr.contains("type_guide_line")) {
                             newY = 0; // Force Top to 0
 
                             // Update Coordinate Text
@@ -1681,7 +1697,8 @@ public class MainActivity extends AppCompatActivity {
                             }
                         } else if (view instanceof TextView) {
                             float scaledTextSize = ((TextView) view).getTextSize() * view.getScaleY();
-                            verticalOffset = scaledTextSize * 0.2f;
+                            offsetTop = scaledTextSize * FACTOR_TOP;
+                            offsetBottom = scaledTextSize * FACTOR_BOTTOM;
                         } else if (view instanceof android.widget.LinearLayout) {
                             // [FIX] Handle LinearLayout (e.g., Fuel, Song)
                             android.widget.LinearLayout ll = (android.widget.LinearLayout) view;
@@ -1696,16 +1713,17 @@ public class MainActivity extends AppCompatActivity {
 
                                 if (child instanceof TextView) {
                                     float scaledTextSize = ((TextView) child).getTextSize() * view.getScaleY();
-                                    verticalOffset = scaledTextSize * 0.2f;
+                                    offsetTop = scaledTextSize * FACTOR_TOP;
+                                    offsetBottom = scaledTextSize * FACTOR_BOTTOM;
                                 }
                             }
                         }
 
-                        if (newY < -verticalOffset)
-                            newY = -verticalOffset;
+                        if (newY < -offsetTop)
+                            newY = -offsetTop;
                         // Bottom Bound: Parent Height + Offset (so bottom of view can go below parent)
-                        if (newY + viewHeight > parentHeight + verticalOffset)
-                            newY = parentHeight - viewHeight + verticalOffset;
+                        if (newY + viewHeight > parentHeight + offsetBottom)
+                            newY = parentHeight - viewHeight + offsetBottom;
 
                         // [REMOVED] Collision Detection - Now allowing overlapping
                         // if (wouldOverlap(view, newX, newY, viewWidth, viewHeight)) {
@@ -1966,10 +1984,10 @@ public class MainActivity extends AppCompatActivity {
                     createAndAddHudComponent("auto_hold", "A", 0, 0);
                 else if ("volume".equals(type))
                     createAndAddHudComponent("volume", "音量: --", 0, 0);
-                else if ("test_media_cover".equals(type))
-                    createAndAddHudComponent("test_media_cover", "", 0, 0);
-                else if ("test_media".equals(type)) {
-                    createAndAddHudComponent("test_media", "等待通知数据...", 0, 0);
+                else if ("song_cover".equals(type))
+                    createAndAddHudComponent("song_cover", "", 0, 0);
+                else if ("song_2line".equals(type)) {
+                    createAndAddHudComponent("song_2line", "等待通知数据...", 0, 0);
                     sendBroadcast(new android.content.Intent(
                             cn.navitool.service.MediaNotificationListener.ACTION_REQUEST_MEDIA_REBROADCAST));
                 } else if ("song_1line".equals(type)) {
@@ -2015,9 +2033,9 @@ public class MainActivity extends AppCompatActivity {
         addButton.accept(colNavi, "剩余里程", "navi_distance_remaining");
 
         // Group 4: Media
-        addButton.accept(colMedia, "歌曲信息（2行）", "test_media");
+        addButton.accept(colMedia, "歌曲信息（2行）", "song_2line");
         addButton.accept(colMedia, "歌曲信息（1行）", "song_1line");
-        addButton.accept(colMedia, "歌曲封面", "test_media_cover");
+        addButton.accept(colMedia, "歌曲封面", "song_cover");
         addButton.accept(colMedia, "系统音量", "volume");
 
         builder.setView(root);
@@ -4409,19 +4427,14 @@ public class MainActivity extends AppCompatActivity {
                 }
 
                 // Update HUD
-                ClusterHudManager.getInstance(MainActivity.this).updateComponentText("song", display);
-                ClusterHudManager.getInstance(MainActivity.this).updateComponentText("test_media", display); // Also
-                                                                                                             // update
-                                                                                                             // test
-                                                                                                             // component
+                ClusterHudManager.getInstance(MainActivity.this).updateComponentText("song_2line", display);
 
                 // Optional: Update Album Art if passed (byte array)
                 byte[] artwork = intent.getByteArrayExtra("artwork");
                 if (artwork != null) {
                     android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(artwork, 0,
                             artwork.length);
-                    ClusterHudManager.getInstance(MainActivity.this).updateComponentImage("media_cover", bmp);
-                    ClusterHudManager.getInstance(MainActivity.this).updateComponentImage("test_media_cover", bmp);
+                    ClusterHudManager.getInstance(MainActivity.this).updateComponentImage("song_cover", bmp);
                 }
             }
         }
