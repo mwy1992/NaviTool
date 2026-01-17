@@ -1300,10 +1300,7 @@ public class MainActivity extends AppCompatActivity {
         boolean isVolume = "volume".equals(type);
         boolean isAutoHold = "auto_hold".equals(type);
 
-        if ("time".equals(type)) {
-            // User Request: Show real system time immediately in Preview
-            text = new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(new java.util.Date());
-        }
+
 
         if ("song".equals(type) || "test_media".equals(type) || "song_1line".equals(type)) {
             android.widget.LinearLayout ll = new android.widget.LinearLayout(this);
@@ -1501,6 +1498,14 @@ public class MainActivity extends AppCompatActivity {
             container.addView(tvCoord, tvParams);
 
             view = container;
+        } else if ("time".equals(type)) {
+            // [FIX] Use TextClock for dynamic time in Preview
+            android.widget.TextClock tc = new android.widget.TextClock(this);
+            tc.setFormat12Hour("HH:mm");
+            tc.setFormat24Hour("HH:mm");
+            tc.setTimeZone(null);
+            tc.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            view = tc;
         } else {
             TextView tv = new TextView(this);
             tv.setText(text);

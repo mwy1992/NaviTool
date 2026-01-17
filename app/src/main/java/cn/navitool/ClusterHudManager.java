@@ -2090,7 +2090,12 @@ public class ClusterHudManager
     }
 
     public void updateRpm(float rpm) {
+        // [FIX] Throttle RPM updates to prevent ANR (~50Hz -> ~10Hz effective for UI or just filter noise)
+        if (Math.abs(mCachedRpm - rpm) < 5.0f && mCachedRpm != 0) {
+             return;
+        }
         mCachedRpm = rpm;
+        
         if (mPresentation != null) {
             mMainHandler.post(() -> {
                 if (mPresentation != null) {
@@ -2121,6 +2126,7 @@ public class ClusterHudManager
             mMainHandler.post(() -> {
                 if (mPresentation != null) {
                     if (mSimulatedGearEnabled) {
+                        // Pass true to force update if real gear changed background state
                         calculateAndPushSimulatedGear(gearChanged);
                     } else {
                         mPresentation.updateGear(gearValue);
@@ -2131,10 +2137,11 @@ public class ClusterHudManager
     }
 
     public void updateSpeed(int speed) {
-        // [DEBUG] Log updateSpeed call
-        if (mSimulatedGearEnabled) {
-             DebugLogger.d(TAG, "updateSpeed called: " + speed + ", invoking SimGearCalc");
-        }
+        if (mCachedSpeed == speed) return; // [FIX] Filter duplicates
+
+        // [DEBUG] Log updateSpeed call (Reduced)
+        // if (mSimulatedGearEnabled) { DebugLogger.d(TAG, "updateSpeed: " + speed); }
+        
         mCachedSpeed = speed;
         if (mPresentation != null) {
             mMainHandler.post(() -> {
@@ -2148,9 +2155,10 @@ public class ClusterHudManager
         }
     }
 
+    private String mLastSimulatedGear = ""; // Cache for dedup
+
     private void calculateAndPushSimulatedGear() {
-        // [DEBUG] Log calculation trigger
-        DebugLogger.d(TAG, "Triggering Simulated Gear Calculation (Force=False)");
+        // [FIX] Removed spammy log "Triggering Simulated Gear Calculation"
         calculateAndPushSimulatedGear(false);
     }
 
@@ -2163,6 +2171,13 @@ public class ClusterHudManager
                 mCachedRpm,
                 baseGear,
                 forceImmediate);
+
+        // [FIX] Only push to UI if changed to prevent Main Thread flooding (ANR fix)
+        if (!forceImmediate && calculated != null && calculated.equals(mLastSimulatedGear)) {
+            return;
+        }
+        
+        mLastSimulatedGear = calculated;
 
         if (mPresentation != null) {
             mMainHandler.post(() -> mPresentation.updateGear(calculated));
@@ -2403,6 +2418,10 @@ public class ClusterHudManager
      * This properly updates both mCachedFuelLiters and mCachedFuelText.
      */
     public void updateFuelWithValue(float liters) {
+        // [FIX] Throttle updates (0.1L threshold) to prevent spam
+        if (Math.abs(mCachedFuelLiters - liters) < 0.1f) {
+            return; 
+        }
         mCachedFuelLiters = liters;
         String text = String.format("⛽ %.0fL", liters);
         mCachedFuelText = text;

@@ -325,15 +325,19 @@ public class AudiRsThemeController {
         // 2=Red)
         int mappedStatus = NaviInfoController.mapStatus(rawStatus);
 
+        // [FIX] If status is NONE (0), hide all lights completely (alpha 0).
+        // Only use ALPHA_DIM (0.3f) if we have a valid status state (one light is on, others dim).
+        float inactiveAlpha = (mappedStatus == 0) ? 0f : ALPHA_DIM;
+
         // Update Images Alpha
         if (mLightRed != null) {
-            mLightRed.setAlpha(mappedStatus == TrafficLightView.STATUS_RED ? activeAlpha : ALPHA_DIM);
+            mLightRed.setAlpha(mappedStatus == TrafficLightView.STATUS_RED ? activeAlpha : inactiveAlpha);
         }
         if (mLightYellow != null) {
-            mLightYellow.setAlpha(mappedStatus == TrafficLightView.STATUS_YELLOW ? activeAlpha : ALPHA_DIM);
+            mLightYellow.setAlpha(mappedStatus == TrafficLightView.STATUS_YELLOW ? activeAlpha : inactiveAlpha);
         }
         if (mLightGreen != null) {
-            mLightGreen.setAlpha(mappedStatus == TrafficLightView.STATUS_GREEN ? activeAlpha : ALPHA_DIM);
+            mLightGreen.setAlpha(mappedStatus == TrafficLightView.STATUS_GREEN ? activeAlpha : inactiveAlpha);
         }
 
         // Update Colors for Arrow and Countdown (Using active color regardless of

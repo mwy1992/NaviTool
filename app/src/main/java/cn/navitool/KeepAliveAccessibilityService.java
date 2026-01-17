@@ -188,11 +188,75 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             CharSequence packageName = event.getPackageName();
-            // [Issue 7 Fix] Detect Amap Foreground State for Floating Window hiding
-            boolean isAmap = (packageName != null && AUTONAVI_PKG.equals(packageName.toString()));
-            cn.navitool.ClusterHudManager.getInstance(this).setAmapForeground(isAmap);
+            CharSequence className = event.getClassName();
+            boolean isFullScreen = event.isFullScreen();
+            
+            // [DEBUG] Log all window changes to diagnose Amap flashing
+            DebugLogger.d(TAG, "Window Change: Pkg=" + packageName + " Class=" + className + " FullScreen=" + isFullScreen);
 
-            if (isAmap) {
+            // [Issue 7 Fix] Detect Amap Foreground State for Floating Window hiding
+            boolean isAmapPackage = (packageName != null && AUTONAVI_PKG.equals(packageName.toString()));
+            boolean isAmap = false;
+
+            if (isAmapPackage) {
+                // Refined Logic (2026-01-17):
+                // Only consider it "Foreign Foreground" if it is FullScreen OR strictly an Activity/Dialog.
+                // Ignore generic FrameLayout overlays which might pop up in background.
+                if (isFullScreen) {
+                    isAmap = true;
+                } else {
+                    String cls = (className != null) ? className.toString() : "";
+                    if (cls.contains("Activity") || cls.contains("Dialog")) {
+                         isAmap = true;
+                    } else {
+                         DebugLogger.d(TAG, "Ignoring Amap Background/Overlay Event: " + cls);
+                         return; // [KEY] Return early for ignored events so we don't accidentally setAmapForeground(false) via else block if we were logic-bound
+                         // actually, we need to be careful.
+                         // If we are currently in "Amap Foreground" state, and we receive an ignored event, we should NOT change state.
+                         // But the current logic below calls setAmapForeground(isAmap).
+                         
+                         // Wait, if I set isAmap=false here, setAmapForeground(false) will be called.
+                         // If we were previously true, this would HIDE it (or SHOW it? setAmapForeground(false) means SHOW floating).
+                         // Yes, false means show floating.
+                         // So if I return early, I preserve previous state?
+                         // ClusterHudManager.setAmapForeground checks for change.
+                         
+                         // Correct logic: If process is Amap but it's an overlay, we should Ignore this event completely.
+                         // Do not call setAmapForeground at all.
+                    }
+                }
+            }
+            
+            if (isAmapPackage && !isAmap) {
+                 // It matches package but was filtered out (e.g. FrameLayout)
+                 DebugLogger.d(TAG, "Event Parsed: Amap Overlay -> IGNORE State Change");
+            } else {
+                 // Standard Logic
+                 // If isAmapPackage is true (and passed filter), then isAmap=true.
+                 // If isAmapPackage is false, then isAmap=false (Other apps).
+                 
+                 // However, "isAmap" variable above was init to false. 
+                 // If package!=Amap, isAmap=false.
+                 // If package==Amap and isFull, isAmap=true.
+                 
+                 // We need to handle the "Exclude" case properly to avoid flipping state.
+                 // So:
+                 if (isAmapPackage) {
+                      // Amap Logic
+                      if (isFullScreen || (className != null && (className.toString().contains("Activity") || className.toString().contains("Dialog")))) {
+                          // Real Foreground
+                          cn.navitool.ClusterHudManager.getInstance(this).setAmapForeground(true);
+                      } else {
+                          // Fake/Overlay -> Ignore
+                          // Do nothing
+                      }
+                 } else {
+                      // Other Apps -> Not Amap Foreground -> set false (Show Floating)
+                      cn.navitool.ClusterHudManager.getInstance(this).setAmapForeground(false);
+                 }
+            }
+
+            if (isAmapPackage && (isFullScreen || (className != null && (className.toString().contains("Activity") || className.toString().contains("Dialog"))))) {
                 boolean wasDetected = mAmapDetected;
                 mAmapDetected = true;
 
@@ -509,21 +573,51 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 iSensor.registerListener(listener, ISensor.SENSOR_TYPE_IGNITION_STATE);
                 DebugLogger.i(TAG, "Ignition Listener Registered. Waiting for DRIVING state...");
 
-                // Poll once immediately
-                try {
-                    int currentIgnition = iSensor.getSensorEvent(ISensor.SENSOR_TYPE_IGNITION_STATE);
-                    DebugLogger.i(TAG, "Initial Ignition Poll: " + currentIgnition);
-                    if (currentIgnition == ISensorEvent.IGNITION_STATE_DRIVING) {
-                        handleIgnitionDriving();
-                    }
-                } catch (Exception e) {
-                    DebugLogger.e(TAG, "Failed to poll initial ignition state", e);
-                }
+                // Start Polling with Retry (Logic Update 2026-01-17)
+                pollIgnitionStateWithRetry();
 
             }
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to register sensor listeners", e);
         }
+    }
+
+    private int mIgnitionRetryCount = 0;
+    private static final int MAX_IGNITION_RETRIES = 5;
+
+    private void pollIgnitionStateWithRetry() {
+        mIgnitionRetryCount = 0;
+        Runnable pollRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (mIgnitionReady || iSensor == null) {
+                    return; // Already ready or invalid
+                }
+
+                try {
+                    int currentIgnition = iSensor.getSensorEvent(ISensor.SENSOR_TYPE_IGNITION_STATE);
+                    DebugLogger.i(TAG, "Poll Ignition (" + (mIgnitionRetryCount + 1) + "/" + MAX_IGNITION_RETRIES + "): " + currentIgnition);
+
+                    if (currentIgnition == ISensorEvent.IGNITION_STATE_DRIVING) {
+                        handleIgnitionDriving();
+                        return; // Success, stop polling
+                    }
+                } catch (Exception e) {
+                    DebugLogger.w(TAG, "Poll Ignition Failed: " + e.getMessage());
+                }
+
+                mIgnitionRetryCount++;
+                if (mIgnitionRetryCount < MAX_IGNITION_RETRIES) {
+                    // Schedule next poll in 1 second
+                    new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this, 1000);
+                } else {
+                    DebugLogger.i(TAG, "Poll Ignition: Max retries reached. Waiting for passive event.");
+                }
+            }
+        };
+
+        // Execute first poll immediately
+        pollRunnable.run();
     }
 
     // handleIgnitionDriving moved to line 166

@@ -206,19 +206,15 @@ public class Presentation extends android.app.Dialog {
             return;
 
         try {
-            // Target Display ID 1 (User Request)
+            // [MODIFIED] Target Default Display (Display 0) for Touch Interaction
             DisplayManager dm = (DisplayManager) getContext().getSystemService(Context.DISPLAY_SERVICE);
             android.view.Display targetDisplay = null;
             if (dm != null) {
-                targetDisplay = dm.getDisplay(1);
+                targetDisplay = dm.getDisplay(android.view.Display.DEFAULT_DISPLAY);
             }
+            
             if (targetDisplay == null) {
-                DebugLogger.w(TAG, "Display ID 1 not found, falling back to Default Display");
-                targetDisplay = dm != null ? dm.getDisplay(android.view.Display.DEFAULT_DISPLAY) : null;
-            }
-
-            if (targetDisplay == null) {
-                DebugLogger.e(TAG, "Target Display Not Found");
+                DebugLogger.e(TAG, "Default Display Not Found");
                 return;
             }
 
@@ -254,7 +250,8 @@ public class Presentation extends android.app.Dialog {
 
             // Initial Visibility
             mFloatingTrafficLightContainer.setVisibility(View.GONE);
-            mFloatingWindowManager.addView(mFloatingTrafficLightContainer, mFloatingParams);
+            // [FIX] Do NOT addView here. Managed by updateFloatingTrafficLightVisibility()
+            // mFloatingWindowManager.addView(mFloatingTrafficLightContainer, mFloatingParams);
 
             // Bind Views
             mFloatingCountdown = mFloatingTrafficLightContainer.findViewById(R.id.floatingCountdown);
@@ -263,7 +260,6 @@ public class Presentation extends android.app.Dialog {
             mFloatingLightYellow = mFloatingTrafficLightContainer.findViewById(R.id.floatingLightYellow);
             mFloatingLightGreen = mFloatingTrafficLightContainer.findViewById(R.id.floatingLightGreen);
 
-            mContainerDashboard = mFloatingTrafficLightContainer.findViewById(R.id.containerDashboard);
             mContainerDashboard = mFloatingTrafficLightContainer.findViewById(R.id.containerDashboard);
             mHudTrafficLightView = mFloatingTrafficLightContainer.findViewById(R.id.hudTrafficLightView);
 
@@ -296,7 +292,13 @@ public class Presentation extends android.app.Dialog {
                             mFloatingParams.x = initialX + (int) (event.getRawX() - initialTouchX);
                             mFloatingParams.y = initialY + (int) (event.getRawY() - initialTouchY);
                             // Ensure update
-                            mFloatingWindowManager.updateViewLayout(mFloatingTrafficLightContainer, mFloatingParams);
+                            if (mIsFloatingViewAdded) {
+                                try {
+                                    mFloatingWindowManager.updateViewLayout(mFloatingTrafficLightContainer, mFloatingParams);
+                                } catch (Exception e) {
+                                    DebugLogger.e(TAG, "Drag Error: updateViewLayout failed", e);
+                                }
+                            }
                             return true;
 
                         case android.view.MotionEvent.ACTION_UP:
@@ -410,29 +412,65 @@ public class Presentation extends android.app.Dialog {
         }
     }
 
-    private void updateFloatingTrafficLightVisibility() {
-        if (mFloatingTrafficLightContainer == null)
-            return;
+    private boolean mIsFloatingViewAdded = false;
 
-        // Show if Temp Showing OR (Enabled AND Has Data)
-        // [FIX] Removed mIsPositioningMode, added mIsTempShowing
+    private void updateFloatingTrafficLightVisibility() {
+        if (mFloatingTrafficLightContainer == null || mFloatingWindowManager == null) {
+            DebugLogger.w(TAG, "Floating Context Null. Container=" + mFloatingTrafficLightContainer);
+            return;
+        }
+
+        // Determine if we SHOULD show
+        boolean shouldShow = false;
+        
         if (mIsTempShowing) {
-            mFloatingTrafficLightContainer.setVisibility(View.VISIBLE);
-            // Ensure transparent background always (no more positioning bg)
-            mFloatingTrafficLightContainer.setBackgroundResource(0);
-        } else {
-            // Normal mode: Only show if enabled AND has valid data
-            if (mIsFloatingEnabled && mLatestTrafficLightInfo != null) {
-                mFloatingTrafficLightContainer.setVisibility(View.VISIBLE);
-                mFloatingTrafficLightContainer.setBackgroundResource(0);
+             shouldShow = true;
+        } else if (mIsFloatingEnabled && mLatestTrafficLightInfo != null) {
+             shouldShow = true;
+        }
+
+        // [DEBUG LOG] Trace Visibility Logic
+        if (mIsFloatingViewAdded != shouldShow) { // Log only on change or potential change
+             DebugLogger.d(TAG, "FloatingLight Update: shouldShow=" + shouldShow 
+                 + " [Temp=" + mIsTempShowing 
+                 + ", Enabled=" + mIsFloatingEnabled 
+                 + ", Info=" + (mLatestTrafficLightInfo != null ? "YES" : "NULL") + "]");
+        }
+
+        try {
+            if (shouldShow) {
+                if (!mIsFloatingViewAdded) {
+                    mFloatingTrafficLightContainer.setVisibility(View.VISIBLE);
+                    mFloatingWindowManager.addView(mFloatingTrafficLightContainer, mFloatingParams);
+                    mIsFloatingViewAdded = true;
+                    DebugLogger.d(TAG, "Floating Window ADDED");
+                } else if (mFloatingTrafficLightContainer.getVisibility() != View.VISIBLE) {
+                     mFloatingTrafficLightContainer.setVisibility(View.VISIBLE);
+                     DebugLogger.d(TAG, "Floating Window FORCE VISIBLE");
+                }
             } else {
-                mFloatingTrafficLightContainer.setVisibility(View.GONE);
+                if (mIsFloatingViewAdded) {
+                    mFloatingWindowManager.removeView(mFloatingTrafficLightContainer);
+                    mIsFloatingViewAdded = false;
+                    DebugLogger.d(TAG, "Floating Window REMOVED");
+                }
             }
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error updating floating window visibility", e);
+            // If error occurs, assume removed to be safe and try to re-add next time
+            mIsFloatingViewAdded = false; 
         }
     }
 
     private void updateFloatingTrafficLightLogic(cn.navitool.NaviInfoController.TrafficLightInfo info) {
         mLatestTrafficLightInfo = info;
+
+        // [DEBUG] Log data reception
+        if (info != null) {
+             DebugLogger.d(TAG, "FloatingLogic: Data Received. Status=" + info.status + " Count=" + info.redCountdown);
+        } else {
+             DebugLogger.d(TAG, "FloatingLogic: Data Received is NULL");
+        }
 
         if (mFloatingTrafficLightContainer == null)
             initializeFloatingTrafficLight();
@@ -441,16 +479,23 @@ public class Presentation extends android.app.Dialog {
 
         // [FIX] Use mIsTempShowing instead of mIsPositioningMode
         if (!mIsFloatingEnabled && !mIsTempShowing) {
-            mFloatingTrafficLightContainer.setVisibility(View.GONE);
+            // Log once if spammy?
+            // mFloatingTrafficLightContainer.setVisibility(View.GONE);
+            // Use generic update method
+            updateFloatingTrafficLightVisibility();
             return;
         }
 
         if (info == null && !mIsTempShowing) {
-            mFloatingTrafficLightContainer.setVisibility(View.GONE);
+            updateFloatingTrafficLightVisibility();
             return;
         }
-
-        mFloatingTrafficLightContainer.setVisibility(View.VISIBLE);
+        
+        // This method formerly updated visibility directly. 
+        // Now valid data is present (or temp showing).
+        // Update Content then Visibility.
+        updateFloatingTrafficLightVisibility();
+        
         mFloatingTrafficLightContainer.setBackgroundResource(0); // Always transparent now
 
         // Ensure correct visibility of containers
@@ -890,7 +935,7 @@ public class Presentation extends android.app.Dialog {
     // Duplicates removed (mCurrentTheme, mAudiRsController, mAudiRsLayout)
 
     public void syncHudLayout(java.util.List<ClusterHudManager.HudComponentData> components) {
-        syncLayoutGeneric(mLayoutHud, mRealHudComponents, components, 728, 190);
+        syncLayoutGeneric(mLayoutHud, mRealHudComponents, components, 728, 189);
     }
 
     public void syncClusterLayout(java.util.List<ClusterHudManager.HudComponentData> components) {
@@ -1215,22 +1260,31 @@ public class Presentation extends android.app.Dialog {
                     params.height = 48;
                     view = iv;
                 } else if ("fuel_range".equals(data.type) || "fuel".equals(data.type)) {
-                    // [Refactor] Flattened to single TextView for performance and to fix ghosting
-                    android.widget.TextView tv = new android.widget.TextView(getContext());
-                    // Combine Emoji and Text: "⛽" + " " + "56L"
-                    String valText = data.text != null ? data.text : "";
-                    if (!valText.contains("⛽")) {
-                        valText = "⛽ " + valText;
-                    }
-                    tv.setText(valText);
-                    tv.setSingleLine(true);
-                    tv.setMaxLines(1);
-                    tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24f);
-                    tv.setTextColor(data.color);
-                    tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                    tv.setIncludeFontPadding(false);
-                    view = tv; // Direct TextView, no container
+                    // [Refactor] Use LinearLayout for perfect vertical alignment of mixed sizes
+                    android.widget.LinearLayout ll = new android.widget.LinearLayout(getContext());
+                    ll.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+                    ll.setGravity(android.view.Gravity.CENTER_VERTICAL); // Align centers
+
+                    // 1. Emoji View (18px)
+                    android.widget.TextView tvEmoji = new android.widget.TextView(getContext());
+                    tvEmoji.setText("⛽");
+                    tvEmoji.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 18f);
+                    tvEmoji.setTextColor(data.color);
+                    tvEmoji.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    tvEmoji.setIncludeFontPadding(false);
+                    ll.addView(tvEmoji);
+
+                    // 2. Value View (24px)
+                    android.widget.TextView tvValue = new android.widget.TextView(getContext());
+                    String valText = (data.text != null) ? data.text.replace("⛽", "").trim() : "";
+                    tvValue.setText(" " + valText); // Add minimal spacing
+                    tvValue.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24f);
+                    tvValue.setTextColor(data.color);
+                    tvValue.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    tvValue.setIncludeFontPadding(false);
+                    ll.addView(tvValue);
+
+                    view = ll;
                     params.width = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
                     params.height = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
 
@@ -1356,12 +1410,25 @@ public class Presentation extends android.app.Dialog {
                 float scaledWidth = measuredWidth * effectiveScale;
                 float scaledHeight = measuredHeight * effectiveScale;
 
-                // [FIX] Allow overshoot for TextViews to match Preview logic (Visual Margin
-                // Compensation)
+                // [FIX] Allow overshoot for TextViews to match Preview logic (Visual Margin Compensation)
                 float tolerance = 0f;
                 if (view instanceof android.widget.TextView) {
                     float currentSize = ((android.widget.TextView) view).getTextSize();
                     tolerance = currentSize * 0.2f * data.scale;
+                } else if (view instanceof android.view.ViewGroup) {
+                    // [FIX] For Container Views (like Fuel LinearLayout), find max text size for tolerance
+                    android.view.ViewGroup vg = (android.view.ViewGroup) view;
+                    float maxTextSize = 0f;
+                    for (int k = 0; k < vg.getChildCount(); k++) {
+                        View child = vg.getChildAt(k);
+                        if (child instanceof android.widget.TextView) {
+                            float size = ((android.widget.TextView) child).getTextSize();
+                            if (size > maxTextSize) maxTextSize = size;
+                        }
+                    }
+                    if (maxTextSize > 0) {
+                         tolerance = maxTextSize * 0.2f * data.scale;
+                    }
                 }
 
                 float clampedX = Math.max(0, Math.min(data.x, maxWidth - scaledWidth));
@@ -1496,21 +1563,25 @@ public class Presentation extends android.app.Dialog {
                 if (v instanceof android.widget.TextView && text != null) {
                     android.widget.TextView tv = (android.widget.TextView) v;
 
-                    // [Refactor] Handle Fuel Text Merging
-                    if ("fuel_range".equals(viewType) || "fuel".equals(viewType)) {
-                        String valText = text.replace("⛽", "").trim();
-                        tv.setText("⛽ " + valText);
-                    } else {
                         // Standard update
                         // [FIX] Clear text first and invalidate to prevent overlap artifacts
                         // tv.setText(""); // Flashing might be too visible, try direct set
                         tv.setText(text);
-                    }
                     tv.invalidate();
                 } else if (v instanceof android.widget.LinearLayout && text != null) {
                     android.widget.LinearLayout ll = (android.widget.LinearLayout) v;
 
-                    // Song Logic (Fuel removed from here)
+                    // Fuel Logic (LinearLayout)
+                    if ("fuel_range".equals(viewType) || "fuel".equals(viewType)) {
+                         String valText = text.replace("⛽", "").trim();
+                         // Update Value View (Index 1)
+                         if (ll.getChildCount() > 1 && ll.getChildAt(1) instanceof android.widget.TextView) {
+                              ((android.widget.TextView) ll.getChildAt(1)).setText(" " + valText);
+                         }
+                         return; // Done
+                    }
+
+                    // Song Logic
                     String[] parts = (text != null ? text : "").split("\n");
                     String title = parts.length > 0 ? parts[0] : "";
                     String artist = parts.length > 1 ? parts[1] : "";
@@ -1720,18 +1791,11 @@ public class Presentation extends android.app.Dialog {
     }
 
     public void updateGear(String gearStr) {
-        // [FIX] Sync Simulated Gear with Audi RS Theme
         if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null && gearStr != null) {
             // Directly pass the string (e.g. "D1", "M", "S") to the controller
             ((AudiRsThemeController) mThemeController).setGear(gearStr);
             // Bypass integer conversion logic for Audi RS
-            return;
-        } else if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null) {
-            // If null string, do nothing or let it fall through?
-            // Existing logic did nothing if gearStr was null effectively (gearCode default
-            // P but strict equals checks failed)
-            // We can just return to avoid further processing if we want strict control
-            // But let's just leave the return above.
+            // return; // [FIX] Removed premature return to allow specific HUD update
         }
 
         if (gearStr != null) {
