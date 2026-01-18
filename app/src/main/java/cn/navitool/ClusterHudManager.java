@@ -59,6 +59,12 @@ public class ClusterHudManager
     private float mCachedRangeKm = 0f;
     private int mCachedSpeed = 0;
     private float mCachedRpm = 0f;
+    
+    // [FIX] Music Cache for Consistency (Backfill)
+    private String mCachedSongTitle = null;
+    private String mCachedSongArtist = null;
+    private android.graphics.Bitmap mCachedCoverArt = null;
+    private boolean mCachedIsPlaying = false;
 
     // Bug 2 Fix: Independent timeout for navigation info
     private static final long NAVI_INFO_TIMEOUT_MS = 5000;
@@ -343,42 +349,48 @@ public class ClusterHudManager
      * @param isLeft true for Left, false for Right
      * @param isOn   true for ON (Blinking), false for OFF
      */
-    public synchronized void updateTurnSignal(boolean isLeft, boolean isOn) {
-        boolean wasOff = (!mLeftTurnOn && !mRightTurnOn);
+    public void updateTurnSignal(boolean isLeft, boolean isOn) {
+        // [FIX] Force Main Thread Execution to eliminate Race Condition with mBlinkRunnable
+        mMainHandler.post(() -> {
+            boolean wasOff = (!mLeftTurnOn && !mRightTurnOn);
 
-        if (isLeft)
-            mLeftTurnOn = isOn;
-        else
-            mRightTurnOn = isOn;
+            if (isLeft)
+                mLeftTurnOn = isOn;
+            else
+                mRightTurnOn = isOn;
 
-        boolean isNowOff = (!mLeftTurnOn && !mRightTurnOn);
+            boolean isNowOff = (!mLeftTurnOn && !mRightTurnOn);
 
-        // State Logic
-        if (isOn) {
-            // If we were fully OFF, start the blinker
-            if (wasOff) {
-                mBlinkVisible = true; // Start Visible
-                mBlinkHandler.removeCallbacks(mBlinkRunnable);
-                mBlinkHandler.postDelayed(mBlinkRunnable, BLINK_INTERVAL);
-                updateTurnSignal(); // Immediate Update
+            // State Logic
+            if (isOn) {
+                // If we were fully OFF, start the blinker
+                if (wasOff) {
+                    mBlinkVisible = true; // Start Visible
+                    mBlinkHandler.removeCallbacks(mBlinkRunnable);
+                    mBlinkHandler.postDelayed(mBlinkRunnable, BLINK_INTERVAL);
+                    // Immediate Update handled below
+                }
+                // If already running, state variable change will be picked up by next Runnable
+                // tick or immediate update
+                // Logic Fix: Immediate update to reflect Side Switch without waiting for tick
+            } else {
+                // If both are now OFF, stop blinking
+                if (isNowOff) {
+                    mBlinkHandler.removeCallbacks(mBlinkRunnable);
+                    mBlinkVisible = false;
+                }
             }
-            // If already running, state variable change will be picked up by next Runnable
-            // tick or immediate update
-            // Logic Fix: Immediate update to reflect Side Switch without waiting for tick
-            updateTurnSignal();
-        } else {
-            // If both are now OFF, stop blinking
-            if (isNowOff) {
-                mBlinkHandler.removeCallbacks(mBlinkRunnable);
-                mBlinkVisible = false;
-                updateTurnSignal(); // Immediate Update (to clear)
-            }
-        }
+            
+            // Immediate update for all cases
+            // (Start, Stop, or Side Switch)
+            // Use no-arg updateTurnSignal() which just calls Presentation
+             updateTurnSignal(); 
 
-        // [FIX] Forward Turn Signal State to Presentation (for Traffic Light filtering)
-        if (mPresentation != null) {
-            mPresentation.updateTurnSignal(isLeft, isOn);
-        }
+            // [FIX] Forward Turn Signal State to Presentation (for Traffic Light filtering)
+            if (mPresentation != null) {
+                mPresentation.updateTurnSignal(isLeft, isOn);
+            }
+        });
     }
 
     // --- Floating Traffic Light Control ---
@@ -1127,10 +1139,16 @@ public class ClusterHudManager
                         // Update Playing State
                         updateMediaPlayingState(isPlaying);
 
+                        // [FIX] Update Cache
+                        mCachedSongTitle = title;
+                        mCachedSongArtist = artist;
+                        mCachedIsPlaying = isPlaying;
+
                         // Update Cover (Byte Array)
                         boolean hasArtwork = intent.getBooleanExtra("has_artwork", true); // Default true
                         if (!hasArtwork) {
                             updateComponentImage("song_cover", null);
+                            mCachedCoverArt = null; // Clear Cache
                         } else {
                             byte[] artwork = intent.getByteArrayExtra("artwork");
                             if (artwork != null) {
@@ -1138,6 +1156,7 @@ public class ClusterHudManager
                                         artwork.length);
                                 if (bmp != null) {
                                     updateComponentImage("song_cover", bmp);
+                                    mCachedCoverArt = bmp; // Update Cache
                                 }
                             }
                         }
@@ -1862,6 +1881,28 @@ public class ClusterHudManager
                         newData.text = "L:" + mLeftTurnOn + ",R:" + mRightTurnOn;
                     } else if ("auto_hold".equals(newData.type)) {
                         newData.image = getAutoHoldBitmap(mIsAutoHoldOn);
+                    } else if ("gear".equals(newData.type)) {
+                        // [FIX] Backfill current gear (Sync Logic - Existing Data)
+                        newData.text = getGearString(mCachedGear);
+                    } else if ("song_2line".equals(newData.type)) {
+                        // [FIX] Backfill Music Title/Artist
+                        if (mCachedSongTitle != null) {
+                            String display = mCachedSongTitle;
+                            if (mCachedSongArtist != null && !mCachedSongArtist.isEmpty()) {
+                                display = mCachedSongTitle + "\n" + mCachedSongArtist;
+                            }
+                            newData.text = display;
+                        }
+                    } else if ("song_1line".equals(newData.type)) {
+                        // [FIX] Backfill Music Title Only
+                        if (mCachedSongTitle != null) {
+                            newData.text = mCachedSongTitle;
+                        }
+                    } else if ("song_cover".equals(newData.type)) {
+                        // [FIX] Backfill Cover Art
+                        if (mCachedCoverArt != null) {
+                            newData.image = mCachedCoverArt;
+                        }
                     } else {
                         // Standard Merge
                         for (HudComponentData oldData : mCachedHudComponents) {
@@ -1886,6 +1927,30 @@ public class ClusterHudManager
                         newData.text = "L:" + mLeftTurnOn + ",R:" + mRightTurnOn;
                     } else if ("auto_hold".equals(newData.type)) {
                         newData.image = getAutoHoldBitmap(mIsAutoHoldOn);
+                    } else if ("gear".equals(newData.type)) {
+                        // [FIX] Backfill current gear to prevent overwrite by default "D"
+                        // This ensures that when opening the HUD Editor, the current real (or simulated) gear
+                        // is displayed instead of the default placeholder.
+                        newData.text = getGearString(mCachedGear);
+                    } else if ("song_2line".equals(newData.type)) {
+                        // [FIX] Backfill Music Title/Artist (First Sync)
+                        if (mCachedSongTitle != null) {
+                            String display = mCachedSongTitle;
+                            if (mCachedSongArtist != null && !mCachedSongArtist.isEmpty()) {
+                                display = mCachedSongTitle + "\n" + mCachedSongArtist;
+                            }
+                            newData.text = display;
+                        }
+                    } else if ("song_1line".equals(newData.type)) {
+                        // [FIX] Backfill Music Title Only
+                        if (mCachedSongTitle != null) {
+                            newData.text = mCachedSongTitle;
+                        }
+                    } else if ("song_cover".equals(newData.type)) {
+                        // [FIX] Backfill Cover Art
+                        if (mCachedCoverArt != null) {
+                            newData.image = mCachedCoverArt;
+                        }
                     }
                 }
             }
@@ -2114,17 +2179,15 @@ public class ClusterHudManager
         boolean gearChanged = (mCachedGear != gearValue);
         mCachedGear = gearValue;
 
-        if (mPresentation != null) {
-            mMainHandler.post(() -> {
-                if (mPresentation != null) {
-                    if (mSimulatedGearEnabled) {
-                        // Pass true to force update if real gear changed background state
-                        calculateAndPushSimulatedGear(gearChanged);
-                    } else {
-                        mPresentation.updateGear(gearValue);
-                    }
-                }
-            });
+        // [FIX] Route gear updates through generic component system 
+        // This ensures BOTH the Presentation (Real HUD) and the Listener (Preview) are updated.
+        if (mSimulatedGearEnabled) {
+            // Pass true to force update if real gear changed background state
+            calculateAndPushSimulatedGear(gearChanged);
+        } else {
+             // Real Gear Update
+             String gearStr = mapRawGearToChar(gearValue);
+             updateComponentText("gear", gearStr);
         }
     }
 
@@ -2172,7 +2235,8 @@ public class ClusterHudManager
         mLastSimulatedGear = calculated;
 
         if (mPresentation != null) {
-            mMainHandler.post(() -> mPresentation.updateGear(calculated));
+             // [FIX] Update via Component System for Preview Sync
+             updateComponentText("gear", calculated);
         }
     }
 

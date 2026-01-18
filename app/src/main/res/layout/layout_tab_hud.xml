@@ -142,7 +142,6 @@
                     android:layout_gravity="center"
                     android:rotation="90"
                     android:layerType="software"
-                    android:translationX="-25px"
                     android:background="@drawable/line_dashed_cyan" />
             </FrameLayout>
         </FrameLayout>

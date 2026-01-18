@@ -1,5 +1,32 @@
 # Change Log
 
+## 2026-01-18
+
+### HUD 档位显示修复与优化 (HUD Gear Display Fixes & Optimization)
+
+- **实时档位更新修复 (Real-time Gear Updates)**:
+  - `app/src/main/java/cn/navitool/ClusterHudManager.java`:
+    - 重构了 `updateGear` 和 `calculateAndPushSimulatedGear` 方法，将档位更新统一路由至 `updateComponentText` 通道。
+    - **效果**: 彻底解决了 HUD 预览界面档位始终显示静态 "D" 的问题，现在预览界面能实时反映真实档位和模拟档位的变化。
+
+- **编辑器状态回填逻辑 (Editor State Backfill Logic)**:
+  - `app/src/main/java/cn/navitool/ClusterHudManager.java`:
+    - 在 `syncHudLayout` 中新增了档位组件的“回填机制”。
+    - **效果**: 修复了打开 HUD 编辑页面时，默认的 "D" 占位符覆盖当前真实档位（如 "D8"）导致 HUD 显示回退的问题。现在打开编辑器会自动同步并显示当前的实时档位。
+
+- **音乐组件显示一致性修复 (Music Component Consistency Fix)**:
+  - `app/src/main/java/cn/navitool/ClusterHudManager.java`:
+    - 新增了 `Title`, `Artist`, `CoverArt` 的内存缓存变量。
+    - 在媒体监听器 (`initMediaListener`) 中实现了缓存更新逻辑。
+    - 在 `syncHudLayout` 中新增了音乐组件的回填逻辑。
+    - **效果**: 修复了添加或拖动音乐组件时内容丢失的问题，现在音乐信息能持久化显示。
+
+- **转向灯“幽灵显示”修复 (Ghost Turn Signal Fix)**:
+  - `app/src/main/java/cn/navitool/ClusterHudManager.java`:
+    - 重构了 `updateTurnSignal(boolean, boolean)` 方法。
+    - **逻辑变更**: 移除了 `synchronized` 关键字，并将所有状态更新逻辑强制调度至主线程 (`mMainHandler`) 执行。
+    - **效果**: 彻底消除了后台 Binder 线程更新状态与主线程 `mBlinkRunnable` 读取状态之间的多线程竞态条件 (Race Condition)，解决了转向灯关闭后偶发不消失的问题。
+
 ## 2026-01-17
 
 ### HUD 几何修正与编辑器优化 (HUD Geometry & Editor Alignments)
@@ -11,7 +38,6 @@
 - **编辑器预览校准 (Editor Preview Calibration)**:
   - `app/src/main/res/layout/layout_tab_hud.xml`:
     - 将预览区域高度调整为 **378px**，保持与实际高度 2:1 的比例 (约 131 行)。
-    - **中心辅助线修正**: 为固定辅助线添加 `translationX="-25px"`，修正了预览界面中心线与实际显示中心的偏差 (约 145 行)。
 
 - **HUD 字体精细化控制**:
   - 将燃油组件重构为 `LinearLayout` 布局，实现了 Emoji (18px) 与数值 (24px) 的完美垂直居中对齐，彻底解决了基线对齐导致的视觉偏差。
