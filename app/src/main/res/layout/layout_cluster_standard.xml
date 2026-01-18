@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/layoutClusterStandard"
+    android:layout_width="1920px"
+    android:layout_height="720px"
+    android:background="@android:color/black">
+
+    <!-- Background -->
+    <ImageView
+        android:id="@+id/standardBg"
+        android:layout_width="1920px"
+        android:layout_height="548px"
+        android:layout_gravity="top|center_horizontal"
+        android:src="@drawable/standard_bg" />
+
+    <!-- ============================================================ -->
+    <!-- LEFT GROUP: SPEEDOMETER (0 - 260 km/h) -->
+    <!-- Center of Group was ~ (100, 60), Size 600x600 -->
+    <!-- ============================================================ -->
+
+    <!-- Pointer (235x251) -->
+    <!-- Pos: X=165, Y=109 -->
+
+    <!-- Speed Text -->
+    <!-- Pos: X=~300(Center of Group)+100(Group X) -> Center X=400. Text centered on 400. -->
+    <!-- Y: Below Center. Top ~410px -->
+    <ImageView
+        android:id="@+id/standardLeftPointer"
+        android:layout_width="235px"
+        android:layout_height="235px"
+        android:layout_gravity="start|top"
+        android:layout_marginStart="231px"
+        android:layout_marginTop="130px"
+        android:src="@drawable/standard_pointer"
+        android:visibility="visible" />
+
+
+
+
+    <!-- ============================================================ -->
+    <!-- RIGHT GROUP: TACHOMETER (0 - 8000 rpm) -->
+    <!-- Center of Group was ~ (1220, 60), Size 600x600 -->
+    <!-- ============================================================ -->
+
+    <!-- Pointer (235x251) -->
+    <!-- Pos: X=1285, Y=109 -->
+    <ImageView
+        android:id="@+id/standardRightPointer"
+        android:layout_width="235px"
+        android:layout_height="235px"
+        android:src="@drawable/standard_pointer"
+        android:layout_gravity="start|top"
+        android:layout_marginStart="1219px"
+        android:layout_marginTop="130px"
+        android:visibility="visible" />
+
+    <!-- Gear Text -->
+    <!-- Pos: X=~300(Center)+1220(Group X) = 1520. -->
+    <!-- Y: ~410px -->
+
+
+    <!-- Foreground Layer (Top) -->
+    <ImageView
+        android:id="@+id/standardForeground"
+        android:layout_width="1920px"
+        android:layout_height="354px"
+        android:layout_gravity="bottom|center_horizontal"
+        android:src="@drawable/standard_foreground" />
+
+    <!-- Text Layer (Moved to Top) -->
+    <TextView
+        android:id="@+id/standardSpeedText"
+        android:layout_width="300px"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|top"
+        android:layout_marginStart="316px"
+        android:layout_marginTop="298px"
+        android:gravity="center"
+        android:text="0"
+        android:textColor="#FFFFFF"
+        android:textSize="48sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/standardGearText"
+        android:layout_width="300px"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|top"
+        android:layout_marginStart="1304px"
+        android:layout_marginTop="298px"
+        android:gravity="center"
+        android:text="P"
+        android:textColor="#00FF00"
+        android:textSize="48sp"
+        android:textStyle="bold"/>
+
+</FrameLayout>

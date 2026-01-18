@@ -73,7 +73,9 @@ public class ClusterHudManager
             mPresentation.resetNaviInfo();
         }
     };
-    private int mCachedGear = -1; // -1 for unknown
+    // [FIX] Initialize to 0 (Park) instead of -1 (Manual) to prevent "M" gear
+    // flash on reset
+    private int mCachedGear = 0; // 0 for safe default (maps to "P")
     // [Fix Cold Boot] Add tracking for actually applied theme to avoid redundant
     // resets
     private int mCurrentAppliedTheme = -1;
@@ -917,6 +919,12 @@ public class ClusterHudManager
         // Always try to calculate simulated gear if enabled, even if currently "P" or "N"
         // This allows recovery if the state was stuck.
         if (mSimulatedGearEnabled) {
+            // [Fix Fluctuation] Prefer cached last simulated gear to avoid recalculation side-effects
+            if (mLastSimulatedGear != null && !mLastSimulatedGear.isEmpty()) {
+                 // Return the stable, smoothed result from the last real update
+                 return mLastSimulatedGear;
+            }
+
             // Pass current raw logic result as "CurrentSensorGear"
             String baseGear = mapRawGearToChar(gearValue);
             
@@ -926,10 +934,8 @@ public class ClusterHudManager
                 baseGear = "D";
             }
             
-            // Call calculation. Note: DrivingShift handles the logic:
-            // if baseGear is P/R/N, it returns P/R/N (unless snow mode override).
-            // if baseGear is D, it calculates D1-D8.
-            return cn.navitool.DrivingShift.getInstance().calculateGear(mCachedSpeed, mCachedRpm, baseGear);
+            // Call calculation [FIX] Use Peek mode to avoid polluting smoothing history
+            return cn.navitool.DrivingShift.getInstance().calculateGearPeek(mCachedSpeed, mCachedRpm, baseGear);
         } else {
             return mapRawGearToChar(gearValue);
         }
@@ -1629,6 +1635,12 @@ public class ClusterHudManager
             DebugLogger.w(TAG, "ensureUiVisible: Ignored. Both Cluster and HUD are disabled.");
             return;
         }
+
+        // [FIX] 确保UI重建时，缓存被重新填充 (解决热启动显示0的问题)
+        // 这一步至关重要：因为我们在standbyMode中清空了缓存，必须重新拉取一次静态数据
+        // 否则直到下一次传感器变动前，界面都会显示0
+        loadInitialSensorData();
+
         // Use post to ensure we are on main thread (redundant but safe)
         if (Thread.currentThread() == Looper.getMainLooper().getThread()) {
             DebugLogger.d(TAG, "ensureUiVisible: Already on Main Thread, showing now.");
@@ -1637,6 +1649,45 @@ public class ClusterHudManager
             DebugLogger.d(TAG, "ensureUiVisible: Posting to Main Thread handler.");
             mMainHandler.post(this::showPresentation);
         }
+    }
+
+    /**
+     * [New] Enter Standby Mode
+     * Called by KeepAliveAccessibilityService when ignition is OFF/LOCK/ACC.
+     * Destroy UI resources and reset caches.
+     */
+    public void enterStandbyMode() {
+        DebugLogger.i(TAG, "Entering Standby Mode (Destroying Presentation)...");
+
+        // 1. 销毁 Presentation 窗口 (释放 Surface/Window 资源)
+        if (mPresentation != null) {
+            // Dismissing ensures strict cleanup of the display context
+            mPresentation.dismiss();
+            mPresentation = null; // Key step: Force ensureUiVisible to perform full recreation next time
+        }
+
+        // 2. 彻底清理缓存数据 (防止闪现旧数据)
+        // 由于 HUD 数据是实时读取的，在下次启动(ensureUiVisible)时会通过 loadInitialSensorData
+        // 重新拉取最新值，因此这里重置为默认值是安全的。
+        synchronized (this) {
+            mCachedSpeed = 0;
+            mCachedRpm = 0;
+            mCachedGear = 0; // Reset to P
+            mCachedFuelLiters = 0;
+            mCachedRangeKm = 0;
+            // Clear lists? Maybe keeps layout components but data resets?
+            // Actually layout components (text/pos) are static config, only their content
+            // updates.
+            // So we don't need to clear mCachedHudComponents list itself, just the *values*
+            // inside?
+            // loadInitialSensorData will update the *values* via updateComponentText calls.
+            // So this is fine.
+        }
+
+        // 3. 重置内部状态
+        mSimulatedGearEnabled = ConfigManager.getInstance().getBoolean("simulated_gear_enabled", true);
+        
+        DebugLogger.i(TAG, "Standby Mode Active: UI Dismissed, Caches Reset.");
     }
 
     /**
@@ -1915,6 +1966,16 @@ public class ClusterHudManager
                         if (mCachedCoverArt != null) {
                             newData.image = mCachedCoverArt;
                         }
+                    } else if ("fuel".equals(newData.type)) {
+                        if (mCachedFuelText != null) newData.text = mCachedFuelText;
+                    } else if ("range".equals(newData.type)) {
+                        if (mCachedRangeText != null) newData.text = mCachedRangeText;
+                    } else if ("temp_out".equals(newData.type)) {
+                        if (mCachedTempOutText != null) newData.text = mCachedTempOutText;
+                    } else if ("temp_in".equals(newData.type)) {
+                        if (mCachedTempInText != null) newData.text = mCachedTempInText;
+                    } else if ("fuel_range".equals(newData.type)) {
+                        newData.text = String.format("⛽ %.0fL|%.0fkm", mCachedFuelLiters, mCachedRangeKm);
                     } else {
                         // Standard Merge
                         for (HudComponentData oldData : mCachedHudComponents) {
@@ -1963,6 +2024,16 @@ public class ClusterHudManager
                         if (mCachedCoverArt != null) {
                             newData.image = mCachedCoverArt;
                         }
+                    } else if ("fuel".equals(newData.type)) {
+                        if (mCachedFuelText != null) newData.text = mCachedFuelText;
+                    } else if ("range".equals(newData.type)) {
+                        if (mCachedRangeText != null) newData.text = mCachedRangeText;
+                    } else if ("temp_out".equals(newData.type)) {
+                        if (mCachedTempOutText != null) newData.text = mCachedTempOutText;
+                    } else if ("temp_in".equals(newData.type)) {
+                        if (mCachedTempInText != null) newData.text = mCachedTempInText;
+                    } else if ("fuel_range".equals(newData.type)) {
+                        newData.text = String.format("⛽ %.0fL|%.0fkm", mCachedFuelLiters, mCachedRangeKm);
                     }
                 }
             }
@@ -2155,6 +2226,10 @@ public class ClusterHudManager
         DebugLogger.d(TAG, "Simulated Gear Enabled: " + enabled);
         if (mSimulatedGearEnabled) {
             calculateAndPushSimulatedGear();
+        } else {
+            // [Fix] Restore real gear immediately when simulation is disabled
+            String realGear = mapRawGearToChar(mCachedGear);
+            updateComponentText("gear", realGear);
         }
     }
 

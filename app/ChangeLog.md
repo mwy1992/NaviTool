@@ -1,8 +1,66 @@
 # Change Log
 
-## 2026-01-18
+## 2026-01-19
+
+### 标准仪表主题重构与优化 (Standard Cluster Theme Refactoring & Optimization)
+
+- **全新标准主题实现 (New Standard Theme Implementation)**:
+  - **架构重构**: 废弃了旧版 Style 1 (Default) 的硬编码布局，全面迁移至 `StandardThemeController` 进行统一管理。移除了冗余的 `THEME_STANDARD` 定义，将标准主题归位为 Default (ID=1)。
+  - **布局扁平化**: 重写 `layout_cluster_standard.xml`，移除了多层嵌套的 `FrameLayout`，采用像素级 (`px`) 的绝对定位 (`marginStart`/`marginTop`)，实现了对每一层元素（背景、指针、文字、前景）的精确控制。
+  - **资源替换与分层**:
+    - 替换了原有的 Mask 和 Dial 方案，改用全新的分层渲染逻辑：底层背景 (`standard_bg`) -> 指针层 (`standard_pointer`) -> 顶层文字 -> 顶层前景 (`standard_foreground`)。
+    - 解决了前景图层不合理遮挡文字的问题，将速度与档位文字提升至最顶层 (Z-order Top) 绘制。
+    - 修复了背景与前景图层在 `fitXY` 模式下的拉伸变形问题，改用 `wrap_content` 配合 `layout_gravity` (Top/Bottom) 实现原比例完美显示。
+
+- **指针与动画逻辑优化 (Pointer & Animation Logic)**:
+  - **初始角度偏移**: 在 `StandardThemeController` 中引入了 `SPEED_START_ANGLE` (-130°) 和 `RPM_START_ANGLE` (-120°)，实现了指针逆时针偏转起始点的功能，完美适配新表盘设计。
+  - **转速表适配**: 调整了转速表的最大偏转角度 (`MAX_RPM_ANGLE`) 为 240°，并同步了偏转逻辑。
+  - **测试逻辑增强**: 更新了 `MainActivity` 中的速度测试逻辑，将测试范围从 0-230 km/h 扩展至 0-260 km/h，覆盖表盘全量程。
+
+- **UI 细节打磨 (UI Polish)**:
+  - **文字居中**: 对速度 (`standardSpeedText`) 和档位 (`standardGearText`) 进行了强制居中处理。固定宽度 (300px) + `gravity="center"` + 精确计算的 Pivot 偏移，确保无论数值位数如何变化，始终相对于表盘圆心绝对居中。
+  - **预览图实时化**: 优化了仪表设置页的 Style 1 预览按钮。直接复用真实主题的背景与前景资源，去除了半透明效果，并添加了带阴影的“标准仪表”文字，所见即所得。
+  - **致谢信息**: 在仪表设置页底部新增了致谢说明：“感谢抖音@某男仔（@mnz66666666）提供主题设计支持”。
+
+### 热启动问题修复 (Warm Restart Fixes)
+
+- **完整生命周期管理重构**:
+  - `app/src/main/java/cn/navitool/KeepAliveAccessibilityService.java`:
+    - **监听器重构**: 将 `heavyListener` 提升为成员变量，实现了 `unregisterHeavySensors` 方法，使其支持显式反注册，杜绝了多次热启动导致的监听器堆叠问题。
+    - **状态复位**: 新增了对 IGNITION OFF/ACC/LOCK 状态的精准监听。一旦检测到熄火信号，立即触发 `resetIgnitionState`，重置启动标志位并主动释放重型传感器资源。
+  - `app/src/main/java/cn/navitool/ClusterHudManager.java`:
+    - **待机模式**: 新增 `enterStandbyMode` 接口。熄火时自动销毁 Presentation 窗口 (Release Window/Surface)，并将所有缓存数据（速度、转速、油量等）归零，将缓存档位重置为 `0` (Park)，彻底消除了热启动瞬间显示上次熄火前残留数据（或错误 "M" 档）的隐患。
+    - **数据秒开**: 在 `ensureUiVisible` (UI重建) 流程中强制植入 `loadInitialSensorData` 调用。确保在热启动 UI 亮起的瞬间，立即从底层拉取最新的油量、温度与档位数据，实现了“启动即最新”的无缝体验。
+    - **效果**: 彻底解决了热启动后 HUD 主题不显示、音乐信息不更新以及启动流程被错误阻塞的问题。
+    - **[安全性优化] 线程调度**: 将熄火复位逻辑 (`resetIgnitionState`) 封装至 `MainHandler` 执行，彻底杜绝了传感器 Binder 线程因等待 UI 销毁而发生的阻塞或死锁风险，确保了底层通信的极致流畅。
+
+### 奥迪仪表主题视觉微调 (Audi Cluster Visual Refinements)
+
+- **方向箭头优化**:
+  - `app/src/main/res/drawable/ic_direction_arrow.xml`:
+    - 线条加粗 (`strokeWidth` 4 -> 5) 以提升可视性。
+    - 缩放归一化 (`scale` 1.3 -> 1.1) 以适配新版布局尺寸。
+- **红绿灯区域布局调整**:
+  - `app/src/main/res/layout/layout_cluster_audi_rs.xml`:
+    - **尺寸缩减**: 将红绿灯方向箭头尺寸从 32dp 缩小至 24dp，使视觉更加精致。
+    - **倒计时优化**: 增大倒计时字号 (28sp -> 30sp) 并增加底部间距 (17dp -> 25dp)，优化与箭头的垂直对齐关系。
+    - **布局约束**: 将导航信息（距离/时间）的最大宽度约束从 125dp 收紧至 70dp，防止超长文本遮挡其他元素。
+    - **代码清理**: 移除了 XML 中的硬编码占位文本 ("66", "1250.5km" 等)，规范了预览逻辑。
 
 ### HUD 档位显示修复与优化 (HUD Gear Display Fixes & Optimization)
+
+- **模拟档位显示逻辑修复 (Simulated Gear Toggle Logic Fix)**:
+  - `app/src/main/java/cn/navitool/ClusterHudManager.java`:
+    - **逻辑补充**: 修复了关闭“模拟计算档位”功能时，界面不更新的问题。
+    - **实现**: 在 `setSimulatedGearEnabled` 中增加了 `else` 分支，当功能关闭时，立即使用缓存的真实档位 (`mCachedGear`) 强制刷新 UI，不再等待下一次传感器事件。
+    - **效果**: 解决了功能关闭后，仪表/HUD 仍长时间卡在旧模拟档位（如 "D3"）上的问题，现在能秒切回真实的 "D" 档显示。
+
+- **模拟档位跳变修复 (Simulated Gear Fluctuation Fix)**:
+  - `app/src/main/java/cn/navitool/DrivingShift.java`:
+    - 引入了 `calculateGearPeek` 方法，专门用于无副作用的档位计算。
+  - `app/src/main/java/cn/navitool/ClusterHudManager.java`:
+    - 修改了 `getGearString` 逻辑，在 HUD 预览刷新时优先复用上次稳定的计算结果 (`mLastSimulatedGear`)，或使用 Peek 模式计算。
+    - **效果**: 彻底解决了在 HUD 编辑器拖拽组件时，因高频触发刷新导致后台平滑算法历史记录被污染，进而引发档位显示（如 D1/D2）异常跳变的问题。确保了预览操作完全不影响实际 HUD 的显示稳定性。
 
 - **实时档位更新修复 (Real-time Gear Updates)**:
   - `app/src/main/java/cn/navitool/ClusterHudManager.java`:
@@ -11,8 +69,8 @@
 
 - **编辑器状态回填逻辑 (Editor State Backfill Logic)**:
   - `app/src/main/java/cn/navitool/ClusterHudManager.java`:
-    - 在 `syncHudLayout` 中新增了档位组件的“回填机制”。
-    - **效果**: 修复了打开 HUD 编辑页面时，默认的 "D" 占位符覆盖当前真实档位（如 "D8"）导致 HUD 显示回退的问题。现在打开编辑器会自动同步并显示当前的实时档位。
+    - 在 `syncHudLayout` 中新增了 **档位 (`gear`)**、**燃油 (`fuel`)**、**续航 (`range`)**、**温度 (`temp_out`/`temp_in`)** 的“回填机制”。
+    - **效果**: 修复了打开 HUD 编辑页面时，默认的占位符（如 "D", "Text"）覆盖当前真实数据的问题。现在编辑器启动时会自动同步并显示所有组件的当前实时数值，实现“所见即所得”。
 
 - **音乐组件显示一致性修复 (Music Component Consistency Fix)**:
   - `app/src/main/java/cn/navitool/ClusterHudManager.java`:
@@ -20,6 +78,16 @@
     - 在媒体监听器 (`initMediaListener`) 中实现了缓存更新逻辑。
     - 在 `syncHudLayout` 中新增了音乐组件的回填逻辑。
     - **效果**: 修复了添加或拖动音乐组件时内容丢失的问题，现在音乐信息能持久化显示。
+
+- **歌曲信息行间距优化 (Song Info Line Spacing Optimization)**:
+  - `app/src/main/java/cn/navitool/Presentation.java`: 实际 HUD 显示减少行间距 (调整 topMargin 为 -4px)。
+  - `app/src/main/java/cn/navitool/MainActivity.java`: 预览界面同步减少行间距 (调整 topMargin 为 -8px)，保持视觉比例一致 (2x)。
+  - **效果**: 优化了双行歌曲信息（歌名/歌手）的视觉紧凑度，消除了过大的垂直空隙。
+
+- **悬浮红绿灯视觉调整 (Floating Traffic Light Visual Adjustments)**:
+  - `app/src/main/res/drawable/ic_direction_arrow.xml`: 增加方向箭头线条粗细 (strokeWidth 3 -> 4) 以提升辨识度。
+  - `app/src/main/res/layout/layout_floating_traffic_light.xml`: 增大仪表样式下的倒计时文字大小 (24sp -> 30sp)。
+  - `app/src/main/java/cn/navitool/Presentation.java`: 增大 HUD 胶囊样式的整体显示比例 (Scale 1.0 -> 1.5)，优化桌面悬浮显示的易读性。
 
 - **转向灯“幽灵显示”修复 (Ghost Turn Signal Fix)**:
   - `app/src/main/java/cn/navitool/ClusterHudManager.java`:

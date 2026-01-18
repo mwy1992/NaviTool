@@ -181,7 +181,7 @@
 
     <string name="header_cluster_enable">仪表主题</string>
 
-    <string name="action_test_speed">测试 0-270 km/h</string>
+    <string name="action_test_speed">测试 0-260 km/h</string>
     <string name="action_test_rpm">测试 0-8000 RPM</string>
     <string name="action_test_gear">换档 PRND</string>
     <string name="action_import_themes">导入主题 (SD卡/NaviTool/Themes)</string>

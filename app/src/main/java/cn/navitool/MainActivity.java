@@ -323,14 +323,28 @@ public class MainActivity extends AppCompatActivity {
                                 // Add Artist View
                                 android.widget.TextView tvArtist = new android.widget.TextView(this);
                                 tvArtist.setText(artist);
-                                tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 48);
+                                tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 44);
                                 tvArtist.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
                                 tvArtist.setSingleLine(true);
                                 tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
                                 tvArtist.setMarqueeRepeatLimit(-1);
                                 tvArtist.setSelected(true);
                                 tvArtist.setIncludeFontPadding(false);
-                                ll.addView(tvArtist);
+                                tvArtist.setIncludeFontPadding(false);
+                                
+                                // [FIX] Sync negative margin for preview
+                                android.widget.LinearLayout.LayoutParams artistParams = new android.widget.LinearLayout.LayoutParams(
+                                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                                );
+                                // Note: Preview is 2x scale (44px/44px usually, but here font is 48px?)
+                                // Wait, font in Presentation was 22px, here 48px. 
+                                // The preview is roughly 2x size logically.
+                                // In Presentation margin was -6px (for 22px font).
+                                // Here let's use -12px to keep proportion.
+                                artistParams.topMargin = -8; 
+                                
+                                ll.addView(tvArtist, artistParams);
                             }
                         } else {
                             if (ll.getChildCount() > 1) {
@@ -908,10 +922,12 @@ public class MainActivity extends AppCompatActivity {
     private void updateAudiRsThemeCheckmarks(int selectedTheme, View checkDefault, View checkAudiRs,
             View themeDefault, View themeAudiRs) {
         boolean isDefault = (selectedTheme == Presentation.THEME_DEFAULT);
+        boolean isAudi = (selectedTheme == Presentation.THEME_AUDI_RS);
+        
         if (checkDefault != null)
             checkDefault.setVisibility(isDefault ? View.VISIBLE : View.GONE);
         if (checkAudiRs != null)
-            checkAudiRs.setVisibility(!isDefault ? View.VISIBLE : View.GONE);
+            checkAudiRs.setVisibility(isAudi ? View.VISIBLE : View.GONE);
 
         // Update backgrounds
         if (themeDefault != null)
@@ -919,7 +935,31 @@ public class MainActivity extends AppCompatActivity {
                     .setBackgroundResource(isDefault ? R.drawable.bg_cluster_selected : R.drawable.bg_cluster_normal);
         if (themeAudiRs != null)
             themeAudiRs
-                    .setBackgroundResource(!isDefault ? R.drawable.bg_cluster_selected : R.drawable.bg_cluster_normal);
+                    .setBackgroundResource(isAudi ? R.drawable.bg_cluster_selected : R.drawable.bg_cluster_normal);
+                    
+        // Update Dynamic Items (Imported)
+        LinearLayout container = findViewById(R.id.layoutThemeContainer);
+        if (container != null) {
+            for (int i = 2; i < container.getChildCount(); i++) {
+                View child = container.getChildAt(i);
+                Object tag = child.getTag();
+                boolean isSelected = false;
+                
+                // Only handle external/imported themes if necessary
+                if (tag instanceof String && !"audi_rs".equals(tag)) {
+                    // isSelected = check against imported name
+                }
+                
+                child.setBackgroundResource(isSelected ? R.drawable.bg_cluster_selected : R.drawable.bg_cluster_normal);
+                 if (child instanceof android.view.ViewGroup) {
+                     android.view.ViewGroup vg = (android.view.ViewGroup) child;
+                     // ImageView is at index 1
+                     if (vg.getChildCount() > 1 && vg.getChildAt(1) instanceof ImageView) {
+                         vg.getChildAt(1).setVisibility(isSelected ? View.VISIBLE : View.GONE);
+                     }
+                 }
+            }
+        }
     }
 
     private void setupHud() {
@@ -2409,7 +2449,7 @@ public class MainActivity extends AppCompatActivity {
                 DebugLogger.toast(this, "Simulating Speed...");
                 new Thread(() -> {
                     DebugLogger.d("MN_Tag", "Starting Speed Simulation");
-                    for (int i = 0; i <= 230; i += 1) {
+                    for (int i = 0; i <= 270; i += 1) {
                         try {
                             Thread.sleep(30); // 慢速动画
                         } catch (InterruptedException e) {
@@ -2417,7 +2457,7 @@ public class MainActivity extends AppCompatActivity {
                         final int speed = i;
                         runOnUiThread(() -> cn.navitool.ClusterHudManager.getInstance(this).updateSpeed(speed));
                     }
-                    for (int i = 230; i >= 0; i -= 1) {
+                    for (int i = 260; i >= 0; i -= 1) {
                         try {
                             Thread.sleep(30); // 慢速动画
                         } catch (InterruptedException e) {

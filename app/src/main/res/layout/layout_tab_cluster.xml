@@ -103,12 +103,29 @@
                         android:focusable="true"
                         android:layout_marginEnd="16dp">
                         
+                        <!-- Preview Layers (Scaled) -->
+                        <ImageView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:src="@drawable/standard_bg"
+                            android:scaleType="fitStart" />
+                        
+                        <ImageView
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent"
+                            android:src="@drawable/standard_foreground"
+                            android:scaleType="fitEnd" />
+
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/theme_style_1_default"
+                            android:text="标准仪表"
                             android:layout_gravity="center"
-                            android:textColor="#CCCCCC"/>
+                            android:textColor="#FFFFFF"
+                            android:shadowColor="#000000"
+                            android:shadowRadius="5"
+                            android:shadowDx="2"
+                            android:shadowDy="2"/>
 
                         <ImageView
                             android:id="@+id/ivClusterCheck1"
@@ -162,6 +179,16 @@
 
                 </LinearLayout>
             </HorizontalScrollView>
+
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:gravity="center"
+                android:text="感谢抖音@某男仔（@mnz66666666）提供主题设计支持"
+                android:textColor="#888888"
+                android:textSize="12sp" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>

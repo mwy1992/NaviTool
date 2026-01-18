@@ -312,10 +312,19 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     // ...
 
     public void resetIgnitionState() {
+        DebugLogger.i(TAG, "Resetting Ignition State (Ignition OFF/ACC detected)...");
+        
+        // 1. Reset Flags
         mIgnitionReady = false;
         mEngineStarted = false; // [FIX] Reset engine start flag
-        mHeavySensorsRegistered = false; // Allow re-registration
-        DebugLogger.i(TAG, "Ignition State Reset for Simulation");
+        
+        // 2. Unregister Heavy Sensors to prevent double-registration on restart
+        unregisterHeavySensors();
+        
+        // 3. Notify ClusterHudManager to enter Standby Mode (Clean UI/Cache)
+        cn.navitool.ClusterHudManager.getInstance(this).enterStandbyMode();
+        
+        DebugLogger.i(TAG, "Ignition State Reset Complete. Waiting for next DRIVING event.");
     }
 
     public void handleIgnitionDriving() { // Made Public for Receiver
@@ -530,6 +539,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
     private boolean mIgnitionReady = false;
     private boolean mHeavySensorsRegistered = false;
+    private ISensor.ISensorListener mHeavySensorListener; // [Refactor] Promoted to field for unregistering
 
     private void registerSensorListeners() {
         // [New Logic] Only register Ignition listener initially
@@ -544,6 +554,14 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                 DebugLogger.d(TAG, "Ignition State Changed (float): " + val);
                                 if (val == ISensorEvent.IGNITION_STATE_DRIVING) {
                                     handleIgnitionDriving();
+                                } else if (val == ISensorEvent.IGNITION_STATE_OFF || 
+                                           val == ISensorEvent.IGNITION_STATE_ACC || 
+                                           val == ISensorEvent.IGNITION_STATE_LOCK) {
+                                    // [FIX] Warm Restart: Reset state when ignition goes OFF/ACC/LOCK
+                                    if (mIgnitionReady) {
+                                        // [Thread Safety] Dispatch to Main Thread
+                                        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> resetIgnitionState());
+                                    }
                                 }
                             }
                         } catch (Exception e) {
@@ -559,6 +577,14 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                 mLastIgnition = value;
                                 if (value == ISensorEvent.IGNITION_STATE_DRIVING) {
                                     handleIgnitionDriving();
+                                } else if (value == ISensorEvent.IGNITION_STATE_OFF || 
+                                           value == ISensorEvent.IGNITION_STATE_ACC || 
+                                           value == ISensorEvent.IGNITION_STATE_LOCK) {
+                                    // [FIX] Warm Restart: Reset state when ignition goes OFF/ACC/LOCK
+                                    if (mIgnitionReady) {
+                                        // [Thread Safety] Dispatch to Main Thread
+                                        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> resetIgnitionState());
+                                    }
                                 }
                             }
                         } catch (Exception e) {
@@ -631,7 +657,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
         DebugLogger.i(TAG, "Registering HEAVY Sensors (Gear, Light, Speed)...");
         try {
-            ISensor.ISensorListener heavyListener = new ISensor.ISensorListener() {
+            // [Refactor] Use member variable instead of local
+            mHeavySensorListener = new ISensor.ISensorListener() {
                 @Override
                 public void onSensorValueChanged(int sensorType, float value) {
                     try {
@@ -644,7 +671,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                             // DIM速度与实际车速格式相同，都需要乘以3.6转换为km/h
                             int speedKmh = (int) (value * 3.6f);
                             // [DEBUG] Log Speed Update Frequency
-                            DebugLogger.d(TAG, "Sensor Speed Update: " + speedKmh + " km/h");
+                            // DebugLogger.d(TAG, "Sensor Speed Update: " + speedKmh + " km/h");
                             ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
                                     .updateSpeed(speedKmh);
                         } else if (sensorType == SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER) {
@@ -699,11 +726,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             };
 
             // Register for Heavy Sensors
-            iSensor.registerListener(heavyListener, ISensor.SENSOR_TYPE_DAY_NIGHT);
-            iSensor.registerListener(heavyListener, SENSOR_TYPE_GEAR);
-            iSensor.registerListener(heavyListener, SENSOR_TYPE_LIGHT);
-            iSensor.registerListener(heavyListener, SENSOR_TYPE_DIM_CAR_SPEED);
-            iSensor.registerListener(heavyListener, SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER);
+            iSensor.registerListener(mHeavySensorListener, ISensor.SENSOR_TYPE_DAY_NIGHT);
+            iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_GEAR);
+            iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_LIGHT);
+            iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_DIM_CAR_SPEED);
+            iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER);
 
             DebugLogger.i(TAG, "Heavy Sensors Registered Successfully (DayNight, Gear, Light, Speed, PassSeat).");
 
@@ -714,6 +741,21 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to register heavy sensors", e);
         }
+    }
+
+    private void unregisterHeavySensors() {
+        if (iSensor != null && mHeavySensorListener != null && mHeavySensorsRegistered) {
+            DebugLogger.i(TAG, "Unregistering Heavy Sensors...");
+            try {
+                // Must unregister all types we registered
+                // [FIX] ISensor.unregisterListener takes only the listener instance and removes it for all types.
+                iSensor.unregisterListener(mHeavySensorListener);
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Failed to unregister heavy sensors", e);
+            }
+        }
+        mHeavySensorsRegistered = false;
+        mHeavySensorListener = null;
     }
 
     private void pollInitialSensorData() {

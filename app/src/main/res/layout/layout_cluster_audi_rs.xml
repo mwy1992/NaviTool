@@ -146,12 +146,12 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
-            android:layout_marginBottom="17dp">
+            android:layout_marginBottom="25dp">
 
             <ImageView
                 android:id="@+id/audiRsDirectionArrow"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
                 android:src="@drawable/ic_direction_arrow"
                 android:tint="#FFFFFF"/>
 
@@ -160,9 +160,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:text="66"
                 android:textColor="#FFFFFF"
-                android:textSize="28sp"
+                android:textSize="30sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
@@ -208,10 +207,9 @@
                 android:id="@+id/audiRsNaviDistance"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:maxWidth="125dp"
+                android:maxWidth="70dp"
                 android:gravity="bottom|end"
                 android:paddingEnd="2dp"
-                android:text="1250.5km"
                 android:textColor="#FFFFFF"
                 android:textSize="18sp"
                 android:textStyle="bold"
@@ -225,10 +223,9 @@
                 android:id="@+id/audiRsNaviEta"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:maxWidth="125dp"
+                android:maxWidth="70dp"
                 android:gravity="bottom|start"
                 android:paddingStart="2dp"
-                android:text="10:30"
                 android:textColor="#FFFFFF"
                 android:textSize="18sp"
                 android:textStyle="bold"

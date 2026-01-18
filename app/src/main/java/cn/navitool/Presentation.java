@@ -21,8 +21,13 @@ public class Presentation extends android.app.Dialog {
     private View mLayoutHud;
     private AudiRsThemeController mThemeController;
     private View mAudiRsLayout;
-    private android.view.View mDefaultDashboardRoot; // Keep track of default layout
     private int mCurrentTheme = -1; // THEME_DEFAULT
+    public static final int THEME_DEFAULT = 1;
+    public static final int THEME_AUDI_RS = 21; // Assuming 21 based on usage, actual value irrelevant if used consistently
+
+    // Standard Theme (Now Default)
+    private StandardThemeController mStandardController;
+    private View mStandardLayout;
 
     // Floating Traffic Light
     private WindowManager mFloatingWindowManager;
@@ -265,6 +270,12 @@ public class Presentation extends android.app.Dialog {
 
             // Load Style
             mIsHudStyle = ConfigManager.getInstance().getBoolean("floating_style_hud", false);
+            
+            // [FIX] Scale up HUD style for better readability on desktop (24px -> ~31px)
+            if (mHudTrafficLightView != null) {
+                mHudTrafficLightView.setPreviewScale(1.5f);
+            }
+            
             updateFloatingTrafficLightStyle();
 
             // Drag Listener
@@ -635,26 +646,19 @@ public class Presentation extends android.app.Dialog {
         try {
             if (theme == THEME_AUDI_RS) {
                 // 初始化奥迪RS主题
-                DebugLogger.d("ClusterHudPresentation",
-                        "[AUDI] mAudiRsLayout is " + (mAudiRsLayout == null ? "NULL" : "NOT NULL"));
-                DebugLogger.d("ClusterHudPresentation", "[AUDI] mLayoutCluster is "
-                        + (mLayoutCluster == null ? "NULL" : mLayoutCluster.getClass().getSimpleName()));
-
+                // ... (Audi RS Logic remains same)
                 if (mAudiRsLayout == null && mLayoutCluster != null) {
                     try {
                         android.view.LayoutInflater inflater = android.view.LayoutInflater.from(getContext());
                         mAudiRsLayout = inflater.inflate(R.layout.layout_cluster_audi_rs, null);
-                        DebugLogger.d("ClusterHudPresentation", "[AUDI] Inflated mAudiRsLayout: " + mAudiRsLayout);
                     } catch (Exception e) {
                         DebugLogger.e("ClusterHudPresentation", "[AUDI] FATAL: Failed to inflate layout", e);
-                        // Fallback to default if inflation fails
-                        enableClusterDashboard();
+                        enableClusterDashboard(); // Fallback to standard
                         return;
                     }
                 }
 
-                // Ensure added to parent (fix for switching back from default which clears
-                // views)
+                // Ensure added to parent
                 if (mAudiRsLayout != null && mLayoutCluster instanceof android.view.ViewGroup) {
                     android.view.ViewGroup container = (android.view.ViewGroup) mLayoutCluster;
                     if (mAudiRsLayout.getParent() == null) {
@@ -662,35 +666,24 @@ public class Presentation extends android.app.Dialog {
                                 new android.view.ViewGroup.LayoutParams(
                                         android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                                         android.view.ViewGroup.LayoutParams.MATCH_PARENT));
-                        DebugLogger.d("ClusterHudPresentation", "[AUDI] Added mAudiRsLayout to container");
                     }
                 }
 
                 if (mThemeController == null) {
                     mThemeController = new AudiRsThemeController();
-                    DebugLogger.d("ClusterHudPresentation", "[AUDI] Created new AudiRsThemeController");
                 }
 
                 if (mAudiRsLayout != null) {
-                    // 使用 View.post() 确保布局完全渲染后再绑定视图
                     mAudiRsLayout.post(() -> {
                         try {
                             if (mThemeController != null && mAudiRsLayout != null) {
                                 ((AudiRsThemeController) mThemeController).bindViews(mAudiRsLayout);
-
-                                // [DEBUG] Inject Debug RPM View - Commented out
-                                /*
-                                 * TextView debugText = findViewById(R.id.debugRpmText);
-                                 * if (debugText != null) {
-                                 * ((AudiRsThemeController) mThemeController).setDebugRpmView(debugText);
-                                 * }
-                                 */
-
                                 mAudiRsLayout.setVisibility(View.VISIBLE);
-                                DebugLogger.d("ClusterHudPresentation", "[AUDI-POST] Set mAudiRsLayout VISIBLE");
-
-                                // 隐藏默认元素
-                                hideDefaultClusterElements();
+                                
+                                // Hide Standard (Default) Elements
+                                if (mStandardLayout != null) {
+                                    mStandardLayout.setVisibility(View.GONE);
+                                }
                             }
                         } catch (Exception e) {
                             DebugLogger.e("ClusterHudPresentation", "[AUDI-POST] Error binding views", e);
@@ -698,50 +691,38 @@ public class Presentation extends android.app.Dialog {
                     });
                 }
             } else {
-                // 切回默认主题
+                // THEME_DEFAULT (Now Standard Theme)
+                // Hide Audi
                 if (mAudiRsLayout != null) {
                     mAudiRsLayout.setVisibility(View.GONE);
                 }
                 if (mThemeController != null) {
                     mThemeController.release();
                 }
-                // 重新加载默认仪表布局
-                // 重新加载默认仪表布局
+                
+                // Initialize/Show Standard Theme
                 enableClusterDashboard();
-                DebugLogger.d("ClusterHudPresentation", "Switched to default theme, enableClusterDashboard called");
             }
         } catch (Exception e) {
             DebugLogger.e("ClusterHudPresentation", "Error setting cluster theme: " + theme, e);
         }
 
         long memAfter = android.os.Debug.getNativeHeapAllocatedSize();
-        long delta = (memAfter - memBefore) / 1024
-                / 1024;
+        long delta = (memAfter - memBefore) / 1024 / 1024;
         cn.navitool.managers.MemoryMonitor.logMemory("After Theme Switch: " + theme + " (Delta: " + delta + "MB)");
-
-        // Detailed breakdown
         logComponentMemoryBreakdown();
-
     }
 
     private void hideDefaultClusterElements() {
-        if (mDefaultDashboardRoot != null) {
-            mDefaultDashboardRoot.setVisibility(View.GONE);
+        if (mStandardLayout != null) {
+            mStandardLayout.setVisibility(View.GONE);
         }
-        if (mClusterSpeedPointer != null)
-            mClusterSpeedPointer.setVisibility(View.GONE);
-        if (mClusterRpmPointer != null)
-            mClusterRpmPointer.setVisibility(View.GONE);
     }
 
     private void showDefaultClusterElements() {
-        if (mDefaultDashboardRoot != null) {
-            mDefaultDashboardRoot.setVisibility(View.VISIBLE);
+        if (mStandardLayout != null) {
+            mStandardLayout.setVisibility(View.VISIBLE);
         }
-        if (mClusterSpeedPointer != null)
-            mClusterSpeedPointer.setVisibility(View.VISIBLE);
-        if (mClusterRpmPointer != null)
-            mClusterRpmPointer.setVisibility(View.VISIBLE);
     }
 
     public int getCurrentTheme() {
@@ -925,8 +906,7 @@ public class Presentation extends android.app.Dialog {
 
     // Theme Support
     // Theme Support
-    public static final int THEME_DEFAULT = 0;
-    public static final int THEME_AUDI_RS = 1;
+    // [FIX] Duplicate constants removed. See top of file.
 
     // [FIX] Data Cache to prevent flickering during drag/sync
     private String mCachedNaviArrivalTime = null;
@@ -1012,7 +992,15 @@ public class Presentation extends android.app.Dialog {
                         tvArtist.setIncludeFontPadding(false);
                         tvArtist.setPadding(0, 0, 0, 0);
                         tvArtist.setLineSpacing(0, 1f);
-                        ll.addView(tvArtist);
+                        
+                        // [FIX] Reduce line spacing by negative margin
+                        android.widget.LinearLayout.LayoutParams artistParams = new android.widget.LinearLayout.LayoutParams(
+                            android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                            android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                        );
+                        artistParams.topMargin = -4; // Pull up by 6 pixels
+                        
+                        ll.addView(tvArtist, artistParams);
                     }
 
                     params.width = 300;
@@ -1673,28 +1661,43 @@ public class Presentation extends android.app.Dialog {
         }
     }
 
-    // --- Cluster Dashboard Mode ---
-    // --- Cluster Dashboard Mode ---
-    private View mClusterSpeedPointer;
-    private View mClusterRpmPointer;
-
-    // mDefaultDashboardRoot removed (duplicate)
+    // --- Cluster Dashboard Mode (Now Standard Theme) ---
 
     public void enableClusterDashboard() {
-        if (mLayoutCluster instanceof android.view.ViewGroup) {
-            android.view.ViewGroup container = (android.view.ViewGroup) mLayoutCluster;
-            container.removeAllViews();
-            mRealClusterComponents.clear(); // Clear tracked components
-
-            // Capture root view for visibility toggling
-            mDefaultDashboardRoot = android.view.LayoutInflater.from(getContext())
-                    .inflate(R.layout.layout_cluster_dashboard, container, false);
-            container.addView(mDefaultDashboardRoot);
-
-            // Find Components inside the root
-            mClusterSpeedPointer = mDefaultDashboardRoot.findViewById(R.id.ivClusterSpeedPointer);
-            mClusterRpmPointer = mDefaultDashboardRoot.findViewById(R.id.ivClusterRpmPointer);
-        }
+        // Initializes the Standard Theme as default
+         if (mStandardLayout == null && mLayoutCluster != null) {
+             try {
+                 android.view.LayoutInflater inflater = android.view.LayoutInflater.from(getContext());
+                 mStandardLayout = inflater.inflate(R.layout.layout_cluster_standard, null);
+             } catch (Exception e) {
+                 DebugLogger.e("ClusterHudPresentation", "FATAL: Failed to inflate Standard layout", e);
+                 return;
+             }
+         }
+         
+         // Add directly to container
+         if (mStandardLayout != null && mLayoutCluster instanceof android.view.ViewGroup) {
+             android.view.ViewGroup container = (android.view.ViewGroup) mLayoutCluster;
+             if (mStandardLayout.getParent() == null) {
+                 container.addView(mStandardLayout,
+                        new android.view.ViewGroup.LayoutParams(
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+             }
+         }
+         
+         if (mStandardController == null) {
+             mStandardController = new StandardThemeController();
+         }
+         
+         if (mStandardLayout != null) {
+             mStandardLayout.post(() -> {
+                 if (mStandardController != null && mStandardLayout != null) {
+                     mStandardController.bindViews(mStandardLayout);
+                     mStandardLayout.setVisibility(View.VISIBLE);
+                 }
+             });
+         }
     }
 
     // updateTrafficLightStatus removed - use updateTrafficLight(Info) which updates
@@ -1705,15 +1708,12 @@ public class Presentation extends android.app.Dialog {
         if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null) {
             mThemeController.updateSpeed(speed);
             return;
-        }
-
-        if (mClusterSpeedPointer != null) {
-            // Speed 0 -> 0 km/h (Bottom/South) = 180 degrees.
-            // Speed 230 -> 230 km/h max = 180 + 270 = 450 (90) degrees.
-            // Formula: 180 + (speed / 230) * 270
-            // Direction: Clockwise (Positive addition).
-            float angle = 180 + (speed / 230f) * 270f;
-            mClusterSpeedPointer.setRotation(angle);
+        } 
+        
+        // Default Logic (now Standard Theme)
+        if (mStandardController != null) {
+            mStandardController.updateSpeed(speed);
+            return;
         }
 
         // Dynamic Gauge Update
@@ -1779,20 +1779,19 @@ public class Presentation extends android.app.Dialog {
         if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null) {
             mThemeController.updateRpm((int) rpm);
             return;
-        }
-
-        if (mClusterRpmPointer != null) {
-            // RPM 0 -> Left (West) = 270 degrees.
-            // RPM 8000 -> Bottom (South) = 180 + 360 = 540 degrees.
-            // Range: 270 degrees Clockwise (Left -> Top -> Right -> Bottom).
-            // Factor: 270 / 8000 = 0.03375
-            mClusterRpmPointer.setRotation(270 + (rpm * 0.03375f));
+        } 
+        
+        if (mStandardController != null) {
+            mStandardController.updateRpm((int) rpm);
+            return;
         }
     }
 
     public void cycleGear() {
         if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null) {
             mThemeController.cycleGear();
+        } else if (mStandardController != null) {
+            mStandardController.cycleGear();
         }
     }
 
@@ -1825,6 +1824,8 @@ public class Presentation extends android.app.Dialog {
             ((AudiRsThemeController) mThemeController).setGear(gearStr);
             // Bypass integer conversion logic for Audi RS
             // return; // [FIX] Removed premature return to allow specific HUD update
+        } else if (mStandardController != null && gearStr != null) {
+            mStandardController.setGear(gearStr);
         }
 
         if (gearStr != null) {
