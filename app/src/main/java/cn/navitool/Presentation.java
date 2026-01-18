@@ -1359,6 +1359,10 @@ public class Presentation extends android.app.Dialog {
                     // Standard Text Size
                     float textSize = 24f;
                     tvGeneric.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, textSize);
+                    
+                    // [FIX] CRITICAL: Set initial text to ensure width > 0 during measurement!
+                    // Without this, width is 0, clamping allows it to go off-screen, and it disappears when text arrives.
+                    tvGeneric.setText(data.text != null ? data.text : "");
 
                     view = tvGeneric; // Direct TextView
                 }
@@ -1417,6 +1421,7 @@ public class Presentation extends android.app.Dialog {
                 // [FIX] Allow overshoot for TextViews to match Preview logic (Visual Margin Compensation)
                 // Split into Top and Bottom tolerance for independent control
                 float toleranceTop = 0f;
+
                 float toleranceBottom = 0f;
                 
                 // 可在此处手动修改上下边距的倍率

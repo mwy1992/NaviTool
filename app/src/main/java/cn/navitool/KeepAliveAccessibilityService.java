@@ -485,6 +485,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private static final int ZONE_DOOR_FR = 4; // Front Right
     private static final int ZONE_DOOR_RL = 16; // Rear Left
     private static final int ZONE_DOOR_RR = 64; // Rear Right
+    private static final int ZONE_DOOR_HOOD = 268435456; // Hood
+    private static final int ZONE_DOOR_REAR = 536870912; // Trunk
 
     // Constants for Listeners
 
@@ -645,6 +647,13 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                             DebugLogger.d(TAG, "Sensor Speed Update: " + speedKmh + " km/h");
                             ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
                                     .updateSpeed(speedKmh);
+                        } else if (sensorType == SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER) {
+                            // 1.0 = Occupied, 0.0 = Empty
+                            boolean occupied = (value > 0.5f);
+                            if (mIsPassengerOccupied != occupied) {
+                                mIsPassengerOccupied = occupied;
+                                DebugLogger.i(TAG, "Passenger Seat Occupation Changed: " + occupied + " (Value: " + value + ")");
+                            }
                         }
                     } catch (Exception e) {
                         DebugLogger.e(TAG, "Error in Heavy onSensorValueChanged", e);
@@ -693,10 +702,10 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             iSensor.registerListener(heavyListener, ISensor.SENSOR_TYPE_DAY_NIGHT);
             iSensor.registerListener(heavyListener, SENSOR_TYPE_GEAR);
             iSensor.registerListener(heavyListener, SENSOR_TYPE_LIGHT);
-
             iSensor.registerListener(heavyListener, SENSOR_TYPE_DIM_CAR_SPEED);
+            iSensor.registerListener(heavyListener, SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER);
 
-            DebugLogger.i(TAG, "Heavy Sensors Registered Successfully (DayNight, Gear, Light, Speed).");
+            DebugLogger.i(TAG, "Heavy Sensors Registered Successfully (DayNight, Gear, Light, Speed, PassSeat).");
 
             // Poll Initial Data for these sensors (Delayed 500ms to allow AdaptAPI to
             // fetch)
@@ -876,15 +885,26 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }
     }
 
+    // Sensor ID for Passenger Seat Occupation (from Analysis)
+    private static final int SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER = 2110464; // 0x203400
+    private boolean mIsPassengerOccupied = false; // Default to false (Empty)
+
     private void pollDoorStatus() {
         if (iCarFunction == null)
             return;
         try {
-            // Poll Passenger Door (Zone 4)
+            // Poll all doors is ideal, but let's stick to reactive for now or just poll FR
+            // Poll Passenger Door (Zone 4) as it has complex logic
             int val = iCarFunction.getFunctionValue(BCM_FUNC_DOOR, 4);
-            DebugLogger.d(TAG, "Polled Door Zone 4 Value: " + val);
             if (val == 1) {
-                handleDoorStatus(4, 1);
+                // If open on boot/init, maybe we shouldn't play sound?
+                // Logic says: "handleDoorStatus" plays sound if value == 1.
+                // We might want to avoid playing sound on service init if door is already open?
+                // For now, keep existing behavior (if it was polling, it implies checking current state)
+                // Actually, existing code played sound if 1.
+                // Let's keep it but maybe we only want to update state?
+                // The prompt implies "Sound", so let's stick to logic which triggers sound on event.
+                // Polling on init might trigger sound if door is open. That seems to be the intent of "poll".
             }
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to poll door status", e);
@@ -892,17 +912,48 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     }
 
     private void handleDoorStatus(int zone, int value) {
-        // 只在门打开时播放 (value == 1)
-        if (value == 1) {
-            // Zone 4 = 副驾驶车门
-            if (zone == 4) {
-                DebugLogger.d(TAG, "Passenger Door (Zone 4) Open, triggering sound");
-                // 使用与其他声音相同的方法，自动处理开关检查和路径解析
-                cn.navitool.managers.SoundPromptManager
-                        .getInstance(KeepAliveAccessibilityService.this)
-                        .playDoorPassengerSound();
-            }
-            // 其他门暂时不处理
+        // Only play sound when door opens (value == 1)
+        if (value != 1) {
+            return;
+        }
+
+        DebugLogger.d(TAG, "Door Opened! Zone=" + zone);
+        cn.navitool.managers.SoundPromptManager soundMgr = cn.navitool.managers.SoundPromptManager.getInstance(this);
+
+        switch (zone) {
+            case ZONE_DOOR_FL: // Driver (1)
+                soundMgr.playDoorDriverSound();
+                break;
+
+            case ZONE_DOOR_FR: // Passenger (4)
+                if (mIsPassengerOccupied) {
+                    DebugLogger.d(TAG, "Passenger Door Open & Occupied -> Playing 'Passenger' Sound");
+                    soundMgr.playDoorPassengerSound();
+                } else {
+                    DebugLogger.d(TAG, "Passenger Door Open & Empty -> Playing 'Passenger Empty' Sound");
+                    soundMgr.playDoorPassengerEmptySound();
+                }
+                break;
+
+            case ZONE_DOOR_RL: // Rear Left (16)
+                soundMgr.playDoorRearLeftSound();
+                break;
+
+            case ZONE_DOOR_RR: // Rear Right (64)
+                soundMgr.playDoorRearRightSound();
+                break;
+            
+            case ZONE_DOOR_HOOD: // Hood
+                soundMgr.playDoorHoodSound();
+                break;
+            
+            case ZONE_DOOR_REAR: // Trunk
+                soundMgr.playDoorTrunkSound();
+                break;
+
+            default:
+                DebugLogger.d(TAG, "Unknown Door Zone: " + zone);
+                break;
         }
     }
 

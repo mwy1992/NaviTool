@@ -1129,37 +1129,49 @@ public class ClusterHudManager
                         String artist = intent.getStringExtra("artist");
                         boolean isPlaying = intent.getBooleanExtra("is_playing", false);
 
-                        String display = title;
-                        if (artist != null && !artist.isEmpty()) {
-                            display = title + "\n" + artist;
-                        }
-                        updateComponentText("song_2line", display);
-                        updateComponentText("song_1line", title == null ? "" : title);
+                        if (isPlaying) {
+                            String display = title;
+                            if (artist != null && !artist.isEmpty()) {
+                                display = title + "\n" + artist;
+                            }
+                            updateComponentText("song_2line", display);
+                            updateComponentText("song_1line", title == null ? "" : title);
 
-                        // Update Playing State
-                        updateMediaPlayingState(isPlaying);
-
-                        // [FIX] Update Cache
-                        mCachedSongTitle = title;
-                        mCachedSongArtist = artist;
-                        mCachedIsPlaying = isPlaying;
-
-                        // Update Cover (Byte Array)
-                        boolean hasArtwork = intent.getBooleanExtra("has_artwork", true); // Default true
-                        if (!hasArtwork) {
-                            updateComponentImage("song_cover", null);
-                            mCachedCoverArt = null; // Clear Cache
-                        } else {
-                            byte[] artwork = intent.getByteArrayExtra("artwork");
-                            if (artwork != null) {
-                                android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(artwork, 0,
-                                        artwork.length);
-                                if (bmp != null) {
-                                    updateComponentImage("song_cover", bmp);
-                                    mCachedCoverArt = bmp; // Update Cache
+                            // [FIX] Update Cache
+                            mCachedSongTitle = title;
+                            mCachedSongArtist = artist;
+                            
+                            // Update Cover (Byte Array)
+                            boolean hasArtwork = intent.getBooleanExtra("has_artwork", true); // Default true
+                            if (!hasArtwork) {
+                                updateComponentImage("song_cover", null);
+                                mCachedCoverArt = null; // Clear Cache
+                            } else {
+                                byte[] artwork = intent.getByteArrayExtra("artwork");
+                                if (artwork != null) {
+                                    android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(artwork, 0,
+                                            artwork.length);
+                                    if (bmp != null) {
+                                        updateComponentImage("song_cover", bmp);
+                                        mCachedCoverArt = bmp; // Update Cache
+                                    }
                                 }
                             }
+                        } else {
+                            // Paused: Clear UI
+                            updateComponentText("song_2line", "");
+                            updateComponentText("song_1line", "");
+                            updateComponentImage("song_cover", null);
+                            
+                            // Clear Cache
+                            mCachedSongTitle = null;
+                            mCachedSongArtist = null;
+                            mCachedCoverArt = null;
                         }
+
+                        // Update Playing State (for other logic if needed)
+                        updateMediaPlayingState(isPlaying);
+                        mCachedIsPlaying = isPlaying;
                     }
                 }
             };

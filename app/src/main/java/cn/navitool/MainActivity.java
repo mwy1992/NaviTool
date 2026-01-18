@@ -2672,15 +2672,25 @@ public class MainActivity extends AppCompatActivity {
             switchMaster.setChecked(isMaster);
 
             // [FIX] Initial Visibility
+            View layoutSoundHeaderOptions = findViewById(R.id.layoutSoundHeaderOptions);
+            int v = isMaster ? View.VISIBLE : View.GONE;
+            
             if (layoutSoundContent != null) {
-                layoutSoundContent.setVisibility(isMaster ? View.VISIBLE : View.GONE);
+                layoutSoundContent.setVisibility(v);
+            }
+            if (layoutSoundHeaderOptions != null) {
+                layoutSoundHeaderOptions.setVisibility(v);
             }
 
-            switchMaster.setOnCheckedChangeListener((v, isChecked) -> {
+            switchMaster.setOnCheckedChangeListener((vSwitch, isChecked) -> {
                 ConfigManager.getInstance().setBoolean("sound_master_enabled", isChecked);
                 // [FIX] Toggle Visibility
+                int newVisibility = isChecked ? View.VISIBLE : View.GONE;
                 if (layoutSoundContent != null) {
-                    layoutSoundContent.setVisibility(isChecked ? View.VISIBLE : View.GONE);
+                    layoutSoundContent.setVisibility(newVisibility);
+                }
+                if (layoutSoundHeaderOptions != null) {
+                    layoutSoundHeaderOptions.setVisibility(newVisibility);
                 }
             });
         }
@@ -2724,28 +2734,38 @@ public class MainActivity extends AppCompatActivity {
             });
         }
 
-        setupSoundItem(R.id.switchSoundStart, R.id.btnSelectSoundStart, R.id.btnTestSoundStart,
-                R.id.tvSoundStartFile, "sound_start");
-        setupSoundItem(R.id.switchSoundGearD, R.id.btnSelectSoundGearD, R.id.btnTestSoundGearD,
-                R.id.tvSoundGearDFile, "sound_gear_d");
-        setupSoundItem(R.id.switchSoundGearN, R.id.btnSelectSoundGearN, R.id.btnTestSoundGearN,
-                R.id.tvSoundGearNFile, "sound_gear_n");
-        setupSoundItem(R.id.switchSoundGearR, R.id.btnSelectSoundGearR, R.id.btnTestSoundGearR,
-                R.id.tvSoundGearRFile, "sound_gear_r");
-        setupSoundItem(R.id.switchSoundGearP, R.id.btnSelectSoundGearP, R.id.btnTestSoundGearP,
-                R.id.tvSoundGearPFile, "sound_gear_p");
-        setupSoundItem(R.id.switchSoundDoorPassenger, R.id.btnSelectSoundDoorPassenger,
-                R.id.btnTestSoundDoorPassenger, R.id.tvSoundDoorPassengerFile, "sound_door_passenger");
+        // Sound Items (Refactored to use Card IDs)
+        setupSoundItem(R.id.cardSoundStart, R.string.switch_sound_start, "sound_start");
+        setupSoundItem(R.id.cardSoundGearD, R.string.switch_sound_gear_d, "sound_gear_d");
+        setupSoundItem(R.id.cardSoundGearN, R.string.switch_sound_gear_n, "sound_gear_n");
+        setupSoundItem(R.id.cardSoundGearR, R.string.switch_sound_gear_r, "sound_gear_r");
+        setupSoundItem(R.id.cardSoundGearP, R.string.switch_sound_gear_p, "sound_gear_p");
+        
+        setupSoundItem(R.id.cardSoundDoorDriver, R.string.switch_sound_door_driver, "sound_door_driver");
+        setupSoundItem(R.id.cardSoundDoorPassenger, R.string.switch_sound_door_passenger, "sound_door_passenger");
+        setupSoundItem(R.id.cardSoundDoorPassengerEmpty, R.string.switch_sound_door_passenger_empty, "sound_door_passenger_empty");
+        setupSoundItem(R.id.cardSoundDoorRearLeft, R.string.switch_sound_door_rear_left, "sound_door_rear_left");
+        setupSoundItem(R.id.cardSoundDoorRearRight, R.string.switch_sound_door_rear_right, "sound_door_rear_right");
+        setupSoundItem(R.id.cardSoundDoorHood, R.string.switch_sound_door_hood, "sound_door_hood");
+        setupSoundItem(R.id.cardSoundDoorTrunk, R.string.switch_sound_door_trunk, "sound_door_trunk");
 
         configureTestButtonsVisibility();
     }
 
-    private void setupSoundItem(int switchId, int btnId, int testBtnId,
-            int tvFileId, String keyPrefix) {
-        SwitchMaterial switchView = findViewById(switchId);
-        Button btnSelect = findViewById(btnId);
-        Button btnTest = findViewById(testBtnId);
-        TextView tvFile = findViewById(tvFileId);
+    private void setupSoundItem(int cardId, int titleResId, String keyPrefix) {
+        android.view.View card = findViewById(cardId);
+        if (card == null) return;
+
+        TextView tvTitle = card.findViewById(R.id.tvSoundTitle);
+        if (tvTitle != null) {
+            tvTitle.setText(titleResId);
+        }
+
+        SwitchMaterial switchView = card.findViewById(R.id.switchSound);
+        Button btnSelect = card.findViewById(R.id.btnSelectSound);
+        Button btnTest = card.findViewById(R.id.btnTestSound);
+        TextView tvFile = card.findViewById(R.id.tvSoundFile);
+        
         String enabledKey = keyPrefix + "_enabled";
         String fileKey = keyPrefix + "_file";
 
@@ -2952,14 +2972,35 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void updateTestButtons(boolean isVisible) {
-        // [Release] Always show test buttons, decoupled from debug mode
+        // [Release] Always show test buttons per user feedback/testing
+        // Or if we want to respect the debug flag:
+        // int visibility = isVisible ? View.VISIBLE : View.GONE;
         int visibility = View.VISIBLE;
-        setViewVisibility(R.id.btnTestSoundStart, visibility);
-        setViewVisibility(R.id.btnTestSoundGearD, visibility);
-        setViewVisibility(R.id.btnTestSoundGearN, visibility);
-        setViewVisibility(R.id.btnTestSoundGearR, visibility);
-        setViewVisibility(R.id.btnTestSoundGearP, visibility);
-        setViewVisibility(R.id.btnTestSoundDoorPassenger, visibility);
+        
+        int[] cardIds = {
+            R.id.cardSoundStart,
+            R.id.cardSoundGearD,
+            R.id.cardSoundGearN,
+            R.id.cardSoundGearR,
+            R.id.cardSoundGearP,
+            R.id.cardSoundDoorDriver,
+            R.id.cardSoundDoorPassenger,
+            R.id.cardSoundDoorPassengerEmpty,
+            R.id.cardSoundDoorRearLeft,
+            R.id.cardSoundDoorRearRight,
+            R.id.cardSoundDoorHood,
+            R.id.cardSoundDoorTrunk
+        };
+
+        for (int cardId : cardIds) {
+            View card = findViewById(cardId);
+            if (card != null) {
+                View btnTest = card.findViewById(R.id.btnTestSound);
+                if (btnTest != null) {
+                    btnTest.setVisibility(visibility);
+                }
+            }
+        }
     }
 
     private void setViewVisibility(int id, int visibility) {

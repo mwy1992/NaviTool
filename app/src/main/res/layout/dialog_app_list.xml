@@ -33,12 +33,29 @@
             android:background="?android:attr/selectableItemBackgroundBorderless"/>
     </RelativeLayout>
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rvTopRow"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="4dp"
-        android:overScrollMode="never" />
+        android:layout_marginBottom="4dp">
+
+        <TextView
+            android:id="@+id/tvHint"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="长按下方图标拖放到此以固定显示"
+            android:textColor="#80FFFFFF"
+            android:textSize="14sp"
+            android:gravity="center"
+            android:layout_gravity="center"
+            android:visibility="visible"/>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvTopRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="80dp"
+            android:overScrollMode="never" />
+    </FrameLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvAppList"

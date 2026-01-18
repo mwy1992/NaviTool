@@ -35,7 +35,12 @@ public class SoundPromptManager {
     public static final int TRSM_GEAR_RVS = 11;
 
     // Door Constants
+    public static final int ZONE_DOOR_FL = 1; // Front Left (Driver)
     public static final int ZONE_DOOR_FR = 4; // Front Right (Passenger)
+    public static final int ZONE_DOOR_RL = 16; // Rear Left
+    public static final int ZONE_DOOR_RR = 64; // Rear Right
+    public static final int ZONE_DOOR_HOOD = 268435456; // Hood
+    public static final int ZONE_DOOR_REAR = 536870912; // Trunk
 
     private SoundPromptManager(Context context) {
         this.mContext = context.getApplicationContext();
@@ -91,17 +96,35 @@ public class SoundPromptManager {
     }
 
     public void checkDoorSound(int oldStatus, int newStatus) {
-        // Zone 4 (Front Right) check
-        boolean wasOpen = (oldStatus & ZONE_DOOR_FR) != 0;
-        boolean isOpen = (newStatus & ZONE_DOOR_FR) != 0;
+        // Legacy method, logic moved to KeepAliveAccessibilityService
+    }
 
-        if (!wasOpen && isOpen) {
-            playSound("sound_door_passenger");
-        }
+    public void playDoorDriverSound() {
+        playSound("sound_door_driver");
     }
 
     public void playDoorPassengerSound() {
         playSound("sound_door_passenger");
+    }
+
+    public void playDoorPassengerEmptySound() {
+        playSound("sound_door_passenger_empty");
+    }
+
+    public void playDoorRearLeftSound() {
+        playSound("sound_door_rear_left");
+    }
+
+    public void playDoorRearRightSound() {
+        playSound("sound_door_rear_right");
+    }
+
+    public void playDoorHoodSound() {
+        playSound("sound_door_hood");
+    }
+
+    public void playDoorTrunkSound() {
+        playSound("sound_door_trunk");
     }
 
     public void playCustomSound(String absolutePath) {

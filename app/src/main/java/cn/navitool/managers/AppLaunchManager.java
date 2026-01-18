@@ -27,6 +27,7 @@ public class AppLaunchManager {
     private static final String KEY_APP_CONFIG = "app_launch_config";
     private static final String KEY_AUTO_START_APPS_ENABLED = "auto_start_apps_enabled";
     private static final String KEY_RETURN_TO_HOME = "return_to_home_after_launch";
+    private static final String KEY_TOP_APPS = "top_row_apps_config"; // [NEW] Key for top row apps
 
     public static class AppConfig {
         public String packageName;
@@ -99,6 +100,30 @@ public class AppLaunchManager {
             e.printStackTrace();
         }
         return configs;
+    }
+
+    // [NEW] Save Top Row Apps
+    public static void saveTopApps(Context context, List<String> packageNames) {
+        JSONArray jsonArray = new JSONArray();
+        for (String pkg : packageNames) {
+            jsonArray.put(pkg);
+        }
+        ConfigManager.getInstance().setString(KEY_TOP_APPS, jsonArray.toString());
+    }
+
+    // [NEW] Load Top Row Apps
+    public static List<String> loadTopApps(Context context) {
+        List<String> packages = new ArrayList<>();
+        String jsonString = ConfigManager.getInstance().getString(KEY_TOP_APPS, "[]");
+        try {
+            JSONArray jsonArray = new JSONArray(jsonString);
+            for (int i = 0; i < jsonArray.length(); i++) {
+                packages.add(jsonArray.getString(i));
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        return packages;
     }
 
     public static List<AppInfo> getInstalledApps(Context context) {

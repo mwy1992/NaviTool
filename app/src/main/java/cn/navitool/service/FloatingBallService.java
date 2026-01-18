@@ -13,6 +13,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.TextView; // Added TextView
 
 import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.GridLayoutManager;
@@ -20,6 +21,10 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Iterator;
+import android.content.ClipData;
+import android.view.DragEvent;
+import android.graphics.Color;
 
 import cn.navitool.R;
 import cn.navitool.managers.AppLaunchManager;
@@ -42,6 +47,26 @@ public class FloatingBallService extends Service {
     private WindowManager.LayoutParams mMenuParams;
 
     private boolean isMenuVisible = false;
+    private TextView mTvHint; // [NEW] Hint TextView
+
+    // [NEW] Data and Adapters as fields
+    private List<AppLaunchManager.AppInfo> mTopApps;
+    private List<AppLaunchManager.AppInfo> mScrollApps;
+    private AppListAdapter mTopAdapter;
+    private AppListAdapter mScrollAdapter;
+
+    // [NEW] Drag State Class
+    private static class DragState {
+        boolean isSourceTop;
+        int sourcePosition;
+        AppLaunchManager.AppInfo appInfo;
+
+        DragState(boolean isSourceTop, int sourcePosition, AppLaunchManager.AppInfo appInfo) {
+            this.isSourceTop = isSourceTop;
+            this.sourcePosition = sourcePosition;
+            this.appInfo = appInfo;
+        }
+    }
 
     @Override
     public void onCreate() {
@@ -151,36 +176,99 @@ public class FloatingBallService extends Service {
 
         // Setup RecyclerView
         // Setup RecyclerViews
-        List<AppLaunchManager.AppInfo> apps = AppLaunchManager.getInstalledApps(this);
+        // Result Lists
+        mTopApps = new ArrayList<>();
+        mScrollApps = new ArrayList<>();
 
-        // Split apps into Top Row (First 6) and Scrollable List (Rest)
-        List<AppLaunchManager.AppInfo> topApps = new ArrayList<>();
-        List<AppLaunchManager.AppInfo> scrollableApps = new ArrayList<>();
-
-        if (apps.size() >= 6) {
-            topApps.addAll(apps.subList(0, 6));
-            scrollableApps.addAll(apps.subList(6, apps.size()));
-        } else {
-            topApps.addAll(apps);
+        // 1. Get All Apps (cleaned)
+        List<AppLaunchManager.AppInfo> allApps = AppLaunchManager.getInstalledApps(this);
+        // Remove Placeholders and find NaviTool
+        AppLaunchManager.AppInfo naviTool = null;
+        Iterator<AppLaunchManager.AppInfo> it = allApps.iterator();
+        while (it.hasNext()) {
+            AppLaunchManager.AppInfo app = it.next();
+            if (app.packageName.isEmpty()) {
+                it.remove(); // Remove placeholders
+            } else if ("cn.navitool".equals(app.packageName)) {
+                naviTool = app;
+                it.remove();
+            }
         }
+
+        // 2. Initialize Top Row with NaviTool
+        if (naviTool != null) {
+            mTopApps.add(naviTool);
+        }
+
+        // 3. Load Saved Favorites
+        List<String> savedPackages = AppLaunchManager.loadTopApps(this);
+        for (String pkg : savedPackages) {
+            if (mTopApps.size() >= 6) break;
+            // Find app in allApps
+            Iterator<AppLaunchManager.AppInfo> appIt = allApps.iterator();
+            while (appIt.hasNext()) {
+                AppLaunchManager.AppInfo app = appIt.next();
+                if (app.packageName.equals(pkg)) {
+                    mTopApps.add(app);
+                    appIt.remove(); // Remove from available pool
+                    break;
+                }
+            }
+        }
+
+        // 4. Fill Scroll List with remaining
+        mScrollApps.addAll(allApps);
+
 
         // Setup Top Row (Fixed)
         RecyclerView rvTop = mMenuView.findViewById(R.id.rvTopRow);
+        mTvHint = mMenuView.findViewById(R.id.tvHint); // Find Hint View
+        updateHintVisibility(); // Initial check
+
         rvTop.setLayoutManager(new GridLayoutManager(this, 6));
-        rvTop.setAdapter(new AppListAdapter(this, topApps, appInfo -> {
+        
+        AppListAdapter.OnItemLongClickListener topLongListener = (v, appInfo, position) -> {
+            // [CONSTRAINT] Generic "NaviTool" cannot be moved. It is at index 0.
+            if (position == 0) return; 
+            
+            ClipData data = ClipData.newPlainText("app", appInfo.packageName);
+            View.DragShadowBuilder shadowBuilder = new View.DragShadowBuilder(v);
+            // Use startDragAndDrop for API 24+, startDrag for older
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                v.startDragAndDrop(data, shadowBuilder, new DragState(true, position, appInfo), 0);
+            } else {
+                v.startDrag(data, shadowBuilder, new DragState(true, position, appInfo), 0);
+            }
+        };
+
+        mTopAdapter = new AppListAdapter(this, mTopApps, appInfo -> {
             AppLaunchManager.launchApp(this, appInfo.packageName);
             hideMenu();
-        }));
+        }, topLongListener);
+        rvTop.setAdapter(mTopAdapter);
+        rvTop.setOnDragListener(getDragListener()); // Accept Drops
 
         // Setup Scrollable List (Remaining Apps)
         RecyclerView rv = mMenuView.findViewById(R.id.rvAppList);
         // Use Grid Layout with 6 columns (4 rows visible)
         rv.setLayoutManager(new GridLayoutManager(this, 6));
-        AppListAdapter adapter = new AppListAdapter(this, scrollableApps, appInfo -> {
+        
+        AppListAdapter.OnItemLongClickListener scrollLongListener = (v, appInfo, position) -> {
+             ClipData data = ClipData.newPlainText("app", appInfo.packageName);
+             View.DragShadowBuilder shadowBuilder = new View.DragShadowBuilder(v);
+             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                 v.startDragAndDrop(data, shadowBuilder, new DragState(false, position, appInfo), 0);
+             } else {
+                 v.startDrag(data, shadowBuilder, new DragState(false, position, appInfo), 0);
+             }
+        };
+
+        mScrollAdapter = new AppListAdapter(this, mScrollApps, appInfo -> {
             AppLaunchManager.launchApp(this, appInfo.packageName);
             hideMenu();
-        });
-        rv.setAdapter(adapter);
+        }, scrollLongListener);
+        rv.setAdapter(mScrollAdapter);
+        rv.setOnDragListener(getDragListener()); // Accept Drops
 
         // Setup Close Button
         View btnClose = mMenuView.findViewById(R.id.ivClose);
@@ -231,6 +319,91 @@ public class FloatingBallService extends Service {
                 isMenuVisible = false;
             } catch (Exception e) {
                 e.printStackTrace();
+            }
+        }
+    }
+
+    private View.OnDragListener getDragListener() {
+        return (v, event) -> {
+            switch (event.getAction()) {
+                case DragEvent.ACTION_DRAG_STARTED:
+                    return true;
+                case DragEvent.ACTION_DRAG_ENTERED:
+                    v.setBackgroundColor(Color.parseColor("#33FFFFFF")); // Visual feedback
+                    return true;
+                case DragEvent.ACTION_DRAG_EXITED:
+                    v.setBackgroundColor(Color.TRANSPARENT);
+                    return true;
+                case DragEvent.ACTION_DROP:
+                    v.setBackgroundColor(Color.TRANSPARENT);
+                    Object stateObj = event.getLocalState();
+                    if (!(stateObj instanceof DragState)) return false;
+                    DragState state = (DragState) stateObj;
+
+                    boolean targetIsTop = (v.getId() == R.id.rvTopRow);
+
+                    // Case 1: Drag FROM Top TO List
+                    if (state.isSourceTop && !targetIsTop) {
+                        // Remove from Top
+                        mTopApps.remove(state.appInfo);
+                        
+                        // Add to Scroll (at top)
+                        mScrollApps.add(0, state.appInfo);
+
+                        mTopAdapter.notifyDataSetChanged();
+                        mScrollAdapter.notifyDataSetChanged();
+                        saveTopConfig();
+                        updateHintVisibility(); // Update on drop
+                        return true;
+                    }
+
+                    // Case 2: Drag FROM List TO Top
+                    if (!state.isSourceTop && targetIsTop) {
+                        // Check if Top is full
+                        if (mTopApps.size() >= 6) {
+                            // Remove last item (ensure we don't remove NaviTool at 0)
+                            // Since size >= 6, and 0 is NaviTool, we have others.
+                            AppLaunchManager.AppInfo last = mTopApps.remove(mTopApps.size() - 1);
+                            mScrollApps.add(0, last);
+                        }
+
+                        // Remove from Scroll
+                        mScrollApps.remove(state.appInfo);
+                        // Add to Top
+                        mTopApps.add(state.appInfo);
+
+                        mTopAdapter.notifyDataSetChanged();
+                        mScrollAdapter.notifyDataSetChanged();
+                        saveTopConfig();
+                        updateHintVisibility(); // Update on drop
+                        return true;
+                    }
+                    return false;
+
+                case DragEvent.ACTION_DRAG_ENDED:
+                    v.setBackgroundColor(Color.TRANSPARENT);
+                    return true;
+            }
+            return false;
+        };
+    }
+
+    private void saveTopConfig() {
+        List<String> packages = new ArrayList<>();
+        // Skip index 0 (NaviTool)
+        for (int i = 1; i < mTopApps.size(); i++) {
+            packages.add(mTopApps.get(i).packageName);
+        }
+        AppLaunchManager.saveTopApps(this, packages);
+    }
+
+    private void updateHintVisibility() {
+        if (mTvHint != null) {
+            // NaviTool is always at 0, so size > 1 means user added something
+            if (mTopApps.size() > 1) {
+                mTvHint.setVisibility(View.GONE);
+            } else {
+                mTvHint.setVisibility(View.VISIBLE);
             }
         }
     }

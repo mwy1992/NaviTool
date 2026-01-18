@@ -27,6 +27,39 @@
     - **逻辑变更**: 移除了 `synchronized` 关键字，并将所有状态更新逻辑强制调度至主线程 (`mMainHandler`) 执行。
     - **效果**: 彻底消除了后台 Binder 线程更新状态与主线程 `mBlinkRunnable` 读取状态之间的多线程竞态条件 (Race Condition)，解决了转向灯关闭后偶发不消失的问题。
 
+### HUD 组件显示修复 (HUD Component Visibility Fixes)
+
+- **组件边界消失问题修复 (Component Disappearance at Edge Fix)**:
+  - `app/src/main/java/cn/navitool/Presentation.java`:
+    - **问题定位**: 发现续航里程 (`range`) 及其他通用文本组件在初始化时未设置初始文本，导致首次测量宽度为 0。在进行边界限制 (Clamping) 计算时，0宽度的组件被系统允许放置在屏幕绝对边缘（例如 X=700），后续数据更新变宽后（如 150px）会向屏幕外延伸导致不可见。
+    - **修复逻辑**: 在通用文本组件 (`tvGeneric`) 初始化逻辑中，显式调用 `setText`（使用默认空字符或初始文本），确保视图在测量阶段拥有非零的有效宽度，从而使边界限制逻辑能预留出正确的显示空间。
+    - **效果**: 彻底修复了续航里程、温度等组件在拖动至屏幕边缘后“消失”的问题，确保所有组件始终在可视区域内。
+
+### 设置页 UI 统一与优化 (Settings UI Standardization & Optimization)
+
+- **内边距统一 (Padding Standardization)**:
+  - 将 **提示音效**、**亮度设置**、**按键设置** 页面的内边距统一调整为 `12dp`，与 **HUD** 和 **仪表** 页面保持一致，消除了视觉割裂感。
+
+- **提示音效页重构 (Sound Settings Redesign)**:
+  - **选项整合**: 将“播放模式”和“播放声道”选项整合至顶部 Title 区域，并使用 `RelativeLayout` 重构布局，确保无论标题文本多长，选项始终保持**绝对居中**。
+  - **布局平衡**: 移动“后备箱提示音”至左列，平衡左右两列的高度，优化视觉重心。
+  - **文案优化**: 将标题更新为“自定义提示音效”，并增加了详细的路径提示“将mp3格式的文件放入/NaviTool/Sound/文件夹下即可使用”。
+
+- **安全警示增加 (Safety Warnings)**:
+  - 在 **按键设置** 页面的“激活第三方播放器方控功能”选项下方，新增了醒目的**红色**警示语：“使用白名单播放器（如酷狗、酷我等）请勿开启！”，防止用户误操作导致冲突。
+
+### 悬浮球功能增强 (Floating Ball Enhancements)
+
+- **应用列表拖拽排序 (App List Drag & Drop)**:
+  - `app/src/main/java/cn/navitool/service/FloatingBallService.java`: 实现了 `OnDragListener`， 支持第一行应用的拖放管理。
+  - `app/src/main/java/cn/navitool/view/AppListAdapter.java`: 新增 `OnItemLongClickListener` 支持长按启动拖拽。
+  - `app/src/main/java/cn/navitool/managers/AppLaunchManager.java`: 新增 `saveTopApps`/`loadTopApps` 接口，实现首行应用列表的持久化存储。
+  - **功能**:
+    - 支持长按下方应用列表及第一行图标进行拖拽互换。
+    - **逻辑约束**: 第一行首个位置固定为“车机助手”，不可移动。
+    - **体验优化**: 移除了应用启动时的自动填充逻辑，仅保留用户手动添加的应用。
+    - **UI 优化**: 在第一行空白背景增加“长按下方图标拖放到此以固定显示”的动态提示文字，仅在无自定义应用时显示。
+
 ## 2026-01-17
 
 ### HUD 几何修正与编辑器优化 (HUD Geometry & Editor Alignments)

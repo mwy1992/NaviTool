@@ -22,15 +22,27 @@ public class AppListAdapter extends RecyclerView.Adapter<AppListAdapter.ViewHold
     private final List<AppLaunchManager.AppInfo> mApps;
     private final PackageManager mPackageManager;
     private final OnAppClickListener mListener;
+    private final OnItemLongClickListener mLongListener;
 
     public interface OnAppClickListener {
         void onAppClick(AppLaunchManager.AppInfo appInfo);
     }
 
-    public AppListAdapter(Context context, List<AppLaunchManager.AppInfo> apps, OnAppClickListener listener) {
+    // [NEW] Long Click Listener Interface
+    public interface OnItemLongClickListener {
+        void onItemLongClick(View view, AppLaunchManager.AppInfo appInfo, int position);
+    }
+
+    public AppListAdapter(Context context, List<AppLaunchManager.AppInfo> apps,
+                          OnAppClickListener listener, OnItemLongClickListener longListener) {
         this.mApps = apps;
         this.mPackageManager = context.getPackageManager();
         this.mListener = listener;
+        this.mLongListener = longListener;
+    }
+
+    public AppListAdapter(Context context, List<AppLaunchManager.AppInfo> apps, OnAppClickListener listener) {
+        this(context, apps, listener, null);
     }
 
     @NonNull
@@ -67,6 +79,15 @@ public class AppListAdapter extends RecyclerView.Adapter<AppListAdapter.ViewHold
             if (mListener != null) {
                 mListener.onAppClick(appInfo);
             }
+        });
+
+        // [NEW] Long Click to Drag
+        holder.itemView.setOnLongClickListener(v -> {
+            if (mLongListener != null) {
+                mLongListener.onItemLongClick(v, appInfo, position);
+                return true;
+            }
+            return false;
         });
     }
 

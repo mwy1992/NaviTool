@@ -116,8 +116,11 @@ public class MediaNotificationListener extends NotificationListenerService {
     private final MediaSessionManager.OnActiveSessionsChangedListener mSessionChangedListener = this::updateActiveSession;
 
     private void updateActiveSession(List<MediaController> controllers) {
-        if (controllers == null || controllers.isEmpty())
+        if (controllers == null || controllers.isEmpty()) {
+            unregisterCurrentController();
+            broadcastClearState(); // [FIX] Broadcast cleanup when no sessions exist (Process Death)
             return;
+        }
 
         // Strategy: Find the first controller that is PLAYING, or default to the first
         // one
@@ -183,6 +186,27 @@ public class MediaNotificationListener extends NotificationListenerService {
                 extractMediaInfo(mCurrentController);
             }
         }
+
+        @Override
+        public void onSessionDestroyed() {
+            super.onSessionDestroyed();
+            // [FIX] Broadcast cleanup when current session is destroyed
+            unregisterCurrentController();
+            broadcastClearState();
+        }
+    }
+
+    // [FIX] Helper to broadcast empty/clear state
+    private void broadcastClearState() {
+        Intent intent = new Intent(ACTION_MEDIA_INFO_UPDATE);
+        intent.putExtra("package_name", "");
+        intent.putExtra("title", "");
+        intent.putExtra("artist", "");
+        intent.putExtra("is_playing", false);
+        intent.putExtra("has_artwork", false);
+        intent.setPackage(getPackageName());
+        sendBroadcast(intent);
+        DebugLogger.i(TAG, "Broadcast Clear State (Session End/Destroyed)");
     }
 
     // Keep RequestReceiver for Re-Broadcasts

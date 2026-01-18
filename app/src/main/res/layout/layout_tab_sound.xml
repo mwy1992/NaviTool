@@ -7,30 +7,30 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingTop="8dp">
+        android:padding="12dp">
 
-        <!-- Header with Master Switch -->
-        <LinearLayout
+        <!-- Header with Options and Master Switch (RelativeLayout for centering) -->
+        <RelativeLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
             android:layout_marginBottom="8dp">
 
+            <!-- Title Section -->
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
+                android:orientation="vertical"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true">
                 <TextView
-                    android:layout_width="match_parent"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/sound_prompt_title"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary"/>
                 <TextView
-                    android:layout_width="match_parent"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/sound_prompt_desc"
                     android:textSize="12sp"
@@ -38,11 +38,88 @@
                     android:layout_marginTop="2dp"/>
             </LinearLayout>
 
+            <!-- Center Options Container -->
+            <LinearLayout
+                android:id="@+id/layoutSoundHeaderOptions"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_centerInParent="true"
+                android:gravity="center_vertical">
+
+                <!-- Options: Playback Mode -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sound_playback_mode_title"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginEnd="8dp"/>
+
+                <RadioGroup
+                    android:id="@+id/rgSoundPlaybackMode"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rbSoundModeMix"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/sound_mode_mix"
+                        android:layout_marginEnd="8dp"/>
+
+                    <RadioButton
+                        android:id="@+id/rbSoundModeDirect"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/sound_mode_direct"/>
+                </RadioGroup>
+
+                <Space
+                    android:layout_width="24dp"
+                    android:layout_height="wrap_content" />
+
+                <!-- Options: Sound Channel -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sound_channel_title"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"
+                    android:layout_marginEnd="8dp"/>
+
+                <RadioGroup
+                    android:id="@+id/rgSoundChannel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rbSoundChannelNavi"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/sound_channel_navi"
+                        android:layout_marginEnd="8dp"/>
+
+                    <RadioButton
+                        android:id="@+id/rbSoundChannelMedia"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/sound_channel_media"/>
+                </RadioGroup>
+            </LinearLayout>
+
+            <!-- Master Switch -->
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/switchSoundMaster"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
-        </LinearLayout>
+                android:layout_height="wrap_content"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"/>
+        </RelativeLayout>
 
         <!-- Wrapped Content for Visibility Control -->
         <LinearLayout
@@ -51,90 +128,7 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <!-- Combined Horizontal Sound Settings Card -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginBottom="12dp"
-                android:padding="12dp"
-                android:background="@drawable/bg_card_rounded">
-
-                <!-- Title & Controls Row -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical">
-
-                    <!-- Playback Mode -->
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/sound_playback_mode_title"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="?android:attr/textColorPrimary"
-                        android:layout_marginEnd="12dp"/>
-
-                    <RadioGroup
-                        android:id="@+id/rgSoundPlaybackMode"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal">
-
-                        <RadioButton
-                            android:id="@+id/rbSoundModeMix"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/sound_mode_mix"
-                            android:layout_marginEnd="12dp"/>
-
-                        <RadioButton
-                            android:id="@+id/rbSoundModeDirect"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/sound_mode_direct"/>
-                    </RadioGroup>
-
-                    <!-- Spacer between groups -->
-                    <Space
-                        android:layout_width="48dp"
-                        android:layout_height="wrap_content" />
-
-                    <!-- Sound Channel -->
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/sound_channel_title"
-                        android:textSize="14sp"
-                        android:textStyle="bold"
-                        android:textColor="?android:attr/textColorPrimary"
-                        android:layout_marginEnd="12dp"/>
-
-                    <RadioGroup
-                        android:id="@+id/rgSoundChannel"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal">
-
-                        <RadioButton
-                            android:id="@+id/rbSoundChannelNavi"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/sound_channel_navi"
-                            android:layout_marginEnd="12dp"/>
-
-                        <RadioButton
-                            android:id="@+id/rbSoundChannelMedia"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="@string/sound_channel_media"/>
-                    </RadioGroup>
-                </LinearLayout>
-
-                <!-- Hints Row Removed per user request -->
-            </LinearLayout>
+            <!-- Options Moved Up -->
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -142,7 +136,7 @@
             android:orientation="horizontal"
             android:baselineAligned="false">
 
-            <!-- Left Column -->
+            <!-- Left Column: Start & Gear Sounds -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -151,190 +145,32 @@
                 android:paddingEnd="6dp">
 
                 <!-- Start Sound Card -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="@drawable/bg_card_rounded"
-                    android:paddingHorizontal="8dp"
-                    android:paddingVertical="8dp"
-                    android:layout_marginBottom="8dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/switch_sound_start"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="?android:attr/textColorPrimary"
-                        android:layout_marginEnd="4dp"/>
-
-                    <TextView
-                        android:id="@+id/tvSoundStartFile"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/text_default_sound"
-                        android:textSize="12sp"
-                        android:textColor="?android:attr/textColorSecondary"
-                        android:singleLine="true"
-                        android:ellipsize="middle"
-                        android:gravity="center_vertical|start"
-                        android:layout_marginEnd="4dp"/>
-
-                    <Button
-                        android:id="@+id/btnSelectSoundStart"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/btn_select_file"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:paddingHorizontal="4dp"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"/>
-
-                    <Button
-                        android:id="@+id/btnTestSoundStart"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/btn_test_sound"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:visibility="gone"
-                        android:paddingHorizontal="4dp"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"/>
-
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/switchSoundStart"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:minWidth="0dp"/>
-                </LinearLayout>
+                <include layout="@layout/item_sound_config"
+                    android:id="@+id/cardSoundStart" />
 
                 <!-- Gear D Card -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="@drawable/bg_card_rounded"
-                    android:paddingHorizontal="8dp"
-                    android:paddingVertical="8dp"
-                    android:layout_marginBottom="8dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/switch_sound_gear_d"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="?android:attr/textColorPrimary"
-                        android:layout_marginEnd="4dp"/>
-
-                    <TextView
-                        android:id="@+id/tvSoundGearDFile"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/text_default_sound"
-                        android:textSize="12sp"
-                        android:textColor="?android:attr/textColorSecondary"
-                        android:singleLine="true"
-                        android:ellipsize="middle"
-                        android:gravity="center_vertical|start"
-                        android:layout_marginEnd="4dp"/>
-
-                    <Button
-                        android:id="@+id/btnSelectSoundGearD"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/btn_select_file"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:paddingHorizontal="4dp"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"/>
-
-                    <Button
-                        android:id="@+id/btnTestSoundGearD"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/btn_test_sound"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:visibility="gone"
-                        android:paddingHorizontal="4dp"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"/>
-
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/switchSoundGearD"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:minWidth="0dp"/>
-                </LinearLayout>
+                <include layout="@layout/item_sound_config"
+                    android:id="@+id/cardSoundGearD" />
 
                 <!-- Gear N Card -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="@drawable/bg_card_rounded"
-                    android:paddingHorizontal="8dp"
-                    android:paddingVertical="8dp">
+                <include layout="@layout/item_sound_config"
+                    android:id="@+id/cardSoundGearN" />
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/switch_sound_gear_n"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="?android:attr/textColorPrimary"
-                        android:layout_marginEnd="4dp"/>
+                <!-- Gear R Card (Moved from Right) -->
+                <include layout="@layout/item_sound_config"
+                    android:id="@+id/cardSoundGearR" />
 
-                    <TextView
-                        android:id="@+id/tvSoundGearNFile"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/text_default_sound"
-                        android:textSize="12sp"
-                        android:textColor="?android:attr/textColorSecondary"
-                        android:singleLine="true"
-                        android:ellipsize="middle"
-                        android:gravity="center_vertical|start"
-                        android:layout_marginEnd="4dp"/>
+                <!-- Gear P Card (Moved from Right) -->
+                <include layout="@layout/item_sound_config"
+                    android:id="@+id/cardSoundGearP" />
 
-                    <Button
-                        android:id="@+id/btnSelectSoundGearN"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/btn_select_file"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:paddingHorizontal="4dp"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"/>
-
-                    <Button
-                        android:id="@+id/btnTestSoundGearN"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/btn_test_sound"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:visibility="gone"
-                        android:paddingHorizontal="4dp"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"/>
-
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/switchSoundGearN"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:minWidth="0dp"/>
-                </LinearLayout>
+                <!-- Trunk (Moved from Right) -->
+                <include layout="@layout/item_sound_config"
+                    android:id="@+id/cardSoundDoorTrunk" />
 
             </LinearLayout>
 
-            <!-- Right Column -->
+            <!-- Right Column: Door Sounds -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
@@ -342,187 +178,31 @@
                 android:orientation="vertical"
                 android:paddingStart="6dp">
 
-                <!-- Gear R Card -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="@drawable/bg_card_rounded"
-                    android:paddingHorizontal="8dp"
-                    android:paddingVertical="8dp"
-                    android:layout_marginBottom="8dp">
+                <!-- Driver Door -->
+                <include layout="@layout/item_sound_config"
+                    android:id="@+id/cardSoundDoorDriver" />
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/switch_sound_gear_r"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="?android:attr/textColorPrimary"
-                        android:layout_marginEnd="4dp"/>
+                <!-- Passenger Door (Occupied) -->
+                <include layout="@layout/item_sound_config"
+                    android:id="@+id/cardSoundDoorPassenger" />
+                
+                <!-- Passenger Door (Empty) -->
+                <include layout="@layout/item_sound_config"
+                    android:id="@+id/cardSoundDoorPassengerEmpty" />
 
-                    <TextView
-                        android:id="@+id/tvSoundGearRFile"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/text_default_sound"
-                        android:textSize="12sp"
-                        android:textColor="?android:attr/textColorSecondary"
-                        android:singleLine="true"
-                        android:ellipsize="middle"
-                        android:gravity="center_vertical|start"
-                        android:layout_marginEnd="4dp"/>
+                <!-- Rear Left Door -->
+                <include layout="@layout/item_sound_config"
+                    android:id="@+id/cardSoundDoorRearLeft" />
 
-                    <Button
-                        android:id="@+id/btnSelectSoundGearR"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/btn_select_file"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:paddingHorizontal="4dp"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"/>
+                <!-- Rear Right Door -->
+                <include layout="@layout/item_sound_config"
+                    android:id="@+id/cardSoundDoorRearRight" />
 
-                    <Button
-                        android:id="@+id/btnTestSoundGearR"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/btn_test_sound"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:visibility="gone"
-                        android:paddingHorizontal="4dp"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"/>
+                <!-- Hood -->
+                <include layout="@layout/item_sound_config"
+                    android:id="@+id/cardSoundDoorHood" />
+                
 
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/switchSoundGearR"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:minWidth="0dp"/>
-                </LinearLayout>
-
-                <!-- Gear P Card -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="@drawable/bg_card_rounded"
-                    android:paddingHorizontal="8dp"
-                    android:paddingVertical="8dp"
-                    android:layout_marginBottom="8dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/switch_sound_gear_p"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="?android:attr/textColorPrimary"
-                        android:layout_marginEnd="4dp"/>
-
-                    <TextView
-                        android:id="@+id/tvSoundGearPFile"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/text_default_sound"
-                        android:textSize="12sp"
-                        android:textColor="?android:attr/textColorSecondary"
-                        android:singleLine="true"
-                        android:ellipsize="middle"
-                        android:gravity="center_vertical|start"
-                        android:layout_marginEnd="4dp"/>
-
-                    <Button
-                        android:id="@+id/btnSelectSoundGearP"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/btn_select_file"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:paddingHorizontal="4dp"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"/>
-
-                    <Button
-                        android:id="@+id/btnTestSoundGearP"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/btn_test_sound"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:visibility="gone"
-                        android:paddingHorizontal="4dp"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"/>
-
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/switchSoundGearP"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:minWidth="0dp"/>
-                </LinearLayout>
-
-                <!-- Door Passenger Card -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="@drawable/bg_card_rounded"
-                    android:paddingHorizontal="8dp"
-                    android:paddingVertical="8dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/switch_sound_door_passenger"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:textColor="?android:attr/textColorPrimary"
-                        android:layout_marginEnd="4dp"/>
-
-                    <TextView
-                        android:id="@+id/tvSoundDoorPassengerFile"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/text_default_sound"
-                        android:textSize="12sp"
-                        android:textColor="?android:attr/textColorSecondary"
-                        android:singleLine="true"
-                        android:ellipsize="middle"
-                        android:gravity="center_vertical|start"
-                        android:layout_marginEnd="4dp"/>
-
-                    <Button
-                        android:id="@+id/btnSelectSoundDoorPassenger"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/btn_select_file"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:paddingHorizontal="4dp"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"/>
-
-                    <Button
-                        android:id="@+id/btnTestSoundDoorPassenger"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/btn_test_sound"
-                        style="@style/Widget.MaterialComponents.Button.TextButton"
-                        android:visibility="gone"
-                        android:paddingHorizontal="4dp"
-                        android:minWidth="0dp"
-                        android:minHeight="0dp"/>
-
-                    <com.google.android.material.switchmaterial.SwitchMaterial
-                        android:id="@+id/switchSoundDoorPassenger"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:minWidth="0dp"/>
-                </LinearLayout>
 
             </LinearLayout>
         </LinearLayout>

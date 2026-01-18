@@ -6,7 +6,8 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:padding="12dp">
 
         <!-- Steering Wheel Control Toggle -->
         <LinearLayout
@@ -15,14 +16,26 @@
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:layout_marginBottom="16dp">
-            <TextView
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="@string/activate_steering_wheel"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary"/>
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/activate_steering_wheel"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"/>
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="使用白名单播放器（如酷狗、酷我等）请勿开启！"
+                    android:textSize="12sp"
+                    android:textColor="#F44336"
+                    android:layout_marginTop="2dp"/>
+            </LinearLayout>
             <com.google.android.material.switchmaterial.SwitchMaterial
                 android:id="@+id/switchSteeringWheel"
                 android:layout_width="wrap_content"
