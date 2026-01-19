@@ -3,7 +3,7 @@ package cn.navitool.managers;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
-import cn.navitool.DebugLogger;
+import cn.navitool.utils.DebugLogger;
 import com.ecarx.xui.adaptapi.binder.IConnectable;
 import com.ecarx.xui.adaptapi.car.Car;
 import com.ecarx.xui.adaptapi.car.ICar;

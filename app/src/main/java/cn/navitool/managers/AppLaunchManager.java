@@ -17,8 +17,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import cn.navitool.ConfigManager;
-import cn.navitool.DebugLogger;
+import cn.navitool.utils.DebugLogger;
 import cn.navitool.R;
 
 public class AppLaunchManager {

@@ -20,7 +20,7 @@ import android.util.Log;
 import java.io.ByteArrayOutputStream;
 import java.util.List;
 
-import cn.navitool.DebugLogger;
+import cn.navitool.utils.DebugLogger;
 
 public class MediaNotificationListener extends NotificationListenerService {
     private static final String TAG = "MediaNotifListener";

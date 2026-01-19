@@ -92,7 +92,7 @@
          建议暂时保持 match_parent 或询问用户 Pointer 是否也裁剪了。
          假设Pointer也裁剪了，我们需要 wrap_content 并定位。 -->
     <!-- [ADJUST] Pointer Position -->
-    <cn.navitool.ClippedImageView
+    <cn.navitool.view.ClippedImageView
         android:id="@+id/audiRsPointer"
         android:layout_width="810px"
         android:layout_height="374px"

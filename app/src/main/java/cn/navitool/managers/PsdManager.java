@@ -10,7 +10,7 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
 
-import cn.navitool.DebugLogger;
+import cn.navitool.utils.DebugLogger;
 import com.ecarx.xui.adaptapi.car.base.ICarFunction;
 
 public class PsdManager {

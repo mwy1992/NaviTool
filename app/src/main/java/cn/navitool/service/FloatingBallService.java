@@ -28,7 +28,7 @@ import android.graphics.Color;
 
 import cn.navitool.R;
 import cn.navitool.managers.AppLaunchManager;
-import cn.navitool.ConfigManager;
+import cn.navitool.managers.ConfigManager;
 import cn.navitool.view.AppListAdapter;
 
 public class FloatingBallService extends Service {
@@ -96,8 +96,8 @@ public class FloatingBallService extends Service {
 
         mFloatingParams.gravity = Gravity.TOP | Gravity.START;
         // [FIX] Load saved position
-        mFloatingParams.x = cn.navitool.ConfigManager.getInstance().getInt("floating_ball_x", 100);
-        mFloatingParams.y = cn.navitool.ConfigManager.getInstance().getInt("floating_ball_y", 100);
+        mFloatingParams.x = ConfigManager.getInstance().getInt("floating_ball_x", 100);
+        mFloatingParams.y = ConfigManager.getInstance().getInt("floating_ball_y", 100);
 
         // Implement Drag and Click
         ImageView ivBall = mFloatingView.findViewById(R.id.ivFloatingBall);
@@ -414,9 +414,9 @@ public class FloatingBallService extends Service {
         sIsRunning = false; // 标记服务已停止
         // [FIX] Save current position before destroying
         if (mFloatingParams != null) {
-            cn.navitool.ConfigManager.getInstance().setInt("floating_ball_x", mFloatingParams.x);
-            cn.navitool.ConfigManager.getInstance().setInt("floating_ball_y", mFloatingParams.y);
-            cn.navitool.ConfigManager.getInstance().saveProperties(); // Force write to disk
+            ConfigManager.getInstance().setInt("floating_ball_x", mFloatingParams.x);
+            ConfigManager.getInstance().setInt("floating_ball_y", mFloatingParams.y);
+            ConfigManager.getInstance().saveProperties(); // Force write to disk
         }
 
         if (mFloatingView != null) {

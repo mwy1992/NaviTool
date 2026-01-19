@@ -3,7 +3,8 @@ package cn.navitool.managers;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.media.MediaPlayer;
-import cn.navitool.DebugLogger;
+import cn.navitool.utils.DebugLogger;
+import cn.navitool.utils.MemoryMonitor;
 
 public class SoundPromptManager {
     private static final String TAG = "SoundPromptManager";

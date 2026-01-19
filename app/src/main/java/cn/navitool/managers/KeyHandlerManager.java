@@ -8,8 +8,8 @@ import android.content.SharedPreferences;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.view.KeyEvent;
-import cn.navitool.AdbShell;
-import cn.navitool.DebugLogger;
+import cn.navitool.utils.AdbShell;
+import cn.navitool.utils.DebugLogger;
 import cn.navitool.R;
 
 public class KeyHandlerManager {

@@ -9,9 +9,8 @@ import android.content.res.Configuration;
 import android.os.Handler;
 import android.os.Looper;
 
-import cn.navitool.DebugLogger;
-import cn.navitool.ConfigManager;
-import cn.navitool.ClusterHudManager;
+import cn.navitool.utils.DebugLogger;
+import cn.navitool.utils.MemoryMonitor;
 import cn.navitool.R;
 import com.ecarx.xui.adaptapi.car.base.ICarFunction;
 import com.ecarx.xui.adaptapi.car.sensor.ISensor;

@@ -38,7 +38,7 @@
         android:requestLegacyExternalStorage="true"
         tools:targetApi="31">
         <activity
-            android:name=".MainActivity"
+            android:name=".activity.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -52,7 +52,7 @@
             android:value="AlSimulate" />
         
         <receiver
-            android:name=".BootReceiver"
+            android:name=".service.BootReceiver"
             android:enabled="true"
             android:exported="true"
             android:directBootAware="true">
@@ -68,7 +68,7 @@
 
         <!-- 模拟发动机点火广播接收器 -->
         <receiver
-            android:name=".SimulateFunction$IgnitionReceiver"
+            android:name=".utils.SimulateFunction$IgnitionReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="cn.navitool.ACTION_SIMULATE_ENGINE_START" />
@@ -82,7 +82,7 @@
 
 
         <service
-            android:name=".KeepAliveAccessibilityService"
+            android:name=".service.KeepAliveAccessibilityService"
             android:exported="true"
             android:label="@string/app_name"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">

@@ -5,7 +5,7 @@ import com.ecarx.xui.adaptapi.car.sensor.ISensor;
 import com.ecarx.xui.adaptapi.car.sensor.ISensorEvent;
 import com.ecarx.xui.adaptapi.car.hev.IHev;
 import com.ecarx.xui.adaptapi.car.hev.ITripData;
-import cn.navitool.DebugLogger;
+import cn.navitool.utils.DebugLogger;
 
 import java.util.ArrayList;
 import java.util.List;

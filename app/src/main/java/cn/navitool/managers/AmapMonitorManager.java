@@ -18,7 +18,7 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.Set;
 
-import cn.navitool.DebugLogger;
+import cn.navitool.utils.DebugLogger;
 
 public class AmapMonitorManager {
     private static final String TAG = "AmapMonitorManager";
@@ -102,9 +102,9 @@ public class AmapMonitorManager {
 
     // Listener Interface for Broadcast Updates
     public interface OnBroadcastListener {
-        void onTrafficLightUpdate(cn.navitool.NaviInfoController.TrafficLightInfo info);
+        void onTrafficLightUpdate(cn.navitool.controller.NaviInfoController.TrafficLightInfo info);
 
-        void onGuideInfoUpdate(cn.navitool.NaviInfoController.GuideInfo info);
+        void onGuideInfoUpdate(cn.navitool.controller.NaviInfoController.GuideInfo info);
 
         void onNaviStatusUpdate(int state);
     }
@@ -137,7 +137,7 @@ public class AmapMonitorManager {
             int wait = getInt(extras, "waitRound");
 
             if (mListener != null) {
-                cn.navitool.NaviInfoController.TrafficLightInfo info = new cn.navitool.NaviInfoController.TrafficLightInfo();
+                cn.navitool.controller.NaviInfoController.TrafficLightInfo info = new cn.navitool.controller.NaviInfoController.TrafficLightInfo();
                 info.status = status;
                 info.redCountdown = time;
                 info.greenCountdown = greenTime;
@@ -155,7 +155,7 @@ public class AmapMonitorManager {
             int segRemainDis = getInt(extras, "SEG_REMAIN_DIS");
 
             if (mListener != null) {
-                cn.navitool.NaviInfoController.GuideInfo info = new cn.navitool.NaviInfoController.GuideInfo();
+                cn.navitool.controller.NaviInfoController.GuideInfo info = new cn.navitool.controller.NaviInfoController.GuideInfo();
                 info.currentRoadName = roadName;
                 info.nextRoadName = nextRoadName;
                 info.iconType = icon;

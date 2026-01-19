@@ -6,9 +6,8 @@ import android.os.Looper;
 
 import com.ecarx.xui.adaptapi.car.base.ICarFunction;
 
-import cn.navitool.ConfigManager;
-import cn.navitool.DebugLogger;
-import cn.navitool.KeepAliveAccessibilityService;
+import cn.navitool.utils.DebugLogger;
+import cn.navitool.service.KeepAliveAccessibilityService;
 
 public class SunshadeManager {
     private static final String TAG = "SunshadeManager";

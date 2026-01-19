@@ -18,7 +18,7 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.Set;
 
-import cn.navitool.DebugLogger;
+import cn.navitool.utils.DebugLogger;
 
 /**
  * 百度地图车机版广播监听管理器
