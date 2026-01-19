@@ -612,13 +612,19 @@ public class AudiRsThemeController {
     /**
      * 更新车速显示
      */
-    /**
-     * 更新车速显示
-     */
+    // [FIX] Speed Jitter Filter
+    private float mLastSpeed = -1f;
+
     public void updateSpeed(float speed) {
-        if (mSpeedText != null) {
-            mSpeedText.setText(String.valueOf((int) speed));
+        if (mSpeedText == null) return;
+        
+        // [FIX] Jitter Filter: Ignore changes < 0.1
+        if (Math.abs(speed - mLastSpeed) < 0.1f) {
+            return;
         }
+        mLastSpeed = speed;
+
+        mSpeedText.setText(String.valueOf((int) speed));
     }
 
     /**

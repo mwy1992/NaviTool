@@ -1,5 +1,42 @@
 # Change Log
 
+## 2026-01-20
+
+### 副驾占用检测修复 (Passenger Occupancy Detection Fix)
+
+- **核心问题**: 修复了副驾传感器 (`2110464`) 信号无法被识别，导致开关门提示音始终播放“无人”音效的严重 Bug。
+- **技术细节**:
+  - **回调修正**: 修正了原代码将该传感器作为 `Float` (Value) 类型监听的错误，迁移至正确的 `Int` (Event) 监听回调 (`onSensorEventChanged`)。
+  - **状态定义**: 明确了传感器状态码定义：`2110210` (有人/Occupied) 与 `2110209` (无人/Empty)。
+  - **启动初始化**: 在 `pollInitialSensorData` 中新增了对副驾状态的主动查询逻辑，确保服务启动瞬间即可获知当前座位状态，无需等待下一次变动事件。
+
+### 调试日志增强 (Enhanced Debug Logging)
+
+为了方便排查传感器逻辑与声音联动问题，在 `KeepAliveAccessibilityService` 中新增并分类了以下关键日志点：
+
+- **副驾传感器 (Passenger Sensor)**:
+  - `Polled Passenger Seat: [数值]` (启动时查询到的原始状态值)
+  - `Init: Passenger Seat is OCCUPIED` (启动初始化判定：有人)
+  - `Init: Passenger Seat is EMPTY` (启动初始化判定：无人)
+  - `Passenger Seat Occupation Changed (Event): [true/false] (Val: [数值])` (实时状态变更捕获)
+
+- **门控联动 (Door Logic)**:
+  - `Passenger Door Open & Occupied -> Playing 'Passenger' Sound` (判定为有人，播放对应音效)
+  - `Passenger Door Open & Empty -> Playing 'Passenger Empty' Sound` (判定为无人，播放对应音效)
+
+### 昨夜紧急修复汇总 (Late Night Urgent Fixes)
+
+针对昨夜 (Jan 19) 发现的高优先级问题进行了集中修复：
+
+- **主题配置持久化 (Theme Reset Fix)**:
+  - 修复了覆盖安装或版本更新后，用户选择的仪表主题（如 Audi RS）被错误重置为默认值的问题。
+- **仪表档位冲突修复 (Cluster Gear Conflict)**:
+  - 修复了 Audi RS 主题与标准主题在档位显示逻辑上的冲突，确保切换主题时档位状态能正确解耦并即时刷新 (Presentation.java)。
+- **HUD 显示优化 (HUD Display Optimization)**:
+  - **SingleLine 防换行**: 强制 HUD 转速 (`rpm`) 组件单行显示，防止因数值过大导致换行遮挡。
+  - **宽度修正**: 修正了 HUD 转速与温度组件的宽度计算逻辑 (300px)，解决了布局错位问题。
+  - **温度格式化**: 统一 HUD 温度显示为一位小数 (XX.X°C)，消除数值跳变时的闪烁感。
+
 ## 2026-01-19
 
 ### 导航模式稳定性与构建修复 (NaviMode Stability & Build Fixes)

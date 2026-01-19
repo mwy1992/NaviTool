@@ -486,6 +486,10 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     // [BUG 4 FIX] 车速传感器 (from ecarx.adaptapi.jar.src -> ISensor.java)
 
     private static final int SENSOR_TYPE_DIM_CAR_SPEED = 1055232; // 仪表盘显示速度 (与原车仪表一致)
+    private static final int SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER = 2110464; // Event Type
+    private static final int SEAT_OCCUPATION_STATUS_NONE = 2110209;     // 无人
+    private static final int SEAT_OCCUPATION_STATUS_OCCUPIED = 2110210; // 有人
+
     private static final int BCM_FUNC_DOOR = 553779456; // 0x21020000
     private boolean mAutoStartPending = false; // Debounce flag for triggerAutoStart
 
@@ -674,14 +678,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                             // DebugLogger.d(TAG, "Sensor Speed Update: " + speedKmh + " km/h");
                             ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
                                     .updateSpeed(speedKmh);
-                        } else if (sensorType == SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER) {
-                            // 1.0 = Occupied, 0.0 = Empty
-                            boolean occupied = (value > 0.5f);
-                            if (mIsPassengerOccupied != occupied) {
-                                mIsPassengerOccupied = occupied;
-                                DebugLogger.i(TAG, "Passenger Seat Occupation Changed: " + occupied + " (Value: " + value + ")");
-                            }
                         }
+                        // [FIX] Removed SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER from Float callback.
+                        // It is an Event (Int) sensor.
                     } catch (Exception e) {
                         DebugLogger.e(TAG, "Error in Heavy onSensorValueChanged", e);
                     }
@@ -714,6 +713,14 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                             cn.navitool.managers.ThemeBrightnessManager
                                     .getInstance(KeepAliveAccessibilityService.this)
                                     .onSensorEventChanged(sensorType, value);
+                        } else if (sensorType == SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER) {
+                            // [FIX] Correctly handle Passenger Sensor as Event (Int)
+                            // 2110210 = Occupied, 2110209 = Empty
+                            boolean occupied = (value == SEAT_OCCUPATION_STATUS_OCCUPIED);
+                            if (mIsPassengerOccupied != occupied) {
+                                mIsPassengerOccupied = occupied;
+                                DebugLogger.i(TAG, "Passenger Seat Occupation Changed (Event): " + occupied + " (Val: " + value + ")");
+                            }
                         }
                     } catch (Exception e) {
                         DebugLogger.e(TAG, "Error in Heavy onSensorEventChanged", e);
@@ -789,6 +796,18 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                     .getSensorLatestValue(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_TEMP_OUTDOOR);
             DebugLogger.d(TAG, "Polled TempOut: " + tempOut);
             ClusterHudManager.getInstance(this).updateTempOut(tempOut + "°C");
+
+            // [FIX] 5. Passenger Seat (Event Type)
+            // Fixes bug where initial state is unknown if user is already seated
+            int passSeat = iSensor.getSensorEvent(SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER);
+            DebugLogger.d(TAG, "Polled Passenger Seat: " + passSeat);
+            if (passSeat == SEAT_OCCUPATION_STATUS_OCCUPIED) {
+                mIsPassengerOccupied = true;
+                DebugLogger.i(TAG, "Init: Passenger Seat is OCCUPIED");
+            } else if (passSeat == SEAT_OCCUPATION_STATUS_NONE) {
+                mIsPassengerOccupied = false;
+                DebugLogger.i(TAG, "Init: Passenger Seat is EMPTY");
+            }
 
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to poll initial sensor data", e);
@@ -927,8 +946,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         }
     }
 
-    // Sensor ID for Passenger Seat Occupation (from Analysis)
-    private static final int SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER = 2110464; // 0x203400
+    // Sensor ID for Passenger Seat Occupation (Moved to Top)
     private boolean mIsPassengerOccupied = false; // Default to false (Empty)
 
     private void pollDoorStatus() {

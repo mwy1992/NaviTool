@@ -91,6 +91,11 @@ public class ClusterHudManager
     private List<HudComponentData> mCachedClusterComponents;
     private Object mDimMenuInteraction; // IDimMenuInteraction via Reflection
     private Integer mPendingNaviMode = null; // [FIX] Pending NaviMode for Race Condition
+    
+    // [FIX] NaviMode Deduplication and Throttle
+    private int mLastAppliedNaviMode = -1; // Cache to prevent duplicate calls
+    private long mLastNaviModeApplyTime = 0; // Throttle timestamp
+    private static final long NAVI_MODE_THROTTLE_MS = 500; // 500ms throttle
 
     // AdaptAPI Reflection Constants
     private static final String CLASS_DIM_INTERACTION = "com.ecarx.xui.adaptapi.diminteraction.DimInteraction";
@@ -233,7 +238,7 @@ public class ClusterHudManager
                                     mPresentation.resetNaviInfo();
                                     // [FIX] Restore Instrument Mode (3) asynchronously to avoid blocking UI thread
                                     new Thread(() -> {
-                                        applyNaviMode(3);
+                                        applyNaviMode(3, "NAVI-END");
                                     }).start();
                                 }
                             }
@@ -1332,23 +1337,22 @@ public class ClusterHudManager
 
                 // [FIX] Apply pending NaviMode if exists (Race Condition Fix)
                 if (mPendingNaviMode != null) {
-                    DebugLogger.i(TAG, "Found pending NaviMode(" + mPendingNaviMode + "), applying now...");
-                    Method switchNaviModeMethod = mDimMenuInteraction.getClass().getMethod("switchNaviMode", int.class);
-                    switchNaviModeMethod.invoke(mDimMenuInteraction, mPendingNaviMode);
+                    DebugLogger.i(TAG, "[PENDING] Found pending NaviMode(" + mPendingNaviMode + "), applying now...");
+                    applyNaviMode(mPendingNaviMode, "PENDING");
                     mPendingNaviMode = null;
                 }
 
                 // [FIX] Double Insurance: Force retry switchNaviMode(3) after 2 seconds
-                // to ensure system is ready (fix for "Call Too Early" issue).
-                // Uses background thread to ensure ABSOLUTELY NO BLOCKING.
+                // Now uses applyNaviMode which has deduplication logic.
+                // Only triggers if cluster is enabled AND no mode was recently applied.
                 if (mIsClusterEnabled) {
                      mMainHandler.postDelayed(() -> {
                          new Thread(() -> {
                              try {
-                                 if (mDimMenuInteraction != null) {
-                                     DebugLogger.i(TAG, "Double Insurance: Retrying switchNaviMode(3)...");
-                                     Method switchNaviModeMethod = mDimMenuInteraction.getClass().getMethod("switchNaviMode", int.class);
-                                     switchNaviModeMethod.invoke(mDimMenuInteraction, 3);
+                                 if (mDimMenuInteraction != null && mLastAppliedNaviMode != 3) {
+                                     applyNaviMode(3, "DOUBLE-INS");
+                                 } else {
+                                     DebugLogger.d(TAG, "[DOUBLE-INS] Skipped (already mode 3 or API null)");
                                  }
                              } catch (Exception e) {
                                  DebugLogger.e(TAG, "Double Insurance Failed", e);
@@ -1403,16 +1407,7 @@ public class ClusterHudManager
                                 mMainHandler.postDelayed(() -> {
                                     DebugLogger.i(TAG, "Re-displaying cluster after navigation end...");
                                     // 重新调用 switchNaviMode(3) 并刷新显示
-                                    if (mDimMenuInteraction != null) {
-                                        try {
-                                            Method switchMethod = mDimMenuInteraction.getClass()
-                                                    .getMethod("switchNaviMode", int.class);
-                                            switchMethod.invoke(mDimMenuInteraction, 3);
-                                            DebugLogger.i(TAG, "NaviMode re-set to 3 after navigation end");
-                                        } catch (Exception e) {
-                                            DebugLogger.e(TAG, "Failed to re-set NaviMode", e);
-                                        }
-                                    }
+                                    applyNaviMode(3, "LISTENER");
                                     if (mPresentation != null) {
                                         mPresentation.setClusterVisible(true);
                                     }
@@ -1563,13 +1558,7 @@ public class ClusterHudManager
 
             // 调用 switchNaviMode
             if (mIsClusterEnabled && mDimMenuInteraction != null) {
-                try {
-                    Method switchNaviModeMethod = mDimMenuInteraction.getClass().getMethod("switchNaviMode", int.class);
-                    switchNaviModeMethod.invoke(mDimMenuInteraction, 3);
-                    DebugLogger.i(TAG, "forceRefresh: Called switchNaviMode(3)");
-                } catch (Exception e) {
-                    DebugLogger.e(TAG, "forceRefresh: Failed to call switchNaviMode", e);
-                }
+                applyNaviMode(3, "REFRESH");
             }
         }
     }
@@ -1621,22 +1610,46 @@ public class ClusterHudManager
      * 用于冷启动后的延迟切换。
      */
     public void applyNaviMode(int mode) {
-        DebugLogger.i(TAG, "applyNaviMode: " + mode);
+        applyNaviMode(mode, null);
+    }
+    
+    /**
+     * 仅切换导航模式（带调用来源标识）
+     * @param mode 目标模式
+     * @param source 调用来源标识（用于日志追踪）
+     */
+    public void applyNaviMode(int mode, String source) {
+        String sourceTag = (source != null) ? "[" + source + "] " : "";
+        
+        // [FIX] Deduplication and Throttle
+        long now = System.currentTimeMillis();
+        if (mode == mLastAppliedNaviMode && (now - mLastNaviModeApplyTime) < NAVI_MODE_THROTTLE_MS) {
+            DebugLogger.d(TAG, sourceTag + "applyNaviMode(" + mode + ") throttled (duplicate within " + NAVI_MODE_THROTTLE_MS + "ms)");
+            return;
+        }
+        
+        DebugLogger.i(TAG, sourceTag + "applyNaviMode: " + mode);
+        
         if (mIsClusterEnabled && mDimMenuInteraction != null) {
             try {
                 Method switchNaviModeMethod = mDimMenuInteraction.getClass().getMethod("switchNaviMode", int.class);
                 switchNaviModeMethod.invoke(mDimMenuInteraction, mode);
-                DebugLogger.i(TAG, "applyNaviMode: Called switchNaviMode(" + mode + ")");
+                
+                // Update cache after successful call
+                mLastAppliedNaviMode = mode;
+                mLastNaviModeApplyTime = now;
+                
+                DebugLogger.i(TAG, sourceTag + "applyNaviMode: Called switchNaviMode(" + mode + ")");
             } catch (Exception e) {
-                DebugLogger.e(TAG, "applyNaviMode: Failed to call switchNaviMode", e);
+                DebugLogger.e(TAG, sourceTag + "applyNaviMode: Failed to call switchNaviMode", e);
             }
         } else {
              // [FIX] Handle Race Condition: AdaptAPI might not be ready yet
              if (mIsClusterEnabled && mDimMenuInteraction == null) {
                  mPendingNaviMode = mode;
-                 DebugLogger.w(TAG, "applyNaviMode: AdaptAPI not ready, caching pending mode: " + mode);
+                 DebugLogger.w(TAG, sourceTag + "applyNaviMode: AdaptAPI not ready, caching pending mode: " + mode);
              } else {
-                 DebugLogger.w(TAG, "applyNaviMode: Skipped (Cluster disabled=" + !mIsClusterEnabled + ")");
+                 DebugLogger.w(TAG, sourceTag + "applyNaviMode: Skipped (Cluster disabled=" + !mIsClusterEnabled + ")");
              }
         }
     }

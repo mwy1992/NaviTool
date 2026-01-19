@@ -78,11 +78,20 @@ public class StandardThemeController {
         // Cleanup if needed
     }
 
+    // [FIX] Speed Jitter Filter
+    private float mLastSpeed = -1f;
+
     // [FIX] Float precision for smooth pointer
     public void updateSpeed(float speed) {
         // Clamp
         if (speed < 0) speed = 0;
         if (speed > MAX_SPEED) speed = MAX_SPEED;
+
+        // [FIX] Jitter Filter: Ignore changes < 0.1
+        if (Math.abs(speed - mLastSpeed) < 0.1f) {
+            return;
+        }
+        mLastSpeed = speed;
 
         // Update Text (Int)
         if (mSpeedText != null) {
