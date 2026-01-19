@@ -58,6 +58,13 @@ public class AudiRsThemeController {
     private TextView mSpeedText;
     private TextView mGearText;
     private ImageView mBackground; // New Background View
+    
+    // New Sensor Data Views
+    private TextView mTripDistText;
+    private TextView mTripTimeText;
+    private TextView mOdometerText;
+    private TextView mFuelConsText;
+    private TextView mTempInText;
 
     // Traffic Light
     // Traffic Light & Navi - New Layout
@@ -207,6 +214,13 @@ public class AudiRsThemeController {
         mPresRR_Val = rootView.findViewById(R.id.audiRsPresRR_val);
         mPresRR_Unit = rootView.findViewById(R.id.audiRsPresRR_unit);
         mTempRR = rootView.findViewById(R.id.audiRsTempRR);
+        
+        // New Sensor Data Binding
+        mTripDistText = rootView.findViewById(R.id.audiRsTripDist);
+        // mTripTimeText = rootView.findViewById(R.id.audiRsTripTime); // View removed from XML
+        mOdometerText = rootView.findViewById(R.id.audiRsOdometer);
+        mFuelConsText = rootView.findViewById(R.id.audiRsFuelCons);
+        mTempInText = rootView.findViewById(R.id.audiRsTempIn);
 
         DebugLogger.d(TAG, "Views bound successfully");
 
@@ -379,25 +393,17 @@ public class AudiRsThemeController {
     public void resetTrafficLights() {
         stopTrafficLightFlash(); // Ensure flashing stops on reset
 
-        // [FIX] 仅隐藏红绿灯相关组件，不要隐藏整个容器，以免误伤导航信息 (ETA/Distance)
-        if (mLightRed != null) {
-            mLightRed.setAlpha(0.3f); // 恢复为变暗状态或完全隐藏，视需求而定。此处设为变暗以保持占位，或者设为不可见
-            // 为了彻底“消失”的效果，建议设为透明，与原逻辑保持视觉一致
-            mLightRed.setAlpha(0f);
-        }
-        if (mLightYellow != null) {
-            mLightYellow.setAlpha(0f);
-        }
-        if (mLightGreen != null) {
-            mLightGreen.setAlpha(0f);
-        }
+        // [FIX] Explicitly set children to GONE to prevent default leaks
+        if (mLightRed != null) mLightRed.setVisibility(View.GONE);
+        if (mLightYellow != null) mLightYellow.setVisibility(View.GONE);
+        if (mLightGreen != null) mLightGreen.setVisibility(View.GONE);
         if (mCountdownText != null) {
             mCountdownText.setText("");
+            mCountdownText.setVisibility(View.GONE);
         }
         if (mDirectionArrow != null) {
             mDirectionArrow.setImageDrawable(null);
-            // 或者如果不希望它占位：
-            // mDirectionArrow.setVisibility(View.INVISIBLE);
+            mDirectionArrow.setVisibility(View.GONE);
         }
 
         // 检查导航信息是否为空，如果 ETA 和 Distance 也都没有，才隐藏容器 (可选)
@@ -412,11 +418,20 @@ public class AudiRsThemeController {
     }
 
     // [FIX] Reset navigation info (distance/ETA)
+    // [FIX] Reset navigation info (distance/ETA)
     public void resetNaviInfo() {
+        // [FIX] Also reset traffic lights to ensure clean state
+        resetTrafficLights();
+        
         if (mNaviDistance != null)
             mNaviDistance.setText("");
         if (mNaviEta != null)
             mNaviEta.setText("");
+        
+        // Hide container if everything is reset
+         if (mNaviTrafficContainer != null) {
+            mNaviTrafficContainer.setVisibility(View.GONE);
+        }
     }
 
     private int mCurrentManeuverIcon = -1;
@@ -574,25 +589,77 @@ public class AudiRsThemeController {
      * 
      * @param rpm 当前转速
      */
-    public void updateRpm(int rpm) {
-        mCurrentRpm = rpm;
+    /**
+     * 更新转速显示
+     * 
+     * @param rpm 当前转速
+     */
+    public void updateRpm(float rpm) {
+        // [FIX] Audi RS Logic strictly uses int. Cast float to int to compatibility.
+        int rpmInt = (int) rpm;
+        mCurrentRpm = rpmInt;
 
         // 1. 更新进度条（从0转开始显示）
-        updatePointer(rpm);
+        updatePointer(rpmInt);
 
         // 2. 更新红色闪烁条（3000转以上）- 先于彩灯，避免空白
-        updateFlashBar(rpm);
+        updateFlashBar(rpmInt);
 
         // 3. 更新彩灯显示（2000转以上，闪烁条出现时隐藏）
-        updateLights(rpm);
+        updateLights(rpmInt);
     }
 
     /**
      * 更新车速显示
      */
-    public void updateSpeed(int speed) {
+    /**
+     * 更新车速显示
+     */
+    public void updateSpeed(float speed) {
         if (mSpeedText != null) {
-            mSpeedText.setText(String.valueOf(speed));
+            mSpeedText.setText(String.valueOf((int) speed));
+        }
+    }
+
+    /**
+     * Update Trip Information
+     * @param distanceKm Trip distance in KM (Calculated Current Trip)
+     * @param duration Duration in seconds
+     */
+    public void updateTripInfo(float distanceKm, long duration) {
+        if (mTripDistText != null) {
+             // Distance is now float KM.
+             // Label: 本次里程
+             mTripDistText.setText(String.format(java.util.Locale.US, "本次里程: %.1fkm", distanceKm));
+        }
+        
+        if (mTripTimeText != null) {
+            // Duration in seconds
+            long hours = duration / 3600;
+            long minutes = (duration % 3600) / 60;
+            // Label: 耗时
+            mTripTimeText.setText(String.format(java.util.Locale.US, "耗时: %02d:%02d", hours, minutes));
+        }
+    }
+    
+    public void updateOdometer(float odometer) {
+        if (mOdometerText != null) {
+            // Label: 总里程
+            mOdometerText.setText(String.format(java.util.Locale.US, "总里程: %.1fkm", odometer));
+        }
+    }
+    
+    public void updateInstantFuel(float fuel) {
+        if (mFuelConsText != null) {
+            // "0.0 L/100km" - Fuel is L/100km typically
+            mFuelConsText.setText(String.format(java.util.Locale.US, "%.1f L/100km", fuel));
+        }
+    }
+    
+    public void updateIndoorTemp(float temp) {
+        if (mTempInText != null) {
+            // "In: 24°C"
+            mTempInText.setText(String.format(java.util.Locale.US, "In: %.0f°C", temp));
         }
     }
 

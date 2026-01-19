@@ -3,6 +3,8 @@ package cn.navitool.managers;
 import android.content.Context;
 import com.ecarx.xui.adaptapi.car.sensor.ISensor;
 import com.ecarx.xui.adaptapi.car.sensor.ISensorEvent;
+import com.ecarx.xui.adaptapi.car.hev.IHev;
+import com.ecarx.xui.adaptapi.car.hev.ITripData;
 import cn.navitool.DebugLogger;
 
 import java.util.ArrayList;
@@ -57,6 +59,7 @@ public class VehicleSensorManager {
     private static VehicleSensorManager sInstance;
     private Context mContext;
     private ISensor mSensor;
+    private ITripData mTripData; // [NEW] Trip Data
     private boolean mIsInitialized = false;
 
     // --- 缓存值 ---
@@ -71,6 +74,15 @@ public class VehicleSensorManager {
     private float mRange = 0;
     private float mOdometer = 0;
     private float mLight = 0;
+    
+    // [NEW] Current Trip Data (From API)
+    private float mCurrentTripKm = 0f;
+    private long mCurrentTripDuration = 0;
+
+    // [NEW] Trip Data Cache (API - Subtotal)
+    private int mTripDistance = 0; // Unit: meters
+    private long mTripDuration = 0; // Unit: seconds
+    private float mAvgFuelConsumption = 0; // Unit: L/100km
 
     private int mIgnition = 0;
     private int mGear = 0;
@@ -83,6 +95,7 @@ public class VehicleSensorManager {
     // --- 监听器 ---
     private final List<Listener> mListeners = new ArrayList<>();
     private ISensor.ISensorListener mSensorListener;
+    private ITripData.ITripListener mTripListener; // [NEW] Trip Listener
 
     public interface Listener {
         default void onSpeedChanged(float speedKmh) {}
@@ -99,6 +112,10 @@ public class VehicleSensorManager {
         default void onDayNightChanged(int mode) {}
         default void onLightChanged(float light) {}
         default void onTireDataChanged(int index, float pressure, float temp) {}
+        // [NEW] Trip Data Callback (Updated to float distance for km)
+        // distance: Current Trip (km) if calculated, or API Trip (km)
+        // duration: seconds
+        default void onTripDataChanged(float distanceKm, long durationSec, float avgFuel) {}
     }
 
     // --- 单例获取 ---
@@ -124,6 +141,7 @@ public class VehicleSensorManager {
             mSensor = CarServiceManager.getInstance(mContext).getSensor();
             if (mSensor != null) {
                 registerSensors();
+                registerTripData(); // [NEW] Register Trip Data
                 mIsInitialized = true;
                 DebugLogger.action(TAG, "传感器管理器初始化完成");
             } else {
@@ -185,6 +203,73 @@ public class VehicleSensorManager {
 
         DebugLogger.i(TAG, "All sensors registered (including Fuel Consumption)");
         refreshAllValues();
+    }
+
+    private void registerTripData() {
+        IHev hev = CarServiceManager.getInstance(mContext).getHevManager();
+        if (hev != null) {
+            mTripData = hev.getTripData();
+            if (mTripData != null) {
+                if (mTripListener == null) {
+                    mTripListener = new ITripData.ITripListener() {
+                        @Override
+                        public void onDrivingInfoUpdate(ITripData.IDrivingInfo info) {
+                            if (info != null) {
+                                // [FIX] Use API parameters directly (No Freestyle)
+                                // mTripDistance = Subtotal Mileage
+                                mTripDistance = info.getTripDistance();
+                                // mCurrentTripKm = Current Day Mileage (Assuming meters)
+                                int currentDayDist = info.getTripDistanceInCurrentDay();
+                                mCurrentTripKm = currentDayDist / 1000.0f;
+                                
+                                // mTripDuration = Travel Time
+                                mTripDuration = info.getTripDuration();
+                                mCurrentTripDuration = mTripDuration; // Mapping API duration to current for now
+                                
+                                DebugLogger.d(TAG, "Trip Update: Subtotal=" + mTripDistance + ", CurrentDay=" + currentDayDist);
+                                notifyTripDataChanged();
+                            }
+                        }
+
+                        @Override
+                        public void onAvgEnergyInfoUpdate(ITripData.IAvgEnergyInfo info) {
+                            if (info != null) {
+                                mAvgFuelConsumption = info.getAvgFuelConsumption();
+                                DebugLogger.d(TAG, "Avg Fuel Update: " + mAvgFuelConsumption);
+                                notifyTripDataChanged();
+                            }
+                        }
+                    };
+                }
+                mTripData.registerTripListener(mTripListener);
+                DebugLogger.i(TAG, "Trip Data Registered");
+                
+                // Initial Fetch
+                refreshTripValues();
+            }
+        }
+    }
+    
+    private void refreshTripValues() {
+         if (mTripData != null) {
+             try {
+                ITripData.IDrivingInfo driveInfo = mTripData.getLatestDrivingInfo();
+                if (driveInfo != null) {
+                    mTripDistance = driveInfo.getTripDistance();
+                    int currentDayDist = driveInfo.getTripDistanceInCurrentDay();
+                    mCurrentTripKm = currentDayDist / 1000.0f;
+                    mTripDuration = driveInfo.getTripDuration();
+                    mCurrentTripDuration = mTripDuration;
+                }
+                
+                ITripData.IAvgEnergyInfo energyInfo = mTripData.getLatestAvgEnergyInfo();
+                if (energyInfo != null) {
+                    mAvgFuelConsumption = energyInfo.getAvgFuelConsumption();
+                }
+             } catch (Exception e) {
+                 DebugLogger.e(TAG, "Error refreshing trip values", e);
+             }
+         }
     }
 
     private void handleEventSensor(int sensorType, int value) {
@@ -349,6 +434,11 @@ public class VehicleSensorManager {
 
     public float getFuelIns() { return mFuelIns; }
     public float getFuelAvg() { return mFuelAvg; }
+    
+    // [NEW] Trip getters
+    public int getTripDistance() { return mTripDistance; }
+    public long getTripDuration() { return mTripDuration; }
+    public float getAvgFuelConsumption() { return mAvgFuelConsumption; }
 
     public boolean isIgnitionOn() {
         return mIgnition == ISensorEvent.IGNITION_STATE_DRIVING;
@@ -357,6 +447,10 @@ public class VehicleSensorManager {
     public boolean isDayMode() {
         return mDayNight == ISensorEvent.DAY_NIGHT_MODE_DAY;
     }
+
+    // [NEW] Getters for Calculated Current Trip
+    public float getCurrentTripKm() { return mCurrentTripKm; }
+    public long getCurrentTripDuration() { return mCurrentTripDuration; }
 
     // --- 监听器管理 ---
     public void addListener(Listener listener) {
@@ -418,6 +512,19 @@ public class VehicleSensorManager {
         for (Listener l : mListeners) l.onTireDataChanged(index, mTirePressure[index], mTireTemp[index]);
     }
 
+    private void notifyTripDataChanged() {
+        // [FIX] Use Calculated Current Trip (Since Ignition) as priority, 
+        // fallback to API Trip if calculating isn't active (e.g. ODO start invalid),
+        // BUT user strictly wants "Current Trip". 
+        // We pass mCurrentTripKm (Calculated) and mCurrentTripDuration (Calculated).
+        // For Avg Fuel, we still use API value as we can't calculate it easily.
+        
+        // If Ignition hasn't triggered reset, mOdometerStart is -1. 
+        // In that case mCurrentTripKm is 0.
+        
+        for (Listener l : mListeners) l.onTripDataChanged(mCurrentTripKm, mCurrentTripDuration, mAvgFuelConsumption);
+    }
+
     public void destroy() {
         if (mSensor != null && mSensorListener != null) {
             try {
@@ -426,6 +533,14 @@ public class VehicleSensorManager {
             } catch (Exception e) {
                 DebugLogger.e(TAG, "Error unregistering sensors", e);
             }
+        }
+        
+        if (mTripData != null && mTripListener != null) {
+             try {
+                 mTripData.unregisterTripListener(mTripListener);
+             } catch (Exception e) {
+                 DebugLogger.e(TAG, "Error unregistering trip listener", e);
+             }
         }
         mListeners.clear();
         mSensorListener = null;

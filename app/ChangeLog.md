@@ -2,6 +2,32 @@
 
 ## 2026-01-19
 
+### 导航模式稳定性与构建修复 (NaviMode Stability & Build Fixes)
+
+- **NaviMode 自动重置修复 (NaviMode Auto Reset Fix)**:
+  - **问题**: 修复了偶尔退出导航后，仪表盘无法自动切回“仪表模式 (Mode 3)”的问题。
+  - **原因**: 系统级 Navimode 变化回调在某些场景（如高德直接退出）下可能不触发，导致应用处于错误的“地图模式 (Mode 1)”。
+  - **方案**: 引入了基于高德导航广播状态 (`EXTRA_STATE == 2`) 的主动重置机制。一旦检测到导航停止，立即在后台线程强制发送 `switchNaviMode(3)` 指令，作为系统回调的双重保险。
+
+- **构建环境修复 (Build Environment Fix)**:
+  - 升级 Android Gradle Plugin 至 8.3.2，解决了因 Android SDK Build-Tools XML版本不兼容导致的编译错误。
+
+- **吉利红绿灯数据连接优化 (Geely Socket Connection Optimization)**:
+  - **主动启动**: 实现了 Socket Manager 的开机自启 (`NaviInfoController` 初始化时即启动)，不再依赖不稳定的广播唤醒，确保红绿灯数据连接的即时性与可靠性。
+
+### 奥迪 RS 主题功能增强 (Audi RS Theme Enhancements)
+
+- **行车数据扩展 (Extended Driving Data)**:
+  - **新增传感器显示**: 在 Audi RS 主题中集成了 5 项新的实时行车数据：
+    - **本次里程 (Current Trip)**: 显示自当天启动以来的行驶里程 (API: `getTripDistanceInCurrentDay`)。
+    - **总里程 (Odometer)**: 显示车辆累计行驶总里程。
+    - **行驶时长 (Trip Time)**: 显示当次行驶时间 (API: `getTripDuration`) (注: UI 暂时隐藏)。
+    - **瞬时油耗 (Instant Fuel)**: 实时显示当前瞬时油耗 (L/100km)。
+    - **车内温度 (Indoor Temp)**: 右上角显示当前车内温度。
+  - **逻辑优化**:
+    - 针对本次里程，弃用了不可靠的手动计算方案，通过反射调用 `ITripData` 系统级 API 获取精准的当天里程数据。
+    - 实现了数据单位的自动换算 (m -> km) 和本地化文本显示 ("本次里程", "总里程", "耗时")。
+
 ### 标准仪表主题重构与优化 (Standard Cluster Theme Refactoring & Optimization)
 
 - **全新标准主题实现 (New Standard Theme Implementation)**:
@@ -13,6 +39,9 @@
     - 修复了背景与前景图层在 `fitXY` 模式下的拉伸变形问题，改用 `wrap_content` 配合 `layout_gravity` (Top/Bottom) 实现原比例完美显示。
 
 - **指针与动画逻辑优化 (Pointer & Animation Logic)**:
+  - **Refactor**: 全局恢复车速/转速浮点(Float)精度，彻底消除标准仪表指针抖动，提升平滑度。
+  - **Feat**: 新增 HUD 转速显示组件 (`hud_rpm`)，支持右对齐布局，并采用 50rpm 取整策略优化显示效果。
+  - **Fix**: 修复 Audi RS 主题在导航停止或无数据时，红绿灯/箭头组件暴露默认 XML 状态（三灯全亮、白箭头）的问题。通过设置默认可见性为 GONE 并在重置时显式隐藏解决。
   - **初始角度偏移**: 在 `StandardThemeController` 中引入了 `SPEED_START_ANGLE` (-130°) 和 `RPM_START_ANGLE` (-120°)，实现了指针逆时针偏转起始点的功能，完美适配新表盘设计。
   - **转速表适配**: 调整了转速表的最大偏转角度 (`MAX_RPM_ANGLE`) 为 240°，并同步了偏转逻辑。
   - **测试逻辑增强**: 更新了 `MainActivity` 中的速度测试逻辑，将测试范围从 0-230 km/h 扩展至 0-260 km/h，覆盖表盘全量程。
@@ -21,6 +50,25 @@
   - **文字居中**: 对速度 (`standardSpeedText`) 和档位 (`standardGearText`) 进行了强制居中处理。固定宽度 (300px) + `gravity="center"` + 精确计算的 Pivot 偏移，确保无论数值位数如何变化，始终相对于表盘圆心绝对居中。
   - **预览图实时化**: 优化了仪表设置页的 Style 1 预览按钮。直接复用真实主题的背景与前景资源，去除了半透明效果，并添加了带阴影的“标准仪表”文字，所见即所得。
   - **致谢信息**: 在仪表设置页底部新增了致谢说明：“感谢抖音@某男仔（@mnz66666666）提供主题设计支持”。
+
+### 档位显示修复 (Gear Display Fix)
+
+- **状态同步修复 (State Synchronization Fix)**:
+  - **问题**: 修复了在关闭“模拟档位计算”或切换仪表主题时，档位显示卡在 "P" 档的问题。
+  - **原因**: 仪表控制器初始化默认为 P 档，当真实档位长期保持不变（如 D 档）时，管理器因检测到“数据无变化”而未推送更新。
+  - **修复**:
+    1. 在 `setClusterTheme`（切换主题）后，强制向新主题推送当前档位状态，确保 UI 初始化即同步。
+    2. 在 `setSimulatedGearEnabled`（关闭模拟）时，清除历史去重记录 (`mLastSimulatedGear`) 并强制推送真实档位，即刻刷新 UI。
+
+### 吉利红绿灯数据获取 (Geely Traffic Light Socket Integration)
+
+- **Socket 通信实现**:
+  - **`GeelySocketManager`**: 实现了本地 TCP Socket 客户端，连接 `127.0.0.1:9997` 读取吉利地图内部数据流。
+  - **JSON 解析**: 针对 `cmdId: 20021` 消息进行精确解析，直接获取实时红绿灯倒计时数据 (Status, Red/Green Countdown, Direction)。
+  - **智能唤醒与休眠 (Wake-up & Sleep)**:
+    - **广播唤醒**: 利用 `AmapMonitorManager` 监听广播，一旦收到任何地图广播立即唤醒 Socket Client，确保地图启动时立即连接。
+    - **超时休眠**: 连接断开或 5 分钟无数据交互自动进入休眠状态，释放系统资源。
+  - **数据优先级**: 在 `NaviInfoController` 中集成了 Socket 数据源，优先使用 Socket 获取的精准倒计时覆盖广播数据。
 
 ### 热启动问题修复 (Warm Restart Fixes)
 

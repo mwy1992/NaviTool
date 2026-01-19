@@ -78,25 +78,26 @@ public class StandardThemeController {
         // Cleanup if needed
     }
 
-    public void updateSpeed(int speed) {
+    // [FIX] Float precision for smooth pointer
+    public void updateSpeed(float speed) {
         // Clamp
         if (speed < 0) speed = 0;
         if (speed > MAX_SPEED) speed = MAX_SPEED;
 
-        // Update Text
+        // Update Text (Int)
         if (mSpeedText != null) {
-            mSpeedText.setText(String.valueOf(speed));
+            mSpeedText.setText(String.valueOf((int) speed));
         }
 
-        // Update Pointer Rotation
+        // Update Pointer Rotation (Float for smoothness)
         // 0-260km/h -> 0-260 degrees
         // Linear mapping: angle = Start + speed * (Range / MaxSpeed)
-        float angle = SPEED_START_ANGLE + (speed * (MAX_SPEED_ANGLE / MAX_SPEED));
+        float angle = SPEED_START_ANGLE + (speed * (MAX_SPEED_ANGLE / (float)MAX_SPEED));
         
         if (mPointerLeft != null) {
             // Ensure pivot is set (in case post hasn't run yet or view size changed)
             if (mPointerLeft.getPivotX() == 0 || mPointerLeft.getPivotY() == 0) {
-                 if (mPointerLeft.getWidth() > 0) {
+                 if (mPointerLeft.getWidth() > 0) { // Check real width
                      mPointerLeft.setPivotX(mPointerLeft.getWidth());
                      mPointerLeft.setPivotY(mPointerLeft.getHeight());
                  }
@@ -105,23 +106,30 @@ public class StandardThemeController {
         }
     }
 
-    public void updateRpm(int rpm) {
+    // [FIX] Float precision for smooth pointer
+    public void updateRpm(float rpm) {
         // Clamp
         if (rpm < 0) rpm = 0;
         if (rpm > MAX_RPM) rpm = MAX_RPM;
 
-        // Update Pointer Rotation
-        // 0-8000rpm -> 0-260 degrees (adjusted)
-        // Ratio: 260 / 8000
-        float angle = RPM_START_ANGLE + (rpm * (MAX_RPM_ANGLE / MAX_RPM));
+        // Update Text (Int) - [FIX] No RPM Text in Standard Theme
+        // if (mRpmText != null) {
+        //    mRpmText.setText(String.valueOf((int) rpm));
+        // }
+
+        // Update Pointer Rotation (Float)
+        // 0-8000rpm -> 0-260 degrees 
+        // Metric: Positive rotation (CW)
+        float angle = RPM_START_ANGLE + (rpm * (MAX_RPM_ANGLE / (float)MAX_RPM));
 
         if (mPointerRight != null) {
              if (mPointerRight.getPivotX() == 0 || mPointerRight.getPivotY() == 0) {
-                 if (mPointerRight.getWidth() > 0) {
+                 // Restore Pivot to Bottom-Right (Width, Height) to match original
+                  if (mPointerRight.getWidth() > 0) {
                      mPointerRight.setPivotX(mPointerRight.getWidth());
                      mPointerRight.setPivotY(mPointerRight.getHeight());
-                 }
-            }
+                  }
+             }
             mPointerRight.setRotation(angle);
         }
     }
@@ -176,6 +184,7 @@ public class StandardThemeController {
                 mCurrentGearIndex = 3;
             }
             mGearText.setTextColor(color);
+            DebugLogger.d(TAG, "StandardTheme setGear: " + gearCode + " (Color index: " + mCurrentGearIndex + ")");
         }
     }
 

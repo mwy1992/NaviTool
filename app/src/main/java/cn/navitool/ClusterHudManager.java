@@ -57,7 +57,7 @@ public class ClusterHudManager
     // Cached values for combined fuel_range component
     private float mCachedFuelLiters = 0f;
     private float mCachedRangeKm = 0f;
-    private int mCachedSpeed = 0;
+    private float mCachedSpeed = 0f;
     private float mCachedRpm = 0f;
     
     // [FIX] Music Cache for Consistency (Backfill)
@@ -90,6 +90,7 @@ public class ClusterHudManager
     private List<HudComponentData> mCachedHudComponents;
     private List<HudComponentData> mCachedClusterComponents;
     private Object mDimMenuInteraction; // IDimMenuInteraction via Reflection
+    private Integer mPendingNaviMode = null; // [FIX] Pending NaviMode for Race Condition
 
     // AdaptAPI Reflection Constants
     private static final String CLASS_DIM_INTERACTION = "com.ecarx.xui.adaptapi.diminteraction.DimInteraction";
@@ -230,6 +231,10 @@ public class ClusterHudManager
                                 if (state == 2) {
                                     mPresentation.resetTrafficLights();
                                     mPresentation.resetNaviInfo();
+                                    // [FIX] Restore Instrument Mode (3) asynchronously to avoid blocking UI thread
+                                    new Thread(() -> {
+                                        applyNaviMode(3);
+                                    }).start();
                                 }
                             }
                         });
@@ -865,8 +870,8 @@ public class ClusterHudManager
     // [Refactor] Using unified VehicleSensorManager instead of internal Listener
     @Override
     public void onSpeedChanged(float speedKmh) {
-        // [FIX] Ensure speed update triggers simulated gear calculation
-        updateSpeed((int) speedKmh);
+        // [FIX] Restore Float Precision (No Cast)
+        updateSpeed(speedKmh);
     }
 
     @Override
@@ -893,6 +898,49 @@ public class ClusterHudManager
     public void onTemperatureChanged(float indoor, float outdoor) {
         updateComponentText("temp_in", String.format(Locale.US, "%.1f°C", indoor));
         updateComponentText("temp_out", String.format(Locale.US, "%.1f°C", outdoor));
+        
+        // [NEW] Forward to Audi RS Theme
+        if (mPresentation != null) {
+            mMainHandler.post(() -> {
+                if (mPresentation != null) {
+                    mPresentation.updateIndoorTemp(indoor);
+                }
+            });
+        }
+    }
+
+    // [Refactor] Implement methods for new sensors
+    @Override
+    public void onTripDataChanged(float distanceKm, long duration, float avgFuel) {
+         if (mPresentation != null) {
+            mMainHandler.post(() -> {
+                if (mPresentation != null) {
+                    mPresentation.updateTripInfo(distanceKm, duration);
+                }
+            });
+        }
+    }
+
+    @Override
+    public void onOdometerChanged(float odometer) {
+         if (mPresentation != null) {
+            mMainHandler.post(() -> {
+                if (mPresentation != null) {
+                    mPresentation.updateOdometer(odometer);
+                }
+            });
+        }
+    }
+
+    @Override
+    public void onFuelConsumptionChanged(float instant, float average) {
+         if (mPresentation != null) {
+            mMainHandler.post(() -> {
+                if (mPresentation != null) {
+                    mPresentation.updateInstantFuel(instant);
+                }
+            });
+        }
     }
 
     @Override
@@ -1282,6 +1330,33 @@ public class ClusterHudManager
                 mDimMenuInteraction = getMenuInteractionMethod.invoke(dimInteraction);
                 DebugLogger.i(TAG, "AdaptAPI DimMenuInteraction initialized successfully: " + mDimMenuInteraction);
 
+                // [FIX] Apply pending NaviMode if exists (Race Condition Fix)
+                if (mPendingNaviMode != null) {
+                    DebugLogger.i(TAG, "Found pending NaviMode(" + mPendingNaviMode + "), applying now...");
+                    Method switchNaviModeMethod = mDimMenuInteraction.getClass().getMethod("switchNaviMode", int.class);
+                    switchNaviModeMethod.invoke(mDimMenuInteraction, mPendingNaviMode);
+                    mPendingNaviMode = null;
+                }
+
+                // [FIX] Double Insurance: Force retry switchNaviMode(3) after 2 seconds
+                // to ensure system is ready (fix for "Call Too Early" issue).
+                // Uses background thread to ensure ABSOLUTELY NO BLOCKING.
+                if (mIsClusterEnabled) {
+                     mMainHandler.postDelayed(() -> {
+                         new Thread(() -> {
+                             try {
+                                 if (mDimMenuInteraction != null) {
+                                     DebugLogger.i(TAG, "Double Insurance: Retrying switchNaviMode(3)...");
+                                     Method switchNaviModeMethod = mDimMenuInteraction.getClass().getMethod("switchNaviMode", int.class);
+                                     switchNaviModeMethod.invoke(mDimMenuInteraction, 3);
+                                 }
+                             } catch (Exception e) {
+                                 DebugLogger.e(TAG, "Double Insurance Failed", e);
+                             }
+                         }).start();
+                     }, 2000); // 2 Seconds Delay
+                }
+
                 // 注册 naviMode 变化监听器
                 registerNaviModeListener();
             } catch (Exception e) {
@@ -1556,7 +1631,13 @@ public class ClusterHudManager
                 DebugLogger.e(TAG, "applyNaviMode: Failed to call switchNaviMode", e);
             }
         } else {
-            DebugLogger.w(TAG, "applyNaviMode: Skipped (Cluster disabled or AdaptAPI null)");
+             // [FIX] Handle Race Condition: AdaptAPI might not be ready yet
+             if (mIsClusterEnabled && mDimMenuInteraction == null) {
+                 mPendingNaviMode = mode;
+                 DebugLogger.w(TAG, "applyNaviMode: AdaptAPI not ready, caching pending mode: " + mode);
+             } else {
+                 DebugLogger.w(TAG, "applyNaviMode: Skipped (Cluster disabled=" + !mIsClusterEnabled + ")");
+             }
         }
     }
 
@@ -1976,6 +2057,9 @@ public class ClusterHudManager
                         if (mCachedTempInText != null) newData.text = mCachedTempInText;
                     } else if ("fuel_range".equals(newData.type)) {
                         newData.text = String.format("⛽ %.0fL|%.0fkm", mCachedFuelLiters, mCachedRangeKm);
+                    } else if ("hud_rpm".equals(newData.type)) {
+                        // [FIX] Backfill RPM with cached value
+                        newData.text = String.format(Locale.getDefault(), "%.0frpm", mCachedRpm);
                     } else {
                         // Standard Merge
                         for (HudComponentData oldData : mCachedHudComponents) {
@@ -2204,6 +2288,16 @@ public class ClusterHudManager
                 if (mPresentation != null) {
                     mPresentation.setClusterTheme(theme);
                     mCurrentAppliedTheme = theme; // Update applied theme
+                    
+                    // [FIX] Persist theme immediately to prevent reset after restart/update
+                    ConfigManager.getInstance().setInt("cluster_theme_builtin", theme);
+                    
+                    // [FIX] Theme Switch State Sync
+                    // Force push current static states to the new theme controller
+                    // Speed/RPM update frequently so they self-correct, but Gear is static.
+                    if (mCachedGear != -1) {
+                        mPresentation.updateGear(mCachedGear);
+                    }
                 }
             });
         }
@@ -2227,19 +2321,40 @@ public class ClusterHudManager
         if (mSimulatedGearEnabled) {
             calculateAndPushSimulatedGear();
         } else {
+
             // [Fix] Restore real gear immediately when simulation is disabled
             String realGear = mapRawGearToChar(mCachedGear);
+            
+            // [Fix] Force reset LastSimulatedGear to ensure next toggle works
+            mLastSimulatedGear = ""; 
+            
             updateComponentText("gear", realGear);
+            
+            // [Safety] Also force update via updateGear(int) path which updates specific Theme Controllers
+            // (StandardThemeController or AudiRsThemeController)
+            if (mPresentation != null) {
+                 mPresentation.updateGear(mCachedGear);
+            }
         }
     }
 
+    // [FIX] Changed to float for precision
     public void updateRpm(float rpm) {
         // [FIX] Throttle RPM updates to prevent ANR (~50Hz -> ~10Hz effective for UI or just filter noise)
+        // Using 5.0f threshold still keeps it stable while allowing micro-movements if consistent
         if (Math.abs(mCachedRpm - rpm) < 5.0f && mCachedRpm != 0) {
              return;
         }
         mCachedRpm = rpm;
         
+        // [NEW] HUD RPM Component Logic
+        // Logic: Round to nearest 50rpm for stability (prevent flickering digits)
+        // e.g. 2123 -> 2100; 2135 -> 2150
+        int displayRpm = Math.round(rpm / 50.0f) * 50;
+        String rpmText = displayRpm + "rpm";
+        // Directly update component via text (handled by HUD logic)
+        updateComponentText("hud_rpm", rpmText);
+
         if (mPresentation != null) {
             mMainHandler.post(() -> {
                 if (mPresentation != null) {
@@ -2275,11 +2390,22 @@ public class ClusterHudManager
              // Real Gear Update
              String gearStr = mapRawGearToChar(gearValue);
              updateComponentText("gear", gearStr);
+             
+             // [FIX] Ensure Theme Controllers (Standard/Audi) also get the update!
+             // Previously this was missing, so StandardThemeController never updated after init.
+             if (mPresentation != null) {
+                 mMainHandler.post(() -> {
+                     if (mPresentation != null) {
+                         mPresentation.updateGear(gearValue);
+                     }
+                 });
+             }
         }
     }
 
-    public void updateSpeed(int speed) {
-        if (mCachedSpeed == speed) return; // [FIX] Filter duplicates
+    // [FIX] Changed to float for precision
+    public void updateSpeed(float speed) {
+        if (mCachedSpeed == speed) return; // [FIX] Filter duplicates (Float comparison)
 
         // [DEBUG] Log updateSpeed call (Reduced)
         // if (mSimulatedGearEnabled) { DebugLogger.d(TAG, "updateSpeed: " + speed); }
@@ -2324,6 +2450,14 @@ public class ClusterHudManager
         if (mPresentation != null) {
              // [FIX] Update via Component System for Preview Sync
              updateComponentText("gear", calculated);
+             
+             // [FIX] Also update Theme Controllers (Standard/Audi) for simulated gears like D1/M1!
+             // Previously only updateComponentText was called, so controllers never saw "D1" etc.
+             mMainHandler.post(() -> {
+                 if (mPresentation != null) {
+                     mPresentation.updateGear(calculated);
+                 }
+             });
         }
     }
 
@@ -2491,12 +2625,22 @@ public class ClusterHudManager
         updateRange(String.format(Locale.US, "%.0fkm", range));
         
         // Temp
-        updateTempOut(String.format(Locale.US, "%.0f°C", manager.getTempOutdoor()));
-        updateTempIn(String.format(Locale.US, "%.0f°C", manager.getTempIndoor()));
+        updateTempOut(String.format(Locale.US, "%.1f°C", manager.getTempOutdoor())); // [FIX] Use %.1f matching runtime
+        updateTempIn(String.format(Locale.US, "%.1f°C", manager.getTempIndoor()));   // [FIX] Use %.1f matching runtime
         
+        // [FIX] PRM & Speed - Direct Read logic as requested by user
+        float rpm = manager.getRpm();
+        updateRpm(rpm); 
+        
+        float speed = manager.getSpeed();
+        updateSpeed(speed);
+
         // Gear
         // Note: Gear is event-based, but we can try to get last known state if exposed,
         // or wait for update. DrivingShift/SimulateFunction handles initial "D" usually.
+        // [FIX] Try to sync gear if possible
+        // int gear = manager.getGear(); // If available in future
+
     }
 
     /**

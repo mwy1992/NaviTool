@@ -2,6 +2,9 @@ package cn.navitool;
 
 import android.view.View;
 import android.widget.TextView;
+import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import cn.navitool.view.TrafficLightView;
 
 /**
@@ -33,9 +36,18 @@ public class NaviInfoController {
 
     private static volatile NaviInfoController instance;
     private android.content.Context mContext;
+    private Handler mainHandler; // Added: Declaration for mainHandler
 
     private NaviInfoController(android.content.Context context) {
         mContext = context.getApplicationContext();
+    }
+
+    // Added: startManager method
+    public void startManager(Context context) {
+        this.mContext = context.getApplicationContext(); // Use mContext instead of this.context
+        
+        
+        mainHandler = new Handler(Looper.getMainLooper());
     }
 
     public static NaviInfoController getInstance(android.content.Context context) {
@@ -43,6 +55,7 @@ public class NaviInfoController {
             synchronized (NaviInfoController.class) {
                 if (instance == null) {
                     instance = new NaviInfoController(context);
+                    instance.startManager(context); // Call startManager here
                 }
             }
         }
@@ -335,4 +348,5 @@ public class NaviInfoController {
                     + ", eta='" + etaText + "'}";
         }
     }
+
 }

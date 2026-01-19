@@ -225,14 +225,14 @@ public class SoundPromptManager {
                 };
             }
 
-            // [FIX] Proactively abandon previous focus before requesting new one
-            // This prevents leak when reset() cancels the OnCompletionListener
-            abandonFocus();
-
             android.media.AudioManager am = (android.media.AudioManager) mContext
                     .getSystemService(Context.AUDIO_SERVICE);
 
-            if (am != null) {
+            // [FIX] Only request focus in Direct Mode. 
+            // In Mix Mode, we purposefully skip it to avoid interrupting music (pause bug).
+            if (mIsDirectPlaybackMode && am != null) {
+                // [FIX] Proactively abandon previous focus before requesting new one
+                abandonFocus();
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
 
                     int focusType;
@@ -321,14 +321,19 @@ public class SoundPromptManager {
 
             mMediaPlayer.setOnCompletionListener(mediaPlayer -> {
                 // [FIX] Now uses singleton, so abandonFocus() works correctly
-                DebugLogger.d(TAG, "Sound completed, abandoning audio focus...");
-                abandonFocus();
+                // [FIX] Only abandon if Direct Mode
+                DebugLogger.d(TAG, "Sound completed...");
+                if (mIsDirectPlaybackMode) {
+                    abandonFocus();
+                }
             });
 
             // Clean up on error too
             mMediaPlayer.setOnErrorListener((mp, what, extra) -> {
                 DebugLogger.e(TAG, "MediaPlayer Error: what=" + what + ", extra=" + extra);
-                abandonFocus();
+                if (mIsDirectPlaybackMode) {
+                    abandonFocus();
+                }
                 return true;
             });
 

@@ -153,6 +153,7 @@
                 android:layout_width="24dp"
                 android:layout_height="24dp"
                 android:src="@drawable/ic_direction_arrow"
+                android:visibility="gone"
                 android:tint="#FFFFFF"/>
 
             <TextView
@@ -162,6 +163,7 @@
                 android:layout_marginStart="8dp"
                 android:textColor="#FFFFFF"
                 android:textSize="30sp"
+                android:visibility="gone"
                 android:textStyle="bold" />
         </LinearLayout>
 
@@ -178,6 +180,7 @@
                 android:layout_width="40dp"
                 android:layout_height="40dp"
                 android:src="@drawable/audi_rs_light_red"
+                android:visibility="gone"
                 android:layout_marginEnd="5dp"/>
 
             <ImageView
@@ -185,13 +188,15 @@
                 android:layout_width="40dp"
                 android:layout_height="40dp"
                 android:src="@drawable/audi_rs_light_yellow"
+                android:visibility="gone"
                 android:layout_marginEnd="5dp"/>
 
             <ImageView
                 android:id="@+id/audiRsLightGreen"
                 android:layout_width="40dp"
                 android:layout_height="40dp"
-                android:src="@drawable/audi_rs_light_green"/>
+                android:src="@drawable/audi_rs_light_green"
+                android:visibility="gone"/>
         </LinearLayout>
 
         <!-- Row 3: Distance & ETA -->
@@ -410,4 +415,67 @@
             android:textSize="12sp" />
     </LinearLayout>
 
+    <!-- 中间信息区 -->
+    <LinearLayout
+        android:id="@+id/audiRsInfoLeft"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="32dp"
+        android:orientation="horizontal">
+        <!-- 总里程 (Odometer) -->
+        <TextView
+            android:id="@+id/audiRsOdometer"
+            android:layout_width="170dp"
+            android:layout_height="wrap_content"
+            android:gravity="start"
+            android:text="总里程: 99999.9km"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp" />
+        <!-- 小计里程 -->
+        <TextView
+            android:id="@+id/audiRsTripDist"
+            android:layout_width="170dp"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:text="本次里程: 999.9km"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp" />
+        <!-- 行驶时间 
+        <TextView
+            android:id="@+id/audiRsTripTime"
+            android:layout_width="100dp"
+            android:layout_height="wrap_content"
+            android:gravity="start"
+            android:text="耗时: 23:59"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold" /> -->
+    </LinearLayout>
+    <!-- 当前油耗 -->
+    <TextView
+        android:id="@+id/audiRsFuelCons"
+        android:layout_width="200dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginBottom="80dp"
+        android:layout_marginEnd="60dp"
+        android:gravity="center"
+        android:text="19.9 L/100km"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:layout_marginTop="5dp"/>
+    <!-- 车内温度 -->
+    <TextView
+        android:id="@+id/audiRsTempIn"
+        android:layout_width="120dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginEnd="150dp"
+        android:layout_marginTop="12dp"
+        android:gravity="start"
+        android:text="In: 24°C"
+        android:textColor="#AAAAAA"
+        android:textSize="18sp"
+        android:textStyle="bold" />
 </FrameLayout>

@@ -768,6 +768,34 @@ public class Presentation extends android.app.Dialog {
         }
     }
 
+    // [NEW] Forward Trip Info to Audi RS Theme
+    public void updateTripInfo(float distanceKm, long duration) {
+        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
+            ((AudiRsThemeController) mThemeController).updateTripInfo(distanceKm, duration);
+        }
+    }
+
+    // [NEW] Forward Odometer to Audi RS Theme
+    public void updateOdometer(float odometer) {
+        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
+            ((AudiRsThemeController) mThemeController).updateOdometer(odometer);
+        }
+    }
+
+    // [NEW] Forward Instant Fuel to Audi RS Theme
+    public void updateInstantFuel(float fuel) {
+        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
+            ((AudiRsThemeController) mThemeController).updateInstantFuel(fuel);
+        }
+    }
+    
+    // [NEW] Forward Indoor Temp to Audi RS Theme
+    public void updateIndoorTemp(float temp) {
+        if (mThemeController != null && mThemeController instanceof AudiRsThemeController) {
+            ((AudiRsThemeController) mThemeController).updateIndoorTemp(temp);
+        }
+    }
+
     // Helper for Generic Traffic Light Update
     private void updateTrafficLightGeneric(java.util.List<View> viewList,
             cn.navitool.NaviInfoController.TrafficLightInfo info) {
@@ -1280,6 +1308,27 @@ public class Presentation extends android.app.Dialog {
                     params.width = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
                     params.height = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
 
+                } else if ("hud_rpm".equals(data.type)) {
+                    // [NEW] HUD RPM Component - Right-aligned (Same as temp_out)
+                    android.widget.TextView tv = new android.widget.TextView(getContext());
+                    tv.setText(data.text);
+                    tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                    tv.setPadding(0, 0, 0, 0);
+                    tv.setIncludeFontPadding(false);
+                    tv.setLineSpacing(0, 1f);
+                    tv.setTextColor(data.color);
+                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
+                    
+                    // Fixed Width + Gravity.END for stable right alignment
+                    tv.setGravity(android.view.Gravity.END);
+                    // [FIX] Increase width for RPM to avoid wrapping (was 150)
+                    params.width = 200; // Metric: Sufficient for "8000rpm"
+
+                    if (data.typeface != null) {
+                        tv.setTypeface(data.typeface);
+                    }
+                    view = tv;
+
                 } else if ("temp_out".equals(data.type) || "temp_in".equals(data.type)) {
                     // Temperature Components - Right-aligned to keep °C position stable
                     android.widget.TextView tv = new android.widget.TextView(getContext());
@@ -1291,9 +1340,10 @@ public class Presentation extends android.app.Dialog {
                     tv.setTextColor(data.color);
                     tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
 
-                    // [Issue 10 Final Fix] Fixed Width 150px + Gravity.END to prevent jitter
+                    // [Issue 10 Final Fix] Fixed Width 120px (was 150, originally 90) + Gravity.END
+                    // 120px is sufficient for "-10.5°C" (approx 100-110px) but more compact than 150
                     tv.setGravity(android.view.Gravity.END);
-                    params.width = 90; // Fixed width to allow right alignment stability
+                    params.width = 120;
 
                     if (data.typeface != null) {
                         tv.setTypeface(data.typeface);
@@ -1376,6 +1426,16 @@ public class Presentation extends android.app.Dialog {
                 // Measure
                 int widthSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
                 int heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+                
+                // [FIX] Priority: Use LayoutParams explicit size if set (e.g. 150px for Temp/RPM)
+                // This ensures 'measuredWidth' matches the actual rendered width, fixing the
+                // boundary clamping bug where components were allowed to drift off-screen.
+                if (params.width > 0) {
+                    widthSpec = View.MeasureSpec.makeMeasureSpec(params.width, View.MeasureSpec.EXACTLY);
+                }
+                if (params.height > 0) {
+                    heightSpec = View.MeasureSpec.makeMeasureSpec(params.height, View.MeasureSpec.EXACTLY);
+                }
 
                 if (isSong) {
                     widthSpec = View.MeasureSpec.makeMeasureSpec(300, View.MeasureSpec.EXACTLY);
@@ -1691,19 +1751,19 @@ public class Presentation extends android.app.Dialog {
          }
          
          if (mStandardLayout != null) {
-             mStandardLayout.post(() -> {
-                 if (mStandardController != null && mStandardLayout != null) {
-                     mStandardController.bindViews(mStandardLayout);
-                     mStandardLayout.setVisibility(View.VISIBLE);
-                 }
-             });
+             // [FIX] Bind views immediately (Synchronous) to ensure updateGear works
+             // when called immediately after setClusterTheme
+             if (mStandardController != null) {
+                 mStandardController.bindViews(mStandardLayout);
+                 mStandardLayout.setVisibility(View.VISIBLE);
+             }
          }
     }
 
     // updateTrafficLightStatus removed - use updateTrafficLight(Info) which updates
     // mLatestTrafficLightInfo
 
-    public void updateSpeed(int speed) {
+    public void updateSpeed(float speed) {
         // 如果是奥迪RS主题，使用专用控制器
         if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null) {
             mThemeController.updateSpeed(speed);
@@ -1777,12 +1837,12 @@ public class Presentation extends android.app.Dialog {
     public void updateRpm(float rpm) {
         // 如果是奥迪RS主题，使用专用控制器
         if (mCurrentTheme == THEME_AUDI_RS && mThemeController != null) {
-            mThemeController.updateRpm((int) rpm);
+            mThemeController.updateRpm(rpm);
             return;
         } 
         
         if (mStandardController != null) {
-            mStandardController.updateRpm((int) rpm);
+            mStandardController.updateRpm(rpm);
             return;
         }
     }
@@ -1823,7 +1883,7 @@ public class Presentation extends android.app.Dialog {
             // Directly pass the string (e.g. "D1", "M", "S") to the controller
             ((AudiRsThemeController) mThemeController).setGear(gearStr);
             // Bypass integer conversion logic for Audi RS
-            // return; // [FIX] Removed premature return to allow specific HUD update
+            // [FIX] Removed 'return' to allow HUD/Standard logic to proceed
         } else if (mStandardController != null && gearStr != null) {
             mStandardController.setGear(gearStr);
         }

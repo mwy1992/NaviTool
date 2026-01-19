@@ -160,6 +160,9 @@ public class MainActivity extends AppCompatActivity {
         // This ensures subsequent UI operations use the Theme-aware Activity Context.
         cm.updateContext(this);
 
+        // [Legacy] NaviInfoController init kept for general readiness (Geely Socket Removed)
+        cn.navitool.NaviInfoController.getInstance(this);
+
         // Try to show UI again (in case Service failed or wasn't ready)
         // Now it will use the Activity Context we just injected.
         // Try to show UI again (in case Service failed or wasn't ready)
@@ -1545,6 +1548,21 @@ public class MainActivity extends AppCompatActivity {
             tc.setTimeZone(null);
             tc.setBackgroundColor(android.graphics.Color.TRANSPARENT);
             view = tc;
+        } else if ("hud_rpm".equals(type)) {
+            TextView tv = new TextView(this);
+            tv.setText(text);
+            tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+            tv.setSingleLine(true); // [FIX] Force single line to prevent wrapping at high RPM
+            tv.setEllipsize(null);
+            // [FIX] Fixed Width 300px (Real HUD 150px * 2) + Right Alignment
+            tv.setGravity(android.view.Gravity.END);
+            view = tv;
+            
+            // Set LayoutParams immediately to ensure width is applied
+            android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
+                    200, 
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
+            view.setLayoutParams(params);
         } else {
             TextView tv = new TextView(this);
             tv.setText(text);
@@ -2009,15 +2027,15 @@ public class MainActivity extends AppCompatActivity {
                 else if ("fuel".equals(type))
                     createAndAddHudComponent("fuel", "⛽ --L", 0, 0);
                 else if ("temp_in".equals(type))
-                    createAndAddHudComponent("temp_in", "--°C", 0, 0);
+                    createAndAddHudComponent("temp_in", "--.0°C", 0, 0); // [FIX] Decimal format to match real HUD
                 else if ("temp_out".equals(type))
-                    createAndAddHudComponent("temp_out", "--°C", 0, 0);
+                    createAndAddHudComponent("temp_out", "--.0°C", 0, 0); // [FIX] Decimal format to match real HUD
                 else if ("range".equals(type))
                     createAndAddHudComponent("range", "--km", 0, 0);
                 else if ("fuel_range".equals(type))
                     createAndAddHudComponent("fuel_range", "⛽ --L|--km", 0, 0);
                 else if ("gear".equals(type))
-                    createAndAddHudComponent("gear", "D", 0, 0);
+                    createAndAddHudComponent("gear", "-", 0, 0); // [FIX] Use placeholder, real data comes from sensor
                 else if ("turn_signal".equals(type))
                     createAndAddHudComponent("turn_signal", "←      →", 0, 0);
                 else if ("auto_hold".equals(type))
@@ -2043,6 +2061,8 @@ public class MainActivity extends AppCompatActivity {
                     createAndAddHudComponent("navi_distance_remaining", "8.5km", 0, 0);
                 } else if ("guide_line".equals(type)) {
                     createAndAddHudComponent("guide_line", "X:0", 0, 0);
+                } else if ("hud_rpm".equals(type)) {
+                    createAndAddHudComponent("hud_rpm", "0rpm", 0, 0);
                 }
 
                 syncAllHudComponents();
@@ -2064,6 +2084,7 @@ public class MainActivity extends AppCompatActivity {
         addButton.accept(colDrive, "油量续航", "fuel_range");
         addButton.accept(colDrive, "档位信息", "gear");
         addButton.accept(colDrive, "转向信号", "turn_signal");
+        addButton.accept(colDrive, "转速信息", "hud_rpm");
         // [DISABLED] Auto Hold 功能由于系统限制暂无法实现，后期如找到方法可取消注释
         // addButton.accept(colDrive, "Auto Hold", "auto_hold");
 
@@ -2939,66 +2960,10 @@ public class MainActivity extends AppCompatActivity {
         java.io.File soundFile = new java.io.File(Environment.getExternalStorageDirectory(),
                 "NaviTool/Sound/" + resolvedName);
         if (soundFile.exists()) {
-            // Request Audio Focus
-            android.media.AudioManager am = (android.media.AudioManager) getSystemService(Context.AUDIO_SERVICE);
-            android.media.AudioFocusRequest focusRequest = null;
-            android.media.AudioManager.OnAudioFocusChangeListener focusChangeListener = focusChange -> {
-            };
-
-            final android.media.AudioManager.OnAudioFocusChangeListener finalFocusListener = focusChangeListener;
-
-            if (am != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    android.media.AudioAttributes playbackAttributes = new android.media.AudioAttributes.Builder()
-                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
-                            .build();
-                    focusRequest = new android.media.AudioFocusRequest.Builder(
-                            android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                            .setAudioAttributes(playbackAttributes)
-                            .setAcceptsDelayedFocusGain(false)
-                            .setOnAudioFocusChangeListener(focusChangeListener)
-                            .build();
-                    am.requestAudioFocus(focusRequest);
-                } else {
-                    am.requestAudioFocus(focusChangeListener, android.media.AudioManager.STREAM_MUSIC,
-                            android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
-                }
-            }
-
-            android.media.MediaPlayer mp = new android.media.MediaPlayer();
-            try {
-                mp.setDataSource(soundFile.getAbsolutePath());
-                mp.prepare();
-                mp.start();
-                DebugLogger.d("MainActivity", "Test playing sound: " + resolvedName);
-
-                final android.media.AudioFocusRequest finalRequest = focusRequest;
-                mp.setOnCompletionListener(mediaPlayer -> {
-                    mediaPlayer.release();
-                    DebugLogger.d("MainActivity", "Test playing sound completed: " + resolvedName);
-                    // Abandon Focus
-                    if (am != null) {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && finalRequest != null) {
-                            am.abandonAudioFocusRequest(finalRequest);
-                        } else {
-                            am.abandonAudioFocus(finalFocusListener);
-                        }
-                    }
-                });
-            } catch (java.io.IOException e) {
-                DebugLogger.e("MainActivity", "Failed to test play sound: " + resolvedName, e);
-                e.printStackTrace();
-                mp.release();
-                // Abandon Focus on error
-                if (am != null) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && focusRequest != null) {
-                        am.abandonAudioFocusRequest(focusRequest);
-                    } else {
-                        am.abandonAudioFocus(finalFocusListener);
-                    }
-                }
-            }
+            // [FIX] Use SoundPromptManager to ensure selected audio channel is respected
+            cn.navitool.managers.SoundPromptManager.getInstance(this)
+                    .playCustomSound(soundFile.getAbsolutePath());
+            DebugLogger.d("MainActivity", "Test playing sound via SoundPromptManager: " + resolvedName);
         } else {
             DebugLogger.w("MainActivity", "Sound file not found for test: " + resolvedName);
             android.widget.Toast.makeText(this, "文件不存在: " + resolvedName, android.widget.Toast.LENGTH_SHORT).show();

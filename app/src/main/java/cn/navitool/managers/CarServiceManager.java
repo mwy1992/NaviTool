@@ -8,6 +8,7 @@ import com.ecarx.xui.adaptapi.binder.IConnectable;
 import com.ecarx.xui.adaptapi.car.Car;
 import com.ecarx.xui.adaptapi.car.ICar;
 import com.ecarx.xui.adaptapi.car.base.ICarFunction;
+import com.ecarx.xui.adaptapi.car.hev.IHev;
 import com.ecarx.xui.adaptapi.car.sensor.ISensor;
 
 import java.util.ArrayList;
@@ -21,6 +22,7 @@ public class CarServiceManager implements IConnectable.IConnectWatcher {
     private ICar mCar;
     private ICarFunction mCarFunction;
     private ISensor mSensor;
+    private IHev mHev;
 
     private boolean mIsInitialized = false;
     private boolean mIsConnecting = false;
@@ -133,7 +135,14 @@ public class CarServiceManager implements IConnectable.IConnectWatcher {
                     DebugLogger.w(TAG, "getSensorManager not found via reflection");
                 }
 
-                if (mCarFunction != null || mSensor != null) {
+                // [NEW] Get Hev Manager (Trip Data)
+                try {
+                    mHev = mCar.getHevManager();
+                } catch (Exception e) {
+                     DebugLogger.w(TAG, "Failed to getHevManager: " + e.getMessage());
+                }
+
+                if (mCarFunction != null || mSensor != null || mHev != null) {
                     mIsInitialized = true;
                     mIsConnecting = false;
                     DebugLogger.i(TAG, "Car AdaptAPI components retrieved successfully");
@@ -177,6 +186,10 @@ public class CarServiceManager implements IConnectable.IConnectWatcher {
 
     public ISensor getSensor() {
         return mSensor;
+    }
+
+    public IHev getHevManager() {
+        return mHev;
     }
 
     public ICar getCar() {
