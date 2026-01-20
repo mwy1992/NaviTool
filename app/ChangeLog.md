@@ -1,6 +1,29 @@
 # Change Log
 
-## 2026-01-20
+## 2026-01-20 (上午工作总结 / Morning Session Summary)
+
+### 严重 Bug 修复 (Critical Bug Fixes)
+
+- **Headless 启动无显示修复 (Ghost Window & Config Logic)**:
+  - **现象**: 模拟点火信号发送后，副屏 UI 不显示，必须手动进入 App 界面才出现。
+  - **原因 1 (Presentation Context)**: `PresentationManager` 错误地继承了 `Presentation` 类（依赖 Activity Context），导致后台 Service 无法创建可见窗口。**修复**: 回退继承自 `Dialog` 并使用 `ContextThemeWrapper` + `createWindowContext` (API 30+ 适配)。
+  - **原因 2 (Config Key Mismatch)**: `ensureUiVisible` 方法使用了错误的配置键名 (`cluster_enabled`/`hud_enabled` 默认为 false)，导致启动逻辑自杀。**修复**: 修正为 `switch_cluster`/`switch_hud`。
+  - **原因 3 (Repeated Method)**: `ClusterHudManager` 中存在两个 `ensureUiVisible` 定义。**修复**: 删除了旧的、不完善的重复定义。
+
+- **P 档无声修复 (Parking Gear Sound Fix)**:
+  - **现象**: 挂入 P 档时偶发无播报。
+  - **原因**: 启动时的“首个 P 档过滤逻辑”存在缺陷。如果以非 P 档（如 D 档）启动，系统未能正确标记“初始阶段结束”，导致停车时的 P 档被误判为“初始 P 档”而被拦截。
+  - **修复**: 只要播放过任何档位（D/R/N）音效，立即强制结束初始过滤阶段，确保后续 P 档播报正常。
+
+### 功能优化与重构 (Refactoring & Optimization)
+
+- **主题 ID 重构 (Theme ID Refactor)**:
+  - 将 Audi RS 主题的内部 ID 常量 `THEME_AUDI_RS` 从 **21** 修改为 **2**，简化了编号规则。
+
+- **副驾传感器逻辑修正 (Passenger Sensor Logic)**:
+  - 修正了副驾传感器的数据类型（Float -> Int Event）和状态码定义（2110210 有人 / 2110209 无人），并补充了启动时的状态轮询。
+
+### 2026-01-20
 
 ### 副驾占用检测修复 (Passenger Occupancy Detection Fix)
 

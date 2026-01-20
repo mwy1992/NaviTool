@@ -23,7 +23,7 @@ public class Presentation extends android.app.Dialog {
     private View mAudiRsLayout;
     private int mCurrentTheme = -1; // THEME_DEFAULT
     public static final int THEME_DEFAULT = 1;
-    public static final int THEME_AUDI_RS = 21; // Assuming 21 based on usage, actual value irrelevant if used consistently
+    public static final int THEME_AUDI_RS = 2; // Refactored from 21 to 2
 
     // Standard Theme (Now Default)
     private StandardThemeController mStandardController;

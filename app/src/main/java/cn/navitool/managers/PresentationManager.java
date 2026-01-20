@@ -29,7 +29,7 @@ import cn.navitool.view.TrafficLightView;
 import java.util.ArrayList;
 import java.util.List;
 
-public class PresentationManager extends android.app.Presentation {
+public class PresentationManager extends android.app.Dialog {
     private static final String TAG = "PresentationManager";
     private final android.os.Handler mMainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private View mLayoutCluster;
@@ -45,7 +45,7 @@ public class PresentationManager extends android.app.Presentation {
     
     private int mCurrentTheme = -1; // THEME_DEFAULT
     public static final int THEME_DEFAULT = 1;
-    public static final int THEME_AUDI_RS = 21; 
+    public static final int THEME_AUDI_RS = 2; 
 
     // Floating Traffic Light
     private WindowManager mFloatingWindowManager;
@@ -79,14 +79,8 @@ public class PresentationManager extends android.app.Presentation {
     private boolean mIsMediaPlaying = false;
     private boolean mIsVolumeVisible = false;
 
-    public PresentationManager(Context context, Display display) {
-        super(context, display);
-    }
-    
-    // Legacy constructor for compatibility if strictly needed, though Display usually passed
     public PresentationManager(Context context) {
-        super(context, null); // CAUTION: Presentation needs Display, this might crash if used blindly.
-        // Assuming caller fixes calls.
+        super(context, R.style.Theme_NaviTool);
     }
 
     @Override
@@ -472,24 +466,16 @@ public class PresentationManager extends android.app.Presentation {
     }
 
     // Helper to toggle visibility of standard elements
-    // Note: ideally these Views should be managed by StandardThemeController, 
-    // but we need to toggle their container visibility here.
     private void hideDefaultClusterElements() {
-        // If we have a specific container for standard, hide it. 
-        // If not, we rely on Audi Layout covering it or specific IDs being managed.
-        // For now, let's assume standard elements are direct children of layoutCluster.
-        // We iterate children? No, too risky. 
-        // Assuming layout_cluster_standard is inflated into layoutCluster.
-        // Let's ensure mStandardLayout is found if possible.
-        if (mStandardLayout == null && mLayoutCluster != null) {
-             mStandardLayout = mLayoutCluster.findViewById(R.id.standardSpeedText).getRootView(); 
-             // Wait, standardSpeedText might not be the root.
-             // Fallback: If no specific standard container, we just accept Audi is on top.
+        if (mStandardLayout != null) {
+             mStandardLayout.setVisibility(View.GONE);
         }
     }
     
     private void showDefaultClusterElements() {
-         // See above.
+        if (mStandardLayout != null) {
+            mStandardLayout.setVisibility(View.VISIBLE);
+        }
     }
 
     public void updateDayNightMode(boolean isDay) {

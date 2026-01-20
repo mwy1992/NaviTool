@@ -719,6 +719,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                     cn.navitool.managers.SoundPromptManager
                                             .getInstance(KeepAliveAccessibilityService.this)
                                             .playGearSound(value);
+                                    // [FIX] Mark initial phase as done if we played a sound (e.g. started in D)
+                                    // This prevents the *next* P gear (Parking) from being skipped.
+                                    mInitialGearSkipped = true;
                                 }
                                 // 不管是否播放声音，仪表盘显示始终更新
                                 ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)

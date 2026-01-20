@@ -1483,6 +1483,8 @@ public class ClusterHudManager
         dm.registerDisplayListener(mDisplayListener, new Handler(Looper.getMainLooper()));
     }
 
+
+
     private void checkAndShowPresentationManager() {
         mMainHandler.post(() -> {
             // [FIX] 仅在收到点火信号后才显示
@@ -1725,9 +1727,24 @@ public class ClusterHudManager
     // [New] Public method for Activity to trigger UI check
     public void ensureUiVisible() {
         DebugLogger.d(TAG, "ensureUiVisible: Request received. Current Thread: " + Thread.currentThread().getName());
+        
         if (mContext == null) {
             DebugLogger.e(TAG, "ensureUiVisible: Context is null! Cannot show UI.");
             return;
+        }
+
+        // [FIX] Check Overlay Permission for background start
+        if (!(mContext instanceof android.app.Activity)) {
+             boolean canOverlay = false;
+             if (android.os.Build.VERSION.SDK_INT >= 23) {
+                 canOverlay = android.provider.Settings.canDrawOverlays(mContext);
+             } else {
+                 canOverlay = true; // Pre-M implicit
+             }
+             if (!canOverlay) {
+                 DebugLogger.e(TAG, "ensureUiVisible: FATAL - Missing SYSTEM_ALERT_WINDOW permission. UI usually cannot show strictly from Service Context.");
+                 // We proceed anyway as some systems bypass this, but log it.
+             }
         }
 
         // [FIX] 调用ensureUiVisible时标记点火就绪
@@ -1735,8 +1752,14 @@ public class ClusterHudManager
         mIgnitionReady = true;
 
         // [FIX] Check if features are enabled before showing
+        // Force reload config to be safe
+        boolean isCluster = ConfigManager.getInstance().getBoolean("switch_cluster", false);
+        boolean isHud = ConfigManager.getInstance().getBoolean("switch_hud", false);
+        mIsClusterEnabled = isCluster;
+        mIsHudEnabled = isHud;
+        
         if (!mIsClusterEnabled && !mIsHudEnabled) {
-            DebugLogger.w(TAG, "ensureUiVisible: Ignored. Both Cluster and HUD are disabled.");
+            DebugLogger.w(TAG, "ensureUiVisible: Ignored. Both Cluster and HUD are disabled (Config: Cluster=" + isCluster + ", HUD=" + isHud + ")");
             return;
         }
 
@@ -1894,8 +1917,8 @@ public class ClusterHudManager
                 // Wrap in Theme (Styling)
                 Context themeContext = new android.view.ContextThemeWrapper(displayContext, R.style.Theme_NaviTool);
 
-                // Instantiate as Presentation (Requires Display)
-                mPresentationManager = new PresentationManager(themeContext, targetDisplay);
+                // Instantiate as Presentation (Requires Display - handled by Context now)
+                mPresentationManager = new PresentationManager(themeContext);
                 DebugLogger.d(TAG, "showPresentationManager: [Step 4] Presentation Object Created (Type: APPLICATION_OVERLAY)");
 
                 // Logging for verification
@@ -1936,18 +1959,26 @@ public class ClusterHudManager
                         mPresentationManager.updateComponent("range", mCachedRangeText, null);
                         mPresentationManager.updateComponent("fuel_range", mCachedFuelText + "|" + mCachedRangeText, null);
                     }
+                    
+                    // [FIX] Apply Visibility inside OnShowListener to ensure Views are inflated and ready
+                    // Doing this outside show() caused race condition where views were still null/gone.
+                    DebugLogger.i(TAG, "OnShowListener: Applying Visibility - Cluster=" + mIsClusterEnabled + ", HUD=" + mIsHudEnabled);
+                    mPresentationManager.setClusterVisible(mIsClusterEnabled);
+                    mPresentationManager.setHudVisible(mIsHudEnabled);
+                    
+                    // [FIX] Apply Floating Traffic Light State
+                    mPresentationManager.setFloatingTrafficLightEnabled(mIsFloatingEnabled);
+                    mPresentationManager.setMediaPlaying(mIsMediaPlaying); // Sync initial state
+                    mPresentationManager.setHudGreenBg(mIsHudGreenBgExposed); // Apply Green Bg State
                 });
 
-                // [FIX] Apply Floating Traffic Light State
-                mPresentationManager.setFloatingTrafficLightEnabled(mIsFloatingEnabled);
-
                 mPresentationManager.show();
-                mPresentationManager.setClusterVisible(mIsClusterEnabled);
-                mPresentationManager.setHudVisible(mIsHudEnabled);
-                mPresentationManager.setFloatingTrafficLightEnabled(mIsFloatingEnabled); // Apply Floating State
-                mPresentationManager.setFloatingTrafficLightEnabled(mIsFloatingEnabled); // Apply Floating State
-                mPresentationManager.setMediaPlaying(mIsMediaPlaying); // Sync initial state
-                mPresentationManager.setHudGreenBg(mIsHudGreenBgExposed); // Apply Green Bg State
+                // [MOVED] Visibility setting moved to OnShowListener to ensure View readiness
+                // mPresentationManager.setClusterVisible(mIsClusterEnabled);
+                // mPresentationManager.setHudVisible(mIsHudEnabled);
+                // mPresentationManager.setFloatingTrafficLightEnabled(mIsFloatingEnabled); // Apply Floating State
+                // mPresentationManager.setMediaPlaying(mIsMediaPlaying); // Sync initial state
+                // mPresentationManager.setHudGreenBg(mIsHudGreenBgExposed); // Apply Green Bg State
 
                 // [FIX Initial State] Sync Day/Night Mode using System Global Configuration
                 int uiMode = android.content.res.Resources.getSystem().getConfiguration().uiMode
