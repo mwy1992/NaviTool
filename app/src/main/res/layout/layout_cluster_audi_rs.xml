@@ -129,7 +129,7 @@
         android:textSize="32sp"
         android:textStyle="bold" />
         
-    <!-- RPM Display (Re-added) -->
+    <!-- RPM Display (Debug Only - Commented Out) 
     <TextView
         android:id="@+id/audiRsRpmText"
         android:layout_width="wrap_content"
@@ -140,7 +140,7 @@
         android:text="0"
         android:textColor="#FFFFFF"
         android:textSize="24sp"
-        android:textStyle="bold" />
+        android:textStyle="bold" /> -->
 
     <!-- Navigation & Traffic Light Container (3 Rows) -->
     <LinearLayout

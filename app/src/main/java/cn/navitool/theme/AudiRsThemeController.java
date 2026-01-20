@@ -44,7 +44,7 @@ public class AudiRsThemeController extends BaseThemeController {
 
     // Views (Specific to Audi RS)
     private ClippedImageView mPointer;
-    private TextView mRpmText; // Re-added RPM Text
+    // private TextView mRpmText; // Re-added RPM Text (Debug)
     private ImageView mLight1, mLight2, mLight3, mLight4, mLight5;
     private ImageView mFlashBar;
     private ImageView mBackground; 
@@ -155,7 +155,7 @@ public class AudiRsThemeController extends BaseThemeController {
         // Bind Specific Views
         mBackground = rootView.findViewById(R.id.audiRsBg);
         mPointer = rootView.findViewById(R.id.audiRsPointer);
-        mRpmText = rootView.findViewById(R.id.audiRsRpmText); // Re-bind RPM Text
+        // mRpmText = rootView.findViewById(R.id.audiRsRpmText); // Debug RPM Text
         mLight1 = rootView.findViewById(R.id.audiRsLight1);
         mLight2 = rootView.findViewById(R.id.audiRsLight2);
         mLight3 = rootView.findViewById(R.id.audiRsLight3);
@@ -237,7 +237,7 @@ public class AudiRsThemeController extends BaseThemeController {
 
         // Release specific references
         mPointer = null;
-        mRpmText = null;
+        // mRpmText = null;
         mLight1 = null; mLight2 = null; mLight3 = null; mLight4 = null; mLight5 = null;
         mFlashBar = null;
         mBackground = null;
@@ -486,10 +486,12 @@ public class AudiRsThemeController extends BaseThemeController {
         int rpmInt = (int) rpm;
         mCurrentRpm = rpmInt;
         
-        // Update Text
-        if (mRpmText != null) {
+        mCurrentRpm = rpmInt;
+        
+        // Update Text (Debug - Commented Out)
+        /*if (mRpmText != null) {
             mRpmText.setText(String.valueOf(rpmInt));
-        }
+        }*/
 
         // 1. Update Pointer
         updatePointer(rpmInt);

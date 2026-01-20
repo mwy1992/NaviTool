@@ -926,11 +926,11 @@ public class ClusterHudManager
 
     // [Refactor] Implement methods for new sensors
     @Override
-    public void onTripDataChanged(float distanceKm, long duration, float avgFuel) {
+    public void onTripDataChanged(float distanceKm, long durationSec, float avgFuel) {
          if (mPresentationManager != null) {
             mMainHandler.post(() -> {
                 if (mPresentationManager != null) {
-                    mPresentationManager.updateTripInfo(distanceKm, duration);
+                    mPresentationManager.updateTripInfo(distanceKm, durationSec);
                 }
             });
         }

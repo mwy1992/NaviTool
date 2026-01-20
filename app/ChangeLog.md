@@ -1,5 +1,23 @@
 # Change Log
 
+## 2026-01-20 (下午工作总结 / Afternoon Session Summary)
+
+### 仪表动画平滑与奥迪主题增强 (Cluster Animation Smoothing & Audi RS Enhancements)
+
+- **平滑动画引擎 (Smooth Animation Engine)**:
+  - **动态重定向 (Dynamic Retargeting)**: 实现了 `SmoothValueAnimator`，引入“动态重定向”算法，解决了原本仅基于 `DecelerateInterpolator` 导致的指针运动迟滞和非自然回弹问题。
+  - **滚动计数器 (Rolling Counter)**: 实现了 `SmoothTextAnimator`，为数字显示提供平滑的滚动过渡效果。
+  - **应用范围**:
+    - **标准主题 (Standard Theme)**: 全面应用了指针平滑与速度文字滚动动画。
+    - **奥迪 RS 主题 (Audi RS Theme)**: 应用了速度文字滚动动画。
+
+- **奥迪 RS 主题调整 (Audi RS Theme Adjustments)**:
+  - **RPM 剪裁调优**: 根据实车效果调整了转速条的剪裁角度 (`mClipAngle` 15° -> 33°) 和绘制范围 (`CONTENT_END_X` 1000 -> 1020)，提升了视觉贴合度。
+  - **数字转速显示 (Debug)**: 新增了数字转速 (`RPM`) 显示组件代码（位于档位下方），但默认**已注释隐藏**，仅供调试使用。
+
+- **修复 (Fixes)**:
+  - 修复了 `SmoothValueAnimator` 因文件写入异常导致的编译错误。
+
 ## 2026-01-20 (上午工作总结 / Morning Session Summary)
 
 ### 严重 Bug 修复 (Critical Bug Fixes)
@@ -14,6 +32,17 @@
   - **现象**: 挂入 P 档时偶发无播报。
   - **原因**: 启动时的“首个 P 档过滤逻辑”存在缺陷。如果以非 P 档（如 D 档）启动，系统未能正确标记“初始阶段结束”，导致停车时的 P 档被误判为“初始 P 档”而被拦截。
   - **修复**: 只要播放过任何档位（D/R/N）音效，立即强制结束初始过滤阶段，确保后续 P 档播报正常。
+
+- **行车数据 API- [Fix] 修复 `VehicleSensorManager` 编译错误 (恢复缺失的 package 声明)。
+- [Fix] **TripData Crash Fix**: 移除导致闪退的 `ITripData` 接口依赖，彻底解决不兼容问题。
+- [Feature] **Soft Trip (软小计里程)**: 实现手动计算本通过程里程逻辑。
+  - 基于总里程 (Odometer) 差值计算。
+  - 支持停车 4 小时后自动重置行程。
+  - 数据持久化，防止应用重启丢失。
+- **行车数据 API 兼容性修复 (TripData Crash Fix)**:
+  - **现象**: 在部分车型（如版本 0.4.6）上启动即闪退，日志显示 `ClassCastException: VehicleSensorManager$2 cannot be cast to ITripInfoListener`。
+  - **原因**: 车辆底层 `TripData` API 存在版本差异，监听器接口定义不兼容（系统期望 `ITripInfoListener` 但编译代码使用的是 `ITripListener`）。
+  - **修复**: 在 `registerTripListener` 处增加了 `try-catch` 保护。若检测到 API 不兼容，将自动降级（不启用行车数据监听），防止应用崩溃。
 
 ### 功能优化与重构 (Refactoring & Optimization)
 
@@ -35,8 +64,6 @@
 
 ### 调试日志增强 (Enhanced Debug Logging)
 
-为了方便排查传感器逻辑与声音联动问题，在 `KeepAliveAccessibilityService` 中新增并分类了以下关键日志点：
-
 - **副驾传感器 (Passenger Sensor)**:
   - `Polled Passenger Seat: [数值]` (启动时查询到的原始状态值)
   - `Init: Passenger Seat is OCCUPIED` (启动初始化判定：有人)
@@ -48,8 +75,6 @@
   - `Passenger Door Open & Empty -> Playing 'Passenger Empty' Sound` (判定为无人，播放对应音效)
 
 ### 昨夜紧急修复汇总 (Late Night Urgent Fixes)
-
-针对昨夜 (Jan 19) 发现的高优先级问题进行了集中修复：
 
 - **主题配置持久化 (Theme Reset Fix)**:
   - 修复了覆盖安装或版本更新后，用户选择的仪表主题（如 Audi RS）被错误重置为默认值的问题。
