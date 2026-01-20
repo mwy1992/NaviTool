@@ -2,8 +2,12 @@ package cn.navitool.theme;
 
 import android.view.View;
 import android.widget.ImageView;
+import android.os.Handler;
+import android.os.Looper;
 import cn.navitool.R;
 import cn.navitool.utils.DebugLogger;
+import cn.navitool.view.animation.SmoothValueAnimator;
+import cn.navitool.view.animation.SmoothTextAnimator;
 
 /**
  * Standard Theme Controller (New Dial 22)
@@ -24,8 +28,50 @@ public class StandardThemeController extends BaseThemeController {
     private static final float RPM_START_ANGLE = -120f; 
 
     // Views (Specific to Standard Theme)
+    // Views (Specific to Standard Theme)
     private ImageView mPointerLeft; // Speed
     private ImageView mPointerRight; // RPM
+
+    // Animators
+    private SmoothValueAnimator mSpeedPointerAnimator;
+    private SmoothTextAnimator mSpeedTextAnimator;
+
+    // Animation Loop
+    private Handler mHandler = new Handler(Looper.getMainLooper());
+    private boolean mIsAnimating = false;
+    private Runnable mAnimationRunnable = new Runnable() {
+        @Override
+        public void run() {
+            boolean needsUpdate = false;
+
+            // Speed Pointer
+            if (mSpeedPointerAnimator != null && mPointerLeft != null) {
+                float val = mSpeedPointerAnimator.getValue();
+                // Map 0-260 speed to -130 to +130 degrees
+                // angle = start + (speed * ratio)
+                float angle = SPEED_START_ANGLE + (val * (MAX_SPEED_ANGLE / (float)MAX_SPEED));
+                mPointerLeft.setRotation(angle);
+
+                if (mSpeedPointerAnimator.isRunning()) {
+                    needsUpdate = true;
+                }
+            }
+
+            // Speed Text
+            if (mSpeedTextAnimator != null) {
+                mSpeedTextAnimator.onTick();
+                if (mSpeedTextAnimator.isRunning()) {
+                    needsUpdate = true;
+                }
+            }
+
+            if (needsUpdate) {
+                mHandler.postDelayed(this, 16); // ~60FPS
+            } else {
+                mIsAnimating = false;
+            }
+        }
+    };
 
     public StandardThemeController() {
     }
@@ -62,37 +108,60 @@ public class StandardThemeController extends BaseThemeController {
         updateRpm(0);
         // BaseThemeController handles gear update if set, but we might want to ensure default P
         setGear(mCurrentGearIndex >= 0 ? GEARS[mCurrentGearIndex] : "P"); 
+
+        // Init Animators
+        mSpeedPointerAnimator = new SmoothValueAnimator(0);
+        if (mSpeedText != null) {
+            mSpeedTextAnimator = new SmoothTextAnimator(mSpeedText);
+            mSpeedTextAnimator.setInitialValue(0);
+        } 
     }
     
     @Override
     public void detachViews() {
         super.detachViews();
+        mHandler.removeCallbacks(mAnimationRunnable);
+        mIsAnimating = false;
         mPointerLeft = null;
         mPointerRight = null;
+        mSpeedPointerAnimator = null;
+        mSpeedTextAnimator = null;
     }
 
     // --- Specific Logic ---
 
     // Override hook from BaseThemeController
     @Override
-    protected void onSpeedUpdated(float speed) {
+    public void updateSpeed(float speed) {
         // Clamp
         float clampedSpeed = Math.max(0, Math.min(speed, MAX_SPEED));
 
-        // Update Pointer Rotation
-        // -130 start, +260 range
-        float angle = SPEED_START_ANGLE + (clampedSpeed * (MAX_SPEED_ANGLE / (float)MAX_SPEED));
-        
-        if (mPointerLeft != null) {
-            // Ensure pivot is set (defensive)
-            if (mPointerLeft.getPivotX() == 0 || mPointerLeft.getPivotY() == 0) {
-                 if (mPointerLeft.getWidth() > 0) { 
-                     mPointerLeft.setPivotX(mPointerLeft.getWidth());
-                     mPointerLeft.setPivotY(mPointerLeft.getHeight());
-                 }
-            }
-            mPointerLeft.setRotation(angle);
+        // Jitter Filter (Use Base logic or custom)
+        if (Math.abs(clampedSpeed - mLastSpeed) < 0.1f) {
+             return;
         }
+        mLastSpeed = clampedSpeed;
+
+        // 1. Update Pointer Target
+        if (mSpeedPointerAnimator != null) {
+            mSpeedPointerAnimator.updateTarget(clampedSpeed);
+        }
+
+        // 2. Update Text Target
+        if (mSpeedTextAnimator != null) {
+            mSpeedTextAnimator.updateTargetValue((int) clampedSpeed);
+        }
+
+        // 3. Ensure Animation Loop is running
+        if (!mIsAnimating) {
+            mIsAnimating = true;
+            mHandler.post(mAnimationRunnable);
+        }
+    }
+
+    @Override
+    protected void onSpeedUpdated(float speed) {
+        // Deprecated usage in this class, logic moved to updateSpeed to handle animation
     }
 
     @Override

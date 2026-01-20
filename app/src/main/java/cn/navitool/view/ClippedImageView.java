@@ -23,7 +23,7 @@ public class ClippedImageView extends ImageView {
 
     // 裁剪参数
     private float mClipProgress = 1.0f; // 0-1，裁剪进度
-    private float mClipAngle = 15f; // 裁剪线与Y轴的夹角（度）
+    private float mClipAngle = 33f; // 裁剪线与Y轴的夹角（度）
     private int mContentStartX = 0; // 内容起始X坐标（缩放后）
     private int mContentEndX = 0; // 内容结束X坐标（缩放后）
     private boolean mClipEnabled = false; // 是否启用裁剪

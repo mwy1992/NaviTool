@@ -16,6 +16,7 @@ import cn.navitool.controller.NaviInfoController.TrafficLightInfo;
 import cn.navitool.controller.NaviInfoController.GuideInfo;
 import cn.navitool.utils.DebugLogger;
 import cn.navitool.view.ClippedImageView;
+import cn.navitool.view.animation.SmoothTextAnimator;
 
 /**
  * 奥迪RS转速表主题控制器
@@ -39,10 +40,11 @@ public class AudiRsThemeController extends BaseThemeController {
     // 指针校准区域
     private static final int ORIGINAL_WIDTH = 810; // 图片基准宽度
     private static final int CONTENT_START_X = 40; // 进度条起始X (像素)
-    private static final int CONTENT_END_X = 1000; // 进度条结束X (像素)
+    private static final int CONTENT_END_X = 1020; // 进度条结束X (像素)
 
     // Views (Specific to Audi RS)
     private ClippedImageView mPointer;
+    private TextView mRpmText; // Re-added RPM Text
     private ImageView mLight1, mLight2, mLight3, mLight4, mLight5;
     private ImageView mFlashBar;
     private ImageView mBackground; 
@@ -100,6 +102,33 @@ public class AudiRsThemeController extends BaseThemeController {
     private boolean mIsTrafficLightFlashing = false;
     private boolean mTrafficLightFlashOn = true; 
     private int mCurrentRawStatus = 0; 
+    
+    // Animation Animator
+    private SmoothTextAnimator mSpeedTextAnimator;
+
+    // Animation Loop
+    // Reuse mHandler for animation loop
+    private boolean mIsAnimating = false;
+    private Runnable mAnimationRunnable = new Runnable() {
+        @Override
+        public void run() {
+            boolean needsUpdate = false;
+
+            // Speed Text
+            if (mSpeedTextAnimator != null) {
+                 mSpeedTextAnimator.onTick();
+                 if (mSpeedTextAnimator.isRunning()) {
+                     needsUpdate = true;
+                 }
+            }
+
+            if (needsUpdate) {
+                mHandler.postDelayed(this, 16); // ~60FPS
+            } else {
+                mIsAnimating = false;
+            }
+        }
+    }; 
 
     private Runnable mTrafficLightFlashRunnable = new Runnable() {
         @Override
@@ -126,6 +155,7 @@ public class AudiRsThemeController extends BaseThemeController {
         // Bind Specific Views
         mBackground = rootView.findViewById(R.id.audiRsBg);
         mPointer = rootView.findViewById(R.id.audiRsPointer);
+        mRpmText = rootView.findViewById(R.id.audiRsRpmText); // Re-bind RPM Text
         mLight1 = rootView.findViewById(R.id.audiRsLight1);
         mLight2 = rootView.findViewById(R.id.audiRsLight2);
         mLight3 = rootView.findViewById(R.id.audiRsLight3);
@@ -171,6 +201,12 @@ public class AudiRsThemeController extends BaseThemeController {
 
         // Initial sync
         updateDayMode();
+        
+        // Init Animator
+        if (mSpeedText != null) {
+            mSpeedTextAnimator = new SmoothTextAnimator(mSpeedText);
+            mSpeedTextAnimator.setInitialValue(0);
+        }
     }
     
     private void bindTpmsViews(View rootView) {
@@ -194,8 +230,14 @@ public class AudiRsThemeController extends BaseThemeController {
     @Override
     public void detachViews() {
         super.detachViews();
+        // Stop animation
+        mHandler.removeCallbacks(mAnimationRunnable);
+        mIsAnimating = false;
+        mSpeedTextAnimator = null;
+
         // Release specific references
         mPointer = null;
+        mRpmText = null;
         mLight1 = null; mLight2 = null; mLight3 = null; mLight4 = null; mLight5 = null;
         mFlashBar = null;
         mBackground = null;
@@ -410,10 +452,44 @@ public class AudiRsThemeController extends BaseThemeController {
         }
     }
 
+    // Override Base updateSpeed to utilize SmoothTextAnimator
+    @Override
+    public void updateSpeed(float speed) {
+        // Jitter Filter
+        if (Math.abs(speed - mLastSpeed) < 0.1f) {
+            return;
+        }
+        mLastSpeed = speed;
+
+        // Update Text Animator
+        if (mSpeedTextAnimator != null) {
+            mSpeedTextAnimator.updateTargetValue((int) speed);
+             // Ensure Animation Loop is running
+            if (!mIsAnimating) {
+                mIsAnimating = true;
+                mHandler.post(mAnimationRunnable);
+            }
+        } else {
+            // Fallback if animator failed
+             if (mSpeedText != null) {
+                mSpeedText.setText(String.valueOf((int) speed));
+            }
+        }
+        
+        // Not calling onSpeedUpdated as it's empty in base and replaced here for text.
+        // But if there were other speed logic we would call it.
+        onSpeedUpdated(speed);
+    }
+
     @Override
     public void updateRpm(float rpm) {
         int rpmInt = (int) rpm;
         mCurrentRpm = rpmInt;
+        
+        // Update Text
+        if (mRpmText != null) {
+            mRpmText.setText(String.valueOf(rpmInt));
+        }
 
         // 1. Update Pointer
         updatePointer(rpmInt);
