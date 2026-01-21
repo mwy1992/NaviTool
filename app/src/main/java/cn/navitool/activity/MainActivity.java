@@ -181,6 +181,11 @@ public class MainActivity extends AppCompatActivity {
         // This ensures subsequent UI operations use the Theme-aware Activity Context.
         cm.updateContext(this);
 
+        // [FIX] Explicitly initialize API 30 Manager for Android 11+
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            ClusterHudManagerApi30.getInstance(this);
+        }
+
         // [Legacy] NaviInfoController init kept for general readiness (Geely Socket Removed)
         NaviInfoController.getInstance(this);
 
@@ -1440,7 +1445,6 @@ public class MainActivity extends AppCompatActivity {
         boolean isMediaCover = "song_cover".equals(type);
         boolean isTurnSignal = "turn_signal".equals(type);
         boolean isVolume = "volume".equals(type);
-        boolean isAutoHold = "auto_hold".equals(type);
 
 
 
@@ -1537,7 +1541,7 @@ public class MainActivity extends AppCompatActivity {
             // Real HUD: 1x (24px fonts), Preview: 2x (should appear as 48px)
             // Use internal scaling method to ensure correct boundary detection
             tlv.setPreviewScale(2.0f);
-        } else if (isMediaCover || isTurnSignal || isVolume || isAutoHold) {
+        } else if (isMediaCover || isTurnSignal || isVolume) {
             ImageView iv = new ImageView(this);
             iv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
 
@@ -1559,26 +1563,6 @@ public class MainActivity extends AppCompatActivity {
                 iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
                 view = iv;
                 view.setLayoutParams(params);
-            } else if (isAutoHold) {
-                // Use Manager to get Bitmap
-                android.graphics.Bitmap bmp = ClusterHudManager.getInstance(this).getAutoHoldBitmap(true); // Default ON
-                                                                                                           // for
-                                                                                                           // preview
-                if (bmp != null) {
-                    iv.setImageBitmap(bmp);
-                } else {
-                    iv.setImageResource(R.drawable.ic_auto_hold);
-                }
-
-                // Real HUD Size 36px -> Preview 72px
-                int size = 72;
-                android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(size,
-                        size);
-                iv.setAdjustViewBounds(true);
-                iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                view = iv;
-                view.setLayoutParams(params);
-
             } else if (isVolume) {
                 // Use Manager to get Standard Bitmap (24px)
                 android.graphics.Bitmap bmp = ClusterHudManager.getInstance(this).getVolumeBitmap(15);
@@ -2198,8 +2182,6 @@ public class MainActivity extends AppCompatActivity {
                     createAndAddHudComponent("gear", "-", 0, 0); // [FIX] Use placeholder, real data comes from sensor
                 else if ("turn_signal".equals(type))
                     createAndAddHudComponent("turn_signal", "←      →", 0, 0);
-                else if ("auto_hold".equals(type))
-                    createAndAddHudComponent("auto_hold", "A", 0, 0);
                 else if ("volume".equals(type))
                     createAndAddHudComponent("volume", "音量: --", 0, 0);
                 else if ("song_cover".equals(type))
@@ -2973,6 +2955,13 @@ public class MainActivity extends AppCompatActivity {
         setupSoundItem(R.id.cardSoundDoorHood, R.string.switch_sound_door_hood, "sound_door_hood");
         setupSoundItem(R.id.cardSoundDoorTrunk, R.string.switch_sound_door_trunk, "sound_door_trunk");
 
+        // [NEW] Door Closing Sounds
+        setupSoundItem(R.id.cardSoundDoorDriverClose, R.string.switch_sound_door_driver_close, "sound_door_driver_close");
+        setupSoundItem(R.id.cardSoundDoorPassengerClose, R.string.switch_sound_door_passenger_close, "sound_door_passenger_close");
+        setupSoundItem(R.id.cardSoundDoorPassengerEmptyClose, R.string.switch_sound_door_passenger_empty_close, "sound_door_passenger_empty_close");
+        setupSoundItem(R.id.cardSoundDoorRearLeftClose, R.string.switch_sound_door_rear_left_close, "sound_door_rear_left_close");
+        setupSoundItem(R.id.cardSoundDoorRearRightClose, R.string.switch_sound_door_rear_right_close, "sound_door_rear_right_close");
+
         configureTestButtonsVisibility();
     }
 
@@ -3002,7 +2991,12 @@ public class MainActivity extends AppCompatActivity {
 
         if (tvFile != null) {
             String selectedFile = ConfigManager.getInstance().getString(fileKey, null);
-            tvFile.setText(selectedFile != null ? selectedFile : getString(R.string.text_default_sound));
+            if (selectedFile != null && !selectedFile.isEmpty()) {
+                tvFile.setText(selectedFile);
+                tvFile.setVisibility(View.VISIBLE);
+            } else {
+                tvFile.setVisibility(View.GONE);
+            }
         }
 
         if (btnSelect != null) {
@@ -3093,6 +3087,7 @@ public class MainActivity extends AppCompatActivity {
                     ConfigManager.getInstance().setString(fileKey, selectedFile);
                     if (tvFile != null) {
                         tvFile.setText(selectedFile);
+                        tvFile.setVisibility(View.VISIBLE);
                     }
                     android.widget.Toast.makeText(this, getString(R.string.toast_sound_selected, selectedFile),
                             android.widget.Toast.LENGTH_SHORT).show();
@@ -3117,6 +3112,17 @@ public class MainActivity extends AppCompatActivity {
                 finalName = "gear_p.mp3";
             else if (keyPrefix.equals("sound_door_passenger"))
                 finalName = "door_passenger.mp3";
+            // [NEW] Default filenames for Closing Sounds
+            else if (keyPrefix.equals("sound_door_driver_close"))
+                finalName = "door_driver_close.mp3";
+            else if (keyPrefix.equals("sound_door_passenger_close"))
+                finalName = "door_passenger_close.mp3";
+            else if (keyPrefix.equals("sound_door_passenger_empty_close"))
+                 finalName = "door_passenger_empty_close.mp3";
+            else if (keyPrefix.equals("sound_door_rear_left_close"))
+                 finalName = "door_rear_left_close.mp3";
+            else if (keyPrefix.equals("sound_door_rear_right_close"))
+                 finalName = "door_rear_right_close.mp3";
         }
 
         final String resolvedName = finalName;
@@ -3157,7 +3163,13 @@ public class MainActivity extends AppCompatActivity {
             R.id.cardSoundDoorRearLeft,
             R.id.cardSoundDoorRearRight,
             R.id.cardSoundDoorHood,
-            R.id.cardSoundDoorTrunk
+            R.id.cardSoundDoorTrunk,
+            // [NEW] Closing Sounds
+            R.id.cardSoundDoorDriverClose,
+            R.id.cardSoundDoorPassengerClose,
+            R.id.cardSoundDoorPassengerEmptyClose,
+            R.id.cardSoundDoorRearLeftClose,
+            R.id.cardSoundDoorRearRightClose
         };
 
         for (int cardId : cardIds) {
@@ -3260,6 +3272,7 @@ public class MainActivity extends AppCompatActivity {
                 DebugLogger.action("MainActivity", "节日壁纸选择: " + position);
 
                 // 调用车机 API 设置节日壁纸
+                /*
                 com.ecarx.xui.adaptapi.car.base.ICarFunction carFunction = cn.navitool.managers.CarServiceManager
                         .getInstance(MainActivity.this).getCarFunction();
                 if (carFunction != null) {
@@ -3270,6 +3283,7 @@ public class MainActivity extends AppCompatActivity {
                         DebugLogger.e("MainActivity", "设置节日壁纸失败", e);
                     }
                 }
+                */
             }
 
             @Override
@@ -3982,7 +3996,7 @@ public class MainActivity extends AppCompatActivity {
 
         updateDialogStatusItem(dialogView, R.id.dialogStatusAutoStart, true);
         updateDialogStatusItem(dialogView, R.id.dialogStatusSecureSettings, hasSecureSettingsPermission());
-        updateDialogStatusItem(dialogView, R.id.dialogStatusNotification, isNotificationListenerEnabled());
+        updateDialogStatusItem(dialogView, R.id.dialogStatusNotification, isNotificationServiceEnabled());
     }
 
     private boolean hasSecureSettingsPermission() {

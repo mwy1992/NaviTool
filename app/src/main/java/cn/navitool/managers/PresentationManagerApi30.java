@@ -66,6 +66,15 @@ public class PresentationManagerApi30 extends android.app.Presentation {
 
         // Basic Window Flags
         if (getWindow() != null) {
+
+            // [FIX] Z-Order Correction: Use TYPE_APPLICATION_OVERLAY (2038)
+            // This ensures the HUD remains visible over Navigation Apps (Amap/Geely Map).
+            // Requires Context created via createWindowContext(TYPE_APPLICATION_OVERLAY) to avoid crash.
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
+            } else {
+                getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
+            }
             getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
 
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -101,7 +110,7 @@ public class PresentationManagerApi30 extends android.app.Presentation {
             ViewGroup.LayoutParams params = mLayoutHud.getLayoutParams();
             if (params != null) {
                 params.width = 800; // 1:1 for Api30
-                params.height = 480;
+                params.height = 230; // [FIX] Adjusted height to 230
                 mLayoutHud.setLayoutParams(params);
             }
         } else if (!isHud && mLayoutCluster != null) {
@@ -152,17 +161,8 @@ public class PresentationManagerApi30 extends android.app.Presentation {
     // --- Layout Sync Logic (1:1 Mapping) ---
 
     public void syncHudLayout(List<ClusterHudManager.HudComponentData> components) {
-        // [API30] Target 800x480 directly. No scaling factor needed if data.x/y are pixels.
-        // If data.x/y are floats (0..1), we multiply by 800/480.
-        // Assuming Editor uses 800x480 px, data.x/y should be pixels.
-        // Legacy code used "maxWidth" to multiply relative coords, OR just pixels if max=1?
-        // Let's assume Pixel Coordinates based on Editor being 800x480 fixed.
-        // Legacy Editor (layout_tab_hud.xml) was 1456x380? 
-        // Wait, if legacy editor was different size, the stored coordinates might be incompatible?
-        // Requirement 4 says "Validate preview area components position vs Real HUD is 1:1".
-        // If user creates NEW layout on Api30 editor (800x480), coords will be 0-800.
-        // So here we map 0-800 to 0-800.
-        syncLayoutGeneric(mLayoutHud, mRealHudComponents, components, 800, 480);
+        // [API30] Target 800x230 directly. No scaling factor needed if data.x/y are pixels.
+        syncLayoutGeneric(mLayoutHud, mRealHudComponents, components, 800, 230);
     }
 
     public void syncClusterLayout(List<ClusterHudManager.HudComponentData> components) {
@@ -188,7 +188,6 @@ public class PresentationManagerApi30 extends android.app.Presentation {
             boolean isSong = "song_2line".equals(data.type) || "song_1line".equals(data.type);
             boolean isTurnSignal = "turn_signal".equals(data.type);
             boolean isVolume = "volume".equals(data.type);
-            boolean isAutoHold = "auto_hold".equals(data.type);
             boolean isMediaCover = "song_cover".equals(data.type);
 
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
@@ -227,7 +226,7 @@ public class PresentationManagerApi30 extends android.app.Presentation {
                 }
                 params.width = 300;
                 view = ll;
-            } else if (isMediaCover || isTurnSignal || isVolume || isAutoHold) {
+            } else if (isMediaCover || isTurnSignal || isVolume) {
                 ImageView iv = new ImageView(getContext());
                 if (data.image != null) {
                     iv.setImageBitmap(data.image);
@@ -241,7 +240,7 @@ public class PresentationManagerApi30 extends android.app.Presentation {
                 if (isMediaCover) {
                     params.width = 100;
                     params.height = 100;
-                } else if (isTurnSignal || isVolume || isAutoHold) {
+                } else if (isTurnSignal || isVolume) {
                     params.height = 36;
                     params.width = FrameLayout.LayoutParams.WRAP_CONTENT;
                     iv.setAdjustViewBounds(true);
@@ -335,9 +334,16 @@ public class PresentationManagerApi30 extends android.app.Presentation {
                 // Handle special alignments for temp/rpm if needed
                 TextView tv = createTextView(data.text != null ? data.text : "", 24, data.color);
                 if (data.typeface != null) tv.setTypeface(data.typeface);
-                if ("hud_rpm".equals(data.type) || "temp_out".equals(data.type)) {
+                if ("hud_rpm".equals(data.type)) {
                     tv.setGravity(android.view.Gravity.END);
-                    params.width = "hud_rpm".equals(data.type) ? 200 : 120;
+                    tv.setSingleLine(true);
+                    tv.setMaxLines(1);
+                    params.width = 100;
+                } else if ("temp_out".equals(data.type) || "temp_in".equals(data.type)) {
+                    tv.setGravity(android.view.Gravity.END);
+                    tv.setSingleLine(true);
+                    tv.setMaxLines(1);
+                    params.width = 90;
                 }
                 view = tv;
             }

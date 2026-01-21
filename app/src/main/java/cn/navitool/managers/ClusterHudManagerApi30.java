@@ -5,6 +5,7 @@ import android.hardware.display.DisplayManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Display;
+import cn.navitool.R;
 
 import java.util.List;
 
@@ -61,7 +62,6 @@ public class ClusterHudManagerApi30 {
     // Constants from ClusterHudManager
     private static final int FUNC_LEFT_TRUN_SIGNAL = 553980160;
     private static final int FUNC_RIGHT_TRUN_SIGNAL = 553980416;
-    private static final int FUNC_AUTOHOLD_STATUS = 33661;
     
     // Blinking Handling
     private boolean mLeftTurnOn = false;
@@ -205,9 +205,7 @@ public class ClusterHudManagerApi30 {
             // Register Turn Signals
             mCarFunction.registerFunctionValueWatcher(FUNC_LEFT_TRUN_SIGNAL, mFunctionListener);
             mCarFunction.registerFunctionValueWatcher(FUNC_RIGHT_TRUN_SIGNAL, mFunctionListener);
-            // Register Auto Hold
-            mCarFunction.registerFunctionValueWatcher(FUNC_AUTOHOLD_STATUS, mFunctionListener);
-            DebugLogger.i(TAG, LOG_PREFIX + "Functions Registered (Turn Signals + AutoHold)");
+            DebugLogger.i(TAG, LOG_PREFIX + "Functions Registered (Turn Signals)");
         } catch (Exception e) {
             DebugLogger.e(TAG, LOG_PREFIX + "Error registering functions", e);
         }
@@ -267,6 +265,12 @@ public class ClusterHudManagerApi30 {
         DisplayManager dm = (DisplayManager) mContext.getSystemService(Context.DISPLAY_SERVICE);
         if (dm == null) return;
 
+        // [FIX] Prevent BadTokenException: Ensure Overlay Permission is granted
+        if (!android.provider.Settings.canDrawOverlays(mContext)) {
+            DebugLogger.w(TAG, LOG_PREFIX + "showPresentations: SYSTEM_ALERT_WINDOW permission denied. Waiting for grant.");
+            return;
+        }
+
         int hudId = mIsEmulatorMode ? DISPLAY_ID_HUD_EMULATOR : DISPLAY_ID_HUD_REAL;
         int clusterId = mIsEmulatorMode ? DISPLAY_ID_CLUSTER_EMULATOR : DISPLAY_ID_CLUSTER_REAL;
         
@@ -295,8 +299,11 @@ public class ClusterHudManagerApi30 {
 
     private void createHudPresentation(Display display) {
         try {
-            Context displayContext = mContext.createDisplayContext(display);
-            mHudPresentation = new PresentationManagerApi30(displayContext, display);
+            Context displayContext = createDisplayContextRaw(display);
+            // Wrap in Theme (Styling)
+            Context themeContext = new android.view.ContextThemeWrapper(displayContext, R.style.Theme_NaviTool);
+
+            mHudPresentation = new PresentationManagerApi30(themeContext, display);
             mHudPresentation.show();
             mHudPresentation.setHudVisible(true);
             mHudPresentation.setClusterVisible(false);
@@ -312,8 +319,11 @@ public class ClusterHudManagerApi30 {
 
     private void createClusterPresentation(Display display) {
         try {
-            Context displayContext = mContext.createDisplayContext(display);
-            mClusterPresentation = new PresentationManagerApi30(displayContext, display);
+            Context displayContext = createDisplayContextRaw(display);
+            // Wrap in Theme (Styling)
+            Context themeContext = new android.view.ContextThemeWrapper(displayContext, R.style.Theme_NaviTool);
+
+            mClusterPresentation = new PresentationManagerApi30(themeContext, display);
             mClusterPresentation.show();
             mClusterPresentation.setClusterVisible(true);
             mClusterPresentation.setHudVisible(false);
@@ -328,6 +338,23 @@ public class ClusterHudManagerApi30 {
             DebugLogger.i(TAG, LOG_PREFIX + "Cluster Presentation Created & Shown on Display " + display.getDisplayId());
         } catch (Exception e) {
             DebugLogger.e(TAG, LOG_PREFIX + "Failed to create Cluster Presentation", e);
+        }
+    }
+
+    // Helper to create correct context type
+    // [FIX] Use WindowContext for TYPE_APPLICATION_OVERLAY (2038) to ensure Z-Order > Navigation Apps
+    private Context createDisplayContextRaw(Display display) {
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            try {
+                // Must use createWindowContext to be allowed to set TYPE_APPLICATION_OVERLAY
+                return mContext.createWindowContext(display, 
+                        android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null);
+            } catch (Exception e) {
+                DebugLogger.e(TAG, LOG_PREFIX + "createWindowContext failed, fallback to createDisplayContext", e);
+                return mContext.createDisplayContext(display);
+            }
+        } else {
+            return mContext.createDisplayContext(display);
         }
     }
     
@@ -520,18 +547,6 @@ public class ClusterHudManagerApi30 {
                 updateTurnSignal(true, isOn);
             } else if (funcId == FUNC_RIGHT_TRUN_SIGNAL) {
                 updateTurnSignal(false, isOn);
-            } else if (funcId == FUNC_AUTOHOLD_STATUS) {
-                boolean isAutoHoldOn = (value == 1);
-                // Dispatch AutoHold update to generic component "auto_hold" if managed by Presentation
-                // PresentationManager typically handles this via updateComponent or dedicated method.
-                // For now, we replicate simplified logic or ensure updateComponent passes it.
-                // Legacy Manager calls: updateComponentImage("auto_hold", bitmap);
-                // Api30 should do same but we need the bitmap logic. 
-                // Simplification for specific request instructions: Focus on Structure.
-                // We'll leave AutoHold strictly to generic updateComponent for now or implementing if critical.
-                // Assuming "auto_hold" component exists and is image-based.
-                // We don't have getAutoHoldBitmap here yet. 
-                // Ideally we import the resource logic.
             }
         }
 

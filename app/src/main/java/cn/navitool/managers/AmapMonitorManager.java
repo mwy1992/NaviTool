@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Process;
 import android.util.Log;
 
 import java.io.File;
@@ -30,13 +31,31 @@ public class AmapMonitorManager {
     private Context mContext;
     private boolean isRegistered = false;
 
-    // Async Logging
+    // Async Logging (Legacy - Disabled)
     private HandlerThread mLogThread;
     private Handler mLogHandler;
 
+    // [FIX] Background thread for broadcast processing to avoid main thread blocking
+    private HandlerThread mBroadcastThread;
+    private Handler mBroadcastHandler;
+
+    // [FIX] State-change throttling to avoid duplicate notifications
+    private int mLastNaviState = -1;
+
     private AmapMonitorManager(Context context) {
         this.mContext = context.getApplicationContext();
-        // initLogThread();
+        initBroadcastThread();
+    }
+
+    /**
+     * [FIX] Initialize background thread for processing Amap broadcasts.
+     * This prevents main thread blocking which causes RemoteServiceException crash.
+     */
+    private void initBroadcastThread() {
+        mBroadcastThread = new HandlerThread("AmapBroadcastHandler", Process.THREAD_PRIORITY_BACKGROUND);
+        mBroadcastThread.start();
+        mBroadcastHandler = new Handler(mBroadcastThread.getLooper());
+        DebugLogger.i(TAG, "Broadcast processing thread initialized");
     }
 
     private void initLogThread() {
@@ -83,22 +102,47 @@ public class AmapMonitorManager {
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to unregister receiver", e);
         }
+        
+        // [FIX] Cleanup broadcast thread
+        if (mBroadcastThread != null) {
+            mBroadcastThread.quitSafely();
+            mBroadcastThread = null;
+            mBroadcastHandler = null;
+            DebugLogger.i(TAG, "Broadcast processing thread terminated");
+        }
     }
 
     private final BroadcastReceiver mAmapReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            try {
-                if (AMAP_BROADCAST_ACTION.equals(intent.getAction())) {
-                    parseAndLogBroadcast(intent);
-                }
-            } catch (Throwable t) {
-                // [FIX] Catch BadParcelableException/ClassNotFoundException on Android 11+
-                // triggered when unparceling extras from external apps (e.g. Amap)
-                DebugLogger.e(TAG, "Error processing Amap broadcast: " + t.getMessage());
+            // [FIX] Immediately offload to background thread to avoid main thread blocking
+            // This prevents RemoteServiceException: can't deliver broadcast
+            if (mBroadcastHandler == null) {
+                DebugLogger.w(TAG, "BroadcastHandler not ready, processing on main thread");
+                processIntent(intent);
+                return;
             }
+            
+            // Copy intent data to avoid parcel recycling issues
+            final Intent intentCopy = new Intent(intent);
+            mBroadcastHandler.post(() -> processIntent(intentCopy));
         }
     };
+    
+    /**
+     * [FIX] Process broadcast intent on background thread
+     */
+    private void processIntent(Intent intent) {
+        try {
+            if (AMAP_BROADCAST_ACTION.equals(intent.getAction())) {
+                parseAndLogBroadcast(intent);
+            }
+        } catch (Throwable t) {
+            // [FIX] Catch BadParcelableException/ClassNotFoundException on Android 11+
+            // triggered when unparceling extras from external apps (e.g. Amap)
+            DebugLogger.e(TAG, "Error processing Amap broadcast: " + t.getMessage());
+        }
+    }
 
     // Listener Interface for Broadcast Updates
     public interface OnBroadcastListener {
@@ -172,6 +216,14 @@ public class AmapMonitorManager {
         } else if (keyType == 10019) {
             // [NEW] Navigation State Update (Start/Stop)
             int state = getInt(extras, "EXTRA_STATE");
+            
+            // [FIX] State-change throttling: only notify if state actually changed
+            // This prevents excessive updates that could block main thread
+            if (state == mLastNaviState) {
+                return; // Skip duplicate notification
+            }
+            mLastNaviState = state;
+            
             if (mListener != null) {
                 mListener.onNaviStatusUpdate(state);
             }

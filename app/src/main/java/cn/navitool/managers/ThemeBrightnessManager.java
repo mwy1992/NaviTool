@@ -358,6 +358,10 @@ public class ThemeBrightnessManager {
             // [FIX] Immediate update (don't wait for polling)
             broadcastSensorValues(mLastDayNightSensorValue, mLastAvmValue, mLastBrightnessDayValue,
                     mLastBrightnessNightValue);
+            
+            // [NEW] Proactive theme sync when day/night mode changes
+            // This ensures Amap theme stays in sync even when app is in background
+            syncAutoNaviTheme();
         }
     }
 

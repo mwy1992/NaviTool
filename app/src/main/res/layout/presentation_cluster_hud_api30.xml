@@ -17,14 +17,15 @@
 
     </FrameLayout>
 
-    <!-- HUD Container: 800x480 -->
+    <!-- HUD Container: 800x230 (Fixed Area) -->
     <!-- Used on Display ID 1 (Real) or 2 (Semulator) -->
-    <!-- Positioned at (0,0) relative to its window -->
+    <!-- Positioned at (0, 187) relative to its window -->
     <!-- 1:1 Mapping with Preview Area (No scaling) -->
     <FrameLayout
         android:id="@+id/layoutHud"
         android:layout_width="800px"
-        android:layout_height="480px"
+        android:layout_height="230px"
+        android:layout_marginTop="187px"
         android:layout_gravity="top|start"
         android:background="@android:color/transparent"
         android:visibility="gone">

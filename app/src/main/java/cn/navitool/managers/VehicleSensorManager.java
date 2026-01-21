@@ -2,10 +2,8 @@
 package cn.navitool.managers;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import com.ecarx.xui.adaptapi.car.sensor.ISensor;
 import com.ecarx.xui.adaptapi.car.sensor.ISensorEvent;
-// Removed ITripData imports
 import cn.navitool.utils.DebugLogger;
 
 import java.util.ArrayList;
@@ -62,19 +60,7 @@ public class VehicleSensorManager {
     private static VehicleSensorManager sInstance;
     private Context mContext;
     private ISensor mSensor;
-    // ITripData removed as it causes crashes on 0.4.6 and is not supported by standard API
     private boolean mIsInitialized = false;
-
-    // --- Soft Trip Persistence ---
-    private static final String PREF_NAME = "trip_data";
-    private static final String KEY_START_ODO = "start_odo";
-    private static final String KEY_START_TIME = "start_time";
-    private static final String KEY_LAST_IGNITION_OFF = "last_ignition_off";
-    private SharedPreferences mPrefs;
-    private static final long RESET_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 Hours
-    
-    private float mStartOdo = -1f;
-    private long mStartTime = 0;
 
     // --- 缓存值 ---
     private float mSpeed = 0; // km/h
@@ -88,13 +74,6 @@ public class VehicleSensorManager {
     private float mRange = 0;
     private float mOdometer = 0;
     private float mLight = 0;
-    
-    // [NEW] Current Trip Data (Soft Calculation)
-    private float mCurrentTripKm = 0f;
-    private long mCurrentTripDuration = 0;
-
-    // [NEW] Trip Data Cache (Soft Calculation)
-    private float mAvgFuelConsumption = 0; // Unit: L/100km
 
     private int mIgnition = 0;
     private int mGear = 0;
@@ -107,7 +86,6 @@ public class VehicleSensorManager {
     // --- 监听器 ---
     private final List<Listener> mListeners = new ArrayList<>();
     private ISensor.ISensorListener mSensorListener;
-    // Trip Listener removed
 
     public interface Listener {
         default void onSpeedChanged(float speedKmh) {}
@@ -124,10 +102,6 @@ public class VehicleSensorManager {
         default void onDayNightChanged(int mode) {}
         default void onLightChanged(float light) {}
         default void onTireDataChanged(int index, float pressure, float temp) {}
-        // [NEW] Trip Data Callback (Updated to float distance for km)
-        // distance: Current Trip (km) if calculated, or API Trip (km)
-        // duration: seconds
-        default void onTripDataChanged(float distanceKm, long durationSec, float avgFuel) {}
     }
 
     // --- 单例获取 ---
@@ -140,7 +114,6 @@ public class VehicleSensorManager {
 
     private VehicleSensorManager(Context context) {
         mContext = context;
-        mPrefs = mContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
     }
 
     // --- 初始化 ---
@@ -154,7 +127,6 @@ public class VehicleSensorManager {
             mSensor = CarServiceManager.getInstance(mContext).getSensor();
             if (mSensor != null) {
                 registerSensors();
-                checkTripReset(); // [NEW] Check logic for Soft Trip
                 mIsInitialized = true;
                 DebugLogger.action(TAG, "传感器管理器初始化完成");
             } else {
@@ -219,60 +191,12 @@ public class VehicleSensorManager {
         refreshAllValues();
     }
 
-    /**
-     * [Soft Trip Implementation]
-     * Check if we need to reset trip data (e.g. after long parking > 4 hours)
-     */
-    private void checkTripReset() {
-        long lastOffTime = mPrefs.getLong(KEY_LAST_IGNITION_OFF, 0);
-        long now = System.currentTimeMillis();
-        
-        mStartOdo = mPrefs.getFloat(KEY_START_ODO, -1f);
-        mStartTime = mPrefs.getLong(KEY_START_TIME, 0);
-        
-        boolean needReset = false;
-        
-        if (mStartOdo < 0) {
-            needReset = true; // First run
-        } else if (lastOffTime > 0 && (now - lastOffTime) > RESET_THRESHOLD_MS) {
-            needReset = true; // Long stop
-        }
-        
-        if (needReset) {
-            DebugLogger.i(TAG, "Trip Data Reset Triggered (Soft Trip)");
-            // We can't set mStartOdo yet if we don't have current Odometer.
-            // We just clear it to force reset on next Odometer update.
-            mStartOdo = -1f; 
-            mStartTime = now;
-            
-            // Clear prefs
-            mPrefs.edit()
-                .putFloat(KEY_START_ODO, -1f)
-                .putLong(KEY_START_TIME, now)
-                .apply();
-                
-            mCurrentTripKm = 0;
-            mCurrentTripDuration = 0;
-            notifyTripDataChanged();
-        } else {
-             DebugLogger.i(TAG, "Trip Data Continued: StartOdo=" + mStartOdo);
-        }
-    }
-
     private void handleEventSensor(int sensorType, int value) {
         switch (sensorType) {
             case SENSOR_TYPE_IGNITION:
                 if (mIgnition != value) {
                     mIgnition = value;
                     DebugLogger.action(TAG, "点火状态变化: " + value);
-                    
-                    // Handle Soft Trip Persistence on Ignition Off
-                    if (value == ISensorEvent.IGNITION_STATE_OFF || value == ISensorEvent.IGNITION_STATE_ACC) {
-                         mPrefs.edit().putLong(KEY_LAST_IGNITION_OFF, System.currentTimeMillis()).apply();
-                    } else if (value == ISensorEvent.IGNITION_STATE_DRIVING || value == ISensorEvent.IGNITION_STATE_ON) {
-                         checkTripReset();
-                    }
-                    
                     notifyIgnitionChanged(value);
                 }
                 break;
@@ -355,9 +279,6 @@ public class VehicleSensorManager {
             case SENSOR_TYPE_ODOMETER:
                 mOdometer = value;
                 notifyOdometerChanged(value);
-                
-                // [Soft Trip Logic] Update Trip Distance
-                updateSoftTripDistance(value);
                 break;
             case SENSOR_TYPE_LIGHT:
                 mLight = value;
@@ -416,40 +337,9 @@ public class VehicleSensorManager {
             mTireTemp[3] = mSensor.getSensorLatestValue(SENSOR_TYPE_TIRE_TEMP_RR);
 
             DebugLogger.d(TAG, "Refreshed all sensor values");
-            
-            // Initial Trip Calc if needed
-            if (mOdometer > 0) {
-                 updateSoftTripDistance(mOdometer);
-            }
-            
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to refresh values", e);
         }
-    }
-    
-    private void updateSoftTripDistance(float currentOdo) {
-        if (currentOdo <= 0) return;
-        
-        // If start odo is invalid (e.g. freshly reset or first run), capture current
-        if (mStartOdo < 0) {
-            mStartOdo = currentOdo;
-            mStartTime = System.currentTimeMillis();
-            mPrefs.edit()
-                .putFloat(KEY_START_ODO, mStartOdo)
-                .putLong(KEY_START_TIME, mStartTime)
-                .apply();
-             DebugLogger.i(TAG, "Soft Trip Initialized: StartOdo=" + mStartOdo);
-        }
-        
-        // Calculate Delta
-        mCurrentTripKm = currentOdo - mStartOdo;
-        if (mCurrentTripKm < 0) mCurrentTripKm = 0; // Should not happen unless rollback
-        
-        // Calculate Duration
-        long durationMs = System.currentTimeMillis() - mStartTime;
-        mCurrentTripDuration = durationMs / 1000; // Seconds
-        
-        notifyTripDataChanged();
     }
 
     // --- Getter 方法 ---
@@ -469,13 +359,6 @@ public class VehicleSensorManager {
     public float getFuelIns() { return mFuelIns; }
     public float getFuelAvg() { return mFuelAvg; }
     
-    // [NEW] Trip getters (Soft Trip)
-    // removed getTripDistance() as it was integer meters, changed to getSoftTripKm logic if needed
-    // or just use getCurrentTripKm
-    
-    public long getTripDuration() { return mCurrentTripDuration; }
-    public float getAvgFuelConsumption() { return mAvgFuelConsumption; }
-
     public boolean isIgnitionOn() {
         return mIgnition == ISensorEvent.IGNITION_STATE_DRIVING;
     }
@@ -483,10 +366,6 @@ public class VehicleSensorManager {
     public boolean isDayMode() {
         return mDayNight == ISensorEvent.DAY_NIGHT_MODE_DAY;
     }
-
-    // [NEW] Getters for Calculated Current Trip
-    public float getCurrentTripKm() { return mCurrentTripKm; }
-    public long getCurrentTripDuration() { return mCurrentTripDuration; }
 
     // --- 监听器管理 ---
     public void addListener(Listener listener) {
@@ -548,18 +427,7 @@ public class VehicleSensorManager {
         for (Listener l : mListeners) l.onTireDataChanged(index, mTirePressure[index], mTireTemp[index]);
     }
 
-    private void notifyTripDataChanged() {
-        // [FIX] Use Calculated Current Trip (Since Ignition) as priority, 
-        // fallback to API Trip if calculating isn't active (e.g. ODO start invalid),
-        // BUT user strictly wants "Current Trip". 
-        // We pass mCurrentTripKm (Calculated) and mCurrentTripDuration (Calculated).
-        // For Avg Fuel, we still use API value as we can't calculate it easily.
-        
-        // If Ignition hasn't triggered reset, mOdometerStart is -1. 
-        // In that case mCurrentTripKm is 0.
-        
-        for (Listener l : mListeners) l.onTripDataChanged(mCurrentTripKm, mCurrentTripDuration, mAvgFuelConsumption);
-    }
+
 
     public void destroy() {
         if (mSensor != null && mSensorListener != null) {

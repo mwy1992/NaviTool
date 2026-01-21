@@ -24,8 +24,8 @@ public interface IClusterTheme {
     void setGear(int gearValue);
     void setGear(String gearCode);
     
-    // Trip Computer
-    void updateTripInfo(float distance, long duration);
+    // Fuel & Trip Computer
+    void updateFuelRemain(float fuelLiters);
     void updateOdometer(float odometer);
     void updateInstantFuel(float fuel);
     

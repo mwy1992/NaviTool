@@ -65,6 +65,15 @@
     <string name="switch_sound_door_rear_right">右后门音效</string>
     <string name="switch_sound_door_hood">引擎盖音效</string>
     <string name="switch_sound_door_trunk">后备箱音效</string>
+    
+    <!-- New Door Closing Sounds -->
+    <string name="sound_column_door_open">开门音效</string>
+    <string name="sound_column_door_close">关门音效</string>
+    <string name="switch_sound_door_driver_close">主驾驶关门</string>
+    <string name="switch_sound_door_passenger_close">副驾驶关门 (有人)</string>
+    <string name="switch_sound_door_passenger_empty_close">副驾驶关门 (无人)</string>
+    <string name="switch_sound_door_rear_left_close">左后门关门</string>
+    <string name="switch_sound_door_rear_right_close">右后门关门</string>
     <string name="btn_select_file">选择</string>
     <string name="btn_test_sound">测试</string>
     <string name="sound_playback_mode_title">播放模式</string>

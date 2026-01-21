@@ -145,7 +145,7 @@ public abstract class BaseThemeController implements IClusterTheme {
     @Override public void setDayMode(boolean isDay) {}
     @Override public void setNavigating(boolean isNavigating) {}
     @Override public void updateRpm(float rpm) {}
-    @Override public void updateTripInfo(float distance, long duration) {}
+    @Override public void updateFuelRemain(float fuelLiters) {}
     @Override public void updateOdometer(float odometer) {}
     @Override public void updateInstantFuel(float fuel) {}
     @Override public void updateIndoorTemp(float temp) {}

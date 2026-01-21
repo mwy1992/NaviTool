@@ -128,6 +128,28 @@ public class SoundPromptManager {
         playSound("sound_door_trunk");
     }
 
+
+    // [NEW] Door Closing Sounds
+    public void playDoorDriverCloseSound() {
+        playSound("sound_door_driver_close");
+    }
+
+    public void playDoorPassengerCloseSound() {
+        playSound("sound_door_passenger_close");
+    }
+
+    public void playDoorPassengerEmptyCloseSound() {
+        playSound("sound_door_passenger_empty_close");
+    }
+
+    public void playDoorRearLeftCloseSound() {
+        playSound("sound_door_rear_left_close");
+    }
+
+    public void playDoorRearRightCloseSound() {
+        playSound("sound_door_rear_right_close");
+    }
+    
     public void playCustomSound(String absolutePath) {
         if (absolutePath == null || absolutePath.isEmpty())
             return;
@@ -137,6 +159,15 @@ public class SoundPromptManager {
 
     private void playSound(String prefKeyPrefix) {
         SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
+        
+        // [FIX] Check Master Switch First
+        // The UI has a master switch "sound_master_enabled". If this is off, ALL sounds should be muted.
+        boolean isMasterEnabled = prefs.getBoolean("sound_master_enabled", true);
+        if (!isMasterEnabled) {
+            DebugLogger.d(TAG, "Sound skipped (Master Disabled): " + prefKeyPrefix);
+            return;
+        }
+
         boolean enabled = prefs.getBoolean(prefKeyPrefix + "_enabled", false);
         if (!enabled) {
             DebugLogger.d(TAG, "Sound skipped (Disabled): " + prefKeyPrefix);

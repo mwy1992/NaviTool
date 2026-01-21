@@ -1006,48 +1006,72 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     }
 
     private void handleDoorStatus(int zone, int value) {
-        // Only play sound when door opens (value == 1)
-        if (value != 1) {
-            return;
-        }
-
-        DebugLogger.d(TAG, "Door Opened! Zone=" + zone);
         cn.navitool.managers.SoundPromptManager soundMgr = cn.navitool.managers.SoundPromptManager.getInstance(this);
 
-        switch (zone) {
-            case ZONE_DOOR_FL: // Driver (1)
-                soundMgr.playDoorDriverSound();
-                break;
+        if (value == 1) {
+            // Door Open
+            DebugLogger.d(TAG, "Door Opened! Zone=" + zone);
+            switch (zone) {
+                case ZONE_DOOR_FL: // Driver (1)
+                    soundMgr.playDoorDriverSound();
+                    break;
 
-            case ZONE_DOOR_FR: // Passenger (4)
-                if (mIsPassengerOccupied) {
-                    DebugLogger.d(TAG, "Passenger Door Open & Occupied -> Playing 'Passenger' Sound");
-                    soundMgr.playDoorPassengerSound();
-                } else {
-                    DebugLogger.d(TAG, "Passenger Door Open & Empty -> Playing 'Passenger Empty' Sound");
-                    soundMgr.playDoorPassengerEmptySound();
-                }
-                break;
+                case ZONE_DOOR_FR: // Passenger (4)
+                    if (mIsPassengerOccupied) {
+                        DebugLogger.d(TAG, "Passenger Door Open & Occupied -> Playing 'Passenger' Sound");
+                        soundMgr.playDoorPassengerSound();
+                    } else {
+                        DebugLogger.d(TAG, "Passenger Door Open & Empty -> Playing 'Passenger Empty' Sound");
+                        soundMgr.playDoorPassengerEmptySound();
+                    }
+                    break;
 
-            case ZONE_DOOR_RL: // Rear Left (16)
-                soundMgr.playDoorRearLeftSound();
-                break;
+                case ZONE_DOOR_RL: // Rear Left (16)
+                    soundMgr.playDoorRearLeftSound();
+                    break;
 
-            case ZONE_DOOR_RR: // Rear Right (64)
-                soundMgr.playDoorRearRightSound();
-                break;
-            
-            case ZONE_DOOR_HOOD: // Hood
-                soundMgr.playDoorHoodSound();
-                break;
-            
-            case ZONE_DOOR_REAR: // Trunk
-                soundMgr.playDoorTrunkSound();
-                break;
+                case ZONE_DOOR_RR: // Rear Right (64)
+                    soundMgr.playDoorRearRightSound();
+                    break;
+                
+                case ZONE_DOOR_HOOD: // Hood
+                    soundMgr.playDoorHoodSound();
+                    break;
+                
+                case ZONE_DOOR_REAR: // Trunk
+                    soundMgr.playDoorTrunkSound();
+                    break;
 
-            default:
-                DebugLogger.d(TAG, "Unknown Door Zone: " + zone);
-                break;
+                default:
+                    DebugLogger.d(TAG, "Unknown Door Zone: " + zone);
+                    break;
+            }
+        } else if (value == 0) {
+            // [NEW] Door Close
+            DebugLogger.d(TAG, "Door Closed! Zone=" + zone);
+            switch (zone) {
+                case ZONE_DOOR_FL:
+                    soundMgr.playDoorDriverCloseSound();
+                    break;
+                case ZONE_DOOR_FR:
+                    if (mIsPassengerOccupied) {
+                        DebugLogger.d(TAG, "Passenger Door Closed & Occupied -> Playing 'Passenger Close' Sound");
+                        soundMgr.playDoorPassengerCloseSound();
+                    } else {
+                        DebugLogger.d(TAG, "Passenger Door Closed & Empty -> Playing 'Passenger Empty Close' Sound");
+                        soundMgr.playDoorPassengerEmptyCloseSound();
+                    }
+                    break;
+                case ZONE_DOOR_RL:
+                    soundMgr.playDoorRearLeftCloseSound();
+                    break;
+                case ZONE_DOOR_RR:
+                    soundMgr.playDoorRearRightCloseSound();
+                    break;
+                // No closing sound for Hood/Trunk as per request (Four Doors)
+                default:
+                    break;
+            }
         }
     }
 

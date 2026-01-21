@@ -50,8 +50,7 @@ public class AudiRsThemeController extends BaseThemeController {
     private ImageView mBackground; 
     
     // New Sensor Data Views
-    private TextView mTripDistText;
-    private TextView mTripTimeText;
+    private TextView mFuelRemainText;
     private TextView mOdometerText;
     private TextView mFuelConsText;
     private TextView mTempInText;
@@ -192,7 +191,7 @@ public class AudiRsThemeController extends BaseThemeController {
         bindTpmsViews(rootView);
         
         // Sensor Data
-        mTripDistText = rootView.findViewById(R.id.audiRsTripDist);
+        mFuelRemainText = rootView.findViewById(R.id.audiRsFuelRemain);
         mOdometerText = rootView.findViewById(R.id.audiRsOdometer);
         mFuelConsText = rootView.findViewById(R.id.audiRsFuelCons);
         mTempInText = rootView.findViewById(R.id.audiRsTempIn);
@@ -510,21 +509,16 @@ public class AudiRsThemeController extends BaseThemeController {
     }
 
     @Override
-    public void updateTripInfo(float distanceKm, long duration) {
-        if (mTripDistText != null) {
-             mTripDistText.setText(String.format(java.util.Locale.US, "本次里程: %.1fkm", distanceKm));
-        }
-        if (mTripTimeText != null) {
-            long hours = duration / 3600;
-            long minutes = (duration % 3600) / 60;
-            mTripTimeText.setText(String.format(java.util.Locale.US, "耗时: %02d:%02d", hours, minutes));
+    public void updateFuelRemain(float fuelLiters) {
+        if (mFuelRemainText != null) {
+             mFuelRemainText.setText(String.format(java.util.Locale.US, "剩余油量: %.0fL", fuelLiters));
         }
     }
     
     @Override
     public void updateOdometer(float odometer) {
         if (mOdometerText != null) {
-            mOdometerText.setText(String.format(java.util.Locale.US, "总里程: %.1fkm", odometer));
+            mOdometerText.setText(String.format(java.util.Locale.US, "总里程: %.0fkm", odometer));
         }
     }
     

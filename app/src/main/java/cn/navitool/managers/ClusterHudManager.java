@@ -112,7 +112,6 @@ public class ClusterHudManager
     // Typo in AdaptAPI: TRUN instead of TURN (Strictly matching API name)
     private static final int FUNC_LEFT_TRUN_SIGNAL = 553980160;
     private static final int FUNC_RIGHT_TRUN_SIGNAL = 553980416;
-    private static final int FUNC_AUTOHOLD_STATUS = 33661;
     
     // [Refactor] Sensor Constants Removed - Logic moved to VehicleSensorManager
     
@@ -324,9 +323,6 @@ public class ClusterHudManager
             // Register Turn Signals (Separate IDs)
             mCarFunction.registerFunctionValueWatcher(FUNC_LEFT_TRUN_SIGNAL, mFunctionListener);
             mCarFunction.registerFunctionValueWatcher(FUNC_RIGHT_TRUN_SIGNAL, mFunctionListener);
-
-            // Register Auto Hold
-            mCarFunction.registerFunctionValueWatcher(FUNC_AUTOHOLD_STATUS, mFunctionListener);
         } catch (Exception e) {
             DebugLogger.e(TAG, "Error registering functions", e);
         }
@@ -528,12 +524,6 @@ public class ClusterHudManager
                     DebugLogger.d(TAG, "TurnSignal API: Right Changed -> " + isOn);
                     updateTurnSignal(false, isOn);
                 }
-            } else if (funcId == FUNC_AUTOHOLD_STATUS) {
-                DebugLogger.e(TAG, "AutoHold API (33661): Changed -> " + value + " (IsOn=" + isOn + ")");
-                mIsAutoHoldOn = (value == 1);
-                android.graphics.Bitmap bitmap = getAutoHoldBitmap(mIsAutoHoldOn);
-                // 使用通用 updateComponentImage 更新，组件 key 为 "auto_hold"
-                updateComponentImage("auto_hold", bitmap);
             }
 
         }
@@ -560,8 +550,6 @@ public class ClusterHudManager
     private android.graphics.Bitmap mBitmapRight;
 
     private android.graphics.Bitmap mBitmapHazard;
-    private android.graphics.Bitmap mCachedAutoHoldBitmap;
-    private boolean mIsAutoHoldOn = false;
 
     // Volume Cache
     private android.graphics.Bitmap mCachedVolumeBitmap;
@@ -643,49 +631,6 @@ public class ClusterHudManager
         }
     }
 
-    public android.graphics.Bitmap getAutoHoldBitmap(boolean isOn) {
-        if (!isOn) {
-            // [FIX] Return null instead of Transparent Bitmap.
-            // Null prevents "update" callback from clearing the Preview icon in
-            // MainActivity.
-            // PresentationManager handles null by not setting image (invisible), which is desired.
-            return null;
-        }
-        if (mCachedAutoHoldBitmap != null) {
-            return mCachedAutoHoldBitmap;
-        }
-
-        try {
-            android.graphics.drawable.Drawable drawable = mContext.getDrawable(R.drawable.ic_auto_hold);
-            if (drawable == null)
-                return null;
-
-            // Target Height: 72px (Standard for 2x Preview)
-            // Calculate width to maintain aspect ratio
-            int targetHeight = 72;
-            int intrinsicWidth = drawable.getIntrinsicWidth();
-            int intrinsicHeight = drawable.getIntrinsicHeight();
-
-            float ratio = (intrinsicHeight > 0) ? (float) intrinsicWidth / intrinsicHeight : 1.0f;
-            int targetWidth = (int) (targetHeight * ratio);
-            if (targetWidth <= 0)
-                targetWidth = targetHeight;
-
-            android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(targetWidth, targetHeight,
-                    android.graphics.Bitmap.Config.ARGB_8888);
-            android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
-
-            drawable.setBounds(0, 0, targetWidth, targetHeight);
-            // Removed setTint(WHITE) to keep original Green color
-            drawable.draw(canvas);
-
-            mCachedAutoHoldBitmap = bitmap;
-            return bitmap;
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Error generating Auto Hold bitmap", e);
-            return null;
-        }
-    }
 
     private void updateTurnSignal() {
         // Strictly use API State AND Blink Toggle
@@ -762,9 +707,6 @@ public class ClusterHudManager
         mBitmapRight = null;
         mBitmapHazard = null;
         mCachedVolumeBitmap = null;
-        if (mCachedAutoHoldBitmap != null)
-            mCachedAutoHoldBitmap.recycle();
-        mCachedAutoHoldBitmap = null;
         mTransparentBitmap = null;
 
         dismissPresentationManager();
@@ -900,6 +842,16 @@ public class ClusterHudManager
         mCachedFuelLiters = fuel; // Already converted to L in Manager
         updateFuelRangeComponent();
         updateComponentText("fuel", String.format(Locale.US, "%.0fL", fuel));
+        
+        // [NEW] Forward to Audi RS Theme for Fuel Remain Display
+        if (mPresentationManager != null) {
+            final float fuelL = fuel;
+            mMainHandler.post(() -> {
+                if (mPresentationManager != null) {
+                    mPresentationManager.updateFuelRemain(fuelL);
+                }
+            });
+        }
     }
 
     @Override
@@ -924,17 +876,7 @@ public class ClusterHudManager
         }
     }
 
-    // [Refactor] Implement methods for new sensors
-    @Override
-    public void onTripDataChanged(float distanceKm, long durationSec, float avgFuel) {
-         if (mPresentationManager != null) {
-            mMainHandler.post(() -> {
-                if (mPresentationManager != null) {
-                    mPresentationManager.updateTripInfo(distanceKm, durationSec);
-                }
-            });
-        }
-    }
+
 
     @Override
     public void onOdometerChanged(float odometer) {
@@ -1859,6 +1801,14 @@ public class ClusterHudManager
     }
 
     private void showPresentationManager() {
+        // [FIX] Abort Legacy Display Logic on API 30+ to prevent conflict with ClusterHudManagerApi30
+        // The API 30 manager targets specific displays (1 & 4), whereas Legacy defaults to HDMI (2).
+        // Running both causes the app to display on the wrong screen (HDMI) instead of Virtual displays.
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            DebugLogger.w(TAG, "showPresentationManager: Aborting legacy logic on API 30+. Using ClusterHudManagerApi30 instead.");
+            return;
+        }
+
         DebugLogger.d(TAG, "showPresentationManager: [Step 1] Getting DisplayManager");
         DisplayManager dm = (DisplayManager) mContext.getSystemService(Context.DISPLAY_SERVICE);
         if (dm == null) {
@@ -2077,8 +2027,6 @@ public class ClusterHudManager
                     } else if ("turn_signal".equals(newData.type)) {
                         newData.image = getTurnSignalBitmap(mLeftTurnOn, mRightTurnOn);
                         newData.text = "L:" + mLeftTurnOn + ",R:" + mRightTurnOn;
-                    } else if ("auto_hold".equals(newData.type)) {
-                        newData.image = getAutoHoldBitmap(mIsAutoHoldOn);
                     } else if ("gear".equals(newData.type)) {
                         // [FIX] Backfill current gear (Sync Logic - Existing Data)
                         newData.text = getGearString(mCachedGear);
@@ -2136,8 +2084,6 @@ public class ClusterHudManager
                     } else if ("turn_signal".equals(newData.type)) {
                         newData.image = getTurnSignalBitmap(mLeftTurnOn, mRightTurnOn);
                         newData.text = "L:" + mLeftTurnOn + ",R:" + mRightTurnOn;
-                    } else if ("auto_hold".equals(newData.type)) {
-                        newData.image = getAutoHoldBitmap(mIsAutoHoldOn);
                     } else if ("gear".equals(newData.type)) {
                         // [FIX] Backfill current gear to prevent overwrite by default "D"
                         // This ensures that when opening the HUD Editor, the current real (or simulated) gear

@@ -1,6 +1,96 @@
 # Change Log
 
-## 2026-01-21
+## 2026-01-21 (晚间工作总结 / Evening Session Summary)
+
+### 车门关门音效与声音系统升级 (Door Closing Sounds & Sound System Upgrade)
+
+- **全车门关门音效支持 (Full Door Closing Sound Support)**:
+  - **新增功能**: 实现了主驾驶、副驾驶、左后、右后四个车门的独立关门音效配置。
+  - **智能副驾逻辑**: 特别设计了副驾驶关门逻辑，能根据座椅占用状态 (`Sensor: 2110464`) 自动区分播放：
+    - **有人 (Occupied)**: 播放"副驾驶关门(有人)"音效。
+    - **无人 (Empty)**: 播放"副驾驶关门(无人)"音效。
+  - **逻辑实现**: 在 `KeepAliveAccessibilityService` 中监听车门状态变化 (`Type: 10023`)，当状态值从 1 (Open) 变为 0 (Close) 时触发。
+
+- **声音设置 UI 重构 (Sound Settings UI Refactoring)**:
+  - **精简布局**: 移除了原本冗余的 "开门音效" / "关门音效" 列标题，采用更紧凑的列表式布局。
+  - **动态文件名显示**: 实现了智能显示逻辑 —— 默认隐藏文件名保持界面清爽，仅在用户选择自定义文件后显示文件名。
+  - **测试功能增强**: 修复并补全了所有新增关门音效选项的 "测试" 按钮，支持实时预览。
+
+- **声音系统稳定性修复 (Sound System Stability Fix)**:
+  - **Master Switch 修复**: 修复了声音总开关 (`switch_sound_master`) 关闭后，声音仍会错误播放的问题。现在 `SoundPromptManager` 会严格检查总开关状态，实现真正的"一键静音"。
+
+### HUD 消失与显示修复 (HUD Disappearance & Display Fixes)
+
+- **HUD 导航时消失修复 (Z-Order Fix)**:
+  - **根本原因**: API 30+ 原本使用了默认的 `TYPE_PRESENTATION` (2037)，其 Z-Order 低于全屏运行的导航软件（如高德/吉利地图），导致被遮挡。
+  - **修复**: 升级 `PresentationManagerApi30` 使用 `TYPE_APPLICATION_OVERLAY` (2038) 系统顶层窗口。
+  - **技术细节**: 配合使用了 `createWindowContext(TYPE_APPLICATION_OVERLAY, null)` 创建 Context，解决了 Android 11+ 直接设置 2038 类型导致的 `WindowContext` 类型不匹配崩溃。
+
+- **多屏 ID 修正 (Display ID Correction)**:
+  - **问题**: API 30+ 设备上 HUD 错误显示在 ID 2 (旧设备 HDMI)，而实际 HUD/仪表屏为 ID 1 和 4。
+  - **修复**: 修正 `ClusterHudManagerApi30` 的目标 ID：HUD -> Display 1, Cluster -> Display 4。
+
+### HUD 布局与交互优化 (HUD Layout & Interaction)
+
+- **显示区域物理适配 (Physical Area Adaptation)**:
+  - **尺寸调整**: 将 HUD 实际渲染高度从 480px 裁剪为 **230px** (`800x230`)，并增加 **187px** 的 `marginTop`，使其精确对齐挡风玻璃投影区域。
+  - **逻辑同步**: 更新了 `PresentationManagerApi30` 内部容器逻辑，强制锁定 800x230 尺寸。
+
+- **设置页布局重构 (Settings UI Refactoring)**:
+  - **Android 9 风格回归**: 重写 `layout_tab_hud_api30.xml`，废弃左右分栏布局，回归经典的垂直布局（Control Header + Preview Body）。
+  - **预览一致性**: 将预览区域尺寸同步调整为 **800x230**，并在底部居中显示，实现了“所见即所得”的 1:1 预览效果。
+
+### 日志分析 (Log Analysis)
+
+- **吉利地图崩溃排查**:
+  - 分析日志发现 HUD 消失伴随着整个 NaviTool 进程的终止。
+  - **原因**: 吉利地图启动时系统内存紧张触发 OOM Kill，或分辨率切换导致 Native 层崩溃。建议检查系统白名单设置。
+
+---
+
+### 高德广播处理线程优化 (Amap Broadcast Thread Optimization)
+
+- **崩溃修复 (Crash Fix)**:
+  - 修复 `RemoteServiceException: can't deliver broadcast` 崩溃问题
+  - 原因: 高德高频广播在主线程处理导致阻塞
+  - 解决: 将广播处理迁移至后台 `HandlerThread`
+
+- **AmapMonitorManager 改造**:
+  - 新增 `AmapBroadcastHandler` 后台线程处理广播
+  - `onReceive()` 立即 `post` 到后台线程，不阻塞主线程
+  - 添加 NaviStatus 状态变化节流 (相同状态不重复通知)
+  - `stopMonitoring()` 增加线程清理逻辑
+
+- **主题同步优化 (Theme Sync Improvement)**:
+  - `ThemeBrightnessManager.onSensorEventChanged()` 在日夜模式变化时主动调用 `syncAutoNaviTheme()`
+  - 确保高德主题与系统同步
+
+### 奥迪RS主题"本次里程"替换为"剩余油量" (Audi RS Trip Distance Replaced with Fuel Remain)
+
+- **组件替换 (Component Replacement)**:
+  - 将 `audiRsTripDist` (本次里程) 组件完全替换为 `audiRsFuelRemain` (剩余油量)。
+  - 布局文件 `layout_cluster_audi_rs.xml` 中删除了已注释的 `audiRsTripTime` (行驶时间) 代码块。
+  - 新增数据流: `onFuelChanged()` → `updateFuelRemain()` → 主题控制器显示。
+
+- **Soft Trip 逻辑移除 (Soft Trip Logic Removal)**:
+  - 完全删除 `VehicleSensorManager.java` 中约80行 Soft Trip 相关代码：
+    - 持久化常量 (`PREF_NAME`, `KEY_START_ODO`, `KEY_START_TIME`, `KEY_LAST_IGNITION_OFF`)
+    - 状态变量 (`mStartOdo`, `mStartTime`, `mCurrentTripKm`, `mCurrentTripDuration`, `mPrefs`)
+    - 方法 (`checkTripReset()`, `updateSoftTripDistance()`, `notifyTripDataChanged()`)
+    - 接口方法 (`onTripDataChanged()`)
+    - Getter 方法 (`getTripDuration()`, `getCurrentTripKm()` 等)
+  - 同步删除 `ClusterHudManager.java` 中的 `onTripDataChanged()` 回调实现。
+
+- **接口更新 (Interface Updates)**:
+  - `IClusterTheme.java`: `updateTripInfo()` → `updateFuelRemain()`
+  - `BaseThemeController.java`: 同步更新空实现
+  - `PresentationManager.java`: 同步更新转发方法
+
+- **UI 微调 (UI Adjustments)**:
+  - 总里程显示改为整数 (`%.1f` → `%.0f`)，无小数点。
+  - 油量/里程字号调整为 16sp。
+  - 胎压区域字号统一缩小 (14sp/10sp)，位置微调。
+  - 室内温度位置调整 (`marginEnd` 150dp → 100dp)。
 
 ### 车辆速度传感器冲突解决 (Vehicle Speed Sensor Conflict Resolution)
 
@@ -25,6 +115,20 @@
 - **机制确认**:
   - 确认 Android 11+ 的 Presentation 使用 `TYPE_APPLICATION_OVERLAY` (2038)，属于系统顶层悬浮窗。
   - **透明性**: 虽然 Window 设置了全透明背景，但 `layout_cluster_standard.xml` 布局文件自身包含黑色背景 (`@android:color/black`)，因此会遮挡底层系统画面。若需实现“透明悬浮仪表”，需修改 XML 根布局背景为 transparent。
+
+### Android 11 稳定性增强 (Android 11 Stability)
+
+- **Presentation 崩溃预防 (Crash Prevention)**:
+  - **初次尝试 (Reverted)**: 尝试使用 `createWindowContext(TYPE_APPLICATION_OVERLAY)` 和 `setType(2038)`，但这与 `Presentation` 类内置的 `TYPE_PRESENTATION` (2037) 冲突，导致 Window type mismatch 崩溃。
+  - **正确理解**: `Presentation` 继承自 `Dialog`，其窗口类型由系统强制为 `TYPE_PRESENTATION` (2037)，无法更改为 `TYPE_APPLICATION_OVERLAY`。
+  - **最终方案**: 保持使用 `createDisplayContext(display)` + `ContextThemeWrapper` 包装，不尝试修改窗口类型。此方案在模拟器和实车上均应正常工作。
+
+### 权限检测修复 (Permission Check Fix)
+
+- **通知权限显示"未授权" (Notification Permission False Negative)**:
+  - **问题**: 用户反映在 Android 11 上权限对话框始终显示"通知权限未授权"，即使已授权。
+  - **原因**: 代码调用了不存在的方法 `isNotificationListenerEnabled()`，而实际方法名为 `isNotificationServiceEnabled()`。
+  - **修复**: 在 `MainActivity.java` 第 3985 行将方法调用更正为 `isNotificationServiceEnabled()`。
 
 ## 2026-01-20 (下午工作总结 / Afternoon Session Summary)
 

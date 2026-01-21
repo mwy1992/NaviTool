@@ -11,27 +11,27 @@
 
     <TextView
         android:id="@+id/tvSoundTitle"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_weight="1"
         android:text="Title"
         android:textSize="13sp"
         android:textStyle="bold"
         android:textColor="?android:attr/textColorPrimary"
-        android:layout_marginEnd="2dp"
-        android:maxWidth="80dp"/>
+        android:layout_marginEnd="2dp" />
 
     <TextView
         android:id="@+id/tvSoundFile"
-        android:layout_width="0dp"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
         android:text="@string/text_default_sound"
         android:textSize="10sp"
         android:textColor="?android:attr/textColorSecondary"
         android:singleLine="true"
-        android:ellipsize="middle"
+        android:ellipsize="end"
         android:gravity="center_vertical|start"
-        android:layout_marginEnd="2dp"/>
+        android:layout_marginEnd="6dp"
+        android:maxWidth="100dp"/>
 
     <Button
         android:id="@+id/btnSelectSound"

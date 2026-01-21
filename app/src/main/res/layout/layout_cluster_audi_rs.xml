@@ -262,8 +262,8 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
-        android:layout_marginStart="710dp"
-        android:layout_marginTop="120dp"
+        android:layout_marginStart="720dp"
+        android:layout_marginTop="122dp"
         android:orientation="vertical"
         android:gravity="center">
 
@@ -278,7 +278,7 @@
                 android:layout_height="wrap_content"
                 android:text="---"
                 android:textColor="#00FF00"
-                android:textSize="16sp"
+                android:textSize="14sp"
                 android:textStyle="bold" />
             <TextView
                 android:id="@+id/audiRsPresFL_unit"
@@ -286,7 +286,7 @@
                 android:layout_height="wrap_content"
                 android:text=" kPa"
                 android:textColor="#00FF00"
-                android:textSize="11sp"
+                android:textSize="10sp"
                 android:layout_marginStart="2dp" />
         </LinearLayout>
 
@@ -296,7 +296,7 @@
             android:layout_height="wrap_content"
             android:text="--°C"
             android:textColor="#AAAAAA"
-            android:textSize="12sp" />
+            android:textSize="10sp" />
     </LinearLayout>
 
     <!-- TPMS Layout: Front Right (Top Outer) -->
@@ -305,8 +305,8 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|end"
-        android:layout_marginEnd="83dp"
-        android:layout_marginTop="120dp"
+        android:layout_marginEnd="94dp"
+        android:layout_marginTop="122dp"
         android:orientation="vertical"
         android:gravity="center">
 
@@ -321,7 +321,7 @@
                 android:layout_height="wrap_content"
                 android:text="---"
                 android:textColor="#00FF00"
-                android:textSize="16sp"
+                android:textSize="14sp"
                 android:textStyle="bold" />
             <TextView
                 android:id="@+id/audiRsPresFR_unit"
@@ -329,7 +329,7 @@
                 android:layout_height="wrap_content"
                 android:text=" kPa"
                 android:textColor="#00FF00"
-                android:textSize="11sp"
+                android:textSize="10sp"
                 android:layout_marginStart="2dp" />
         </LinearLayout>
 
@@ -339,7 +339,7 @@
             android:layout_height="wrap_content"
             android:text="--°C"
             android:textColor="#AAAAAA"
-            android:textSize="12sp" />
+            android:textSize="10sp" />
     </LinearLayout>
 
     <!-- TPMS Layout: Rear Left (Bottom Inner) -->
@@ -348,8 +348,8 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|start"
-        android:layout_marginStart="710dp"
-        android:layout_marginBottom="120dp"
+        android:layout_marginStart="720dp"
+        android:layout_marginBottom="122dp"
         android:orientation="vertical"
         android:gravity="center">
 
@@ -364,7 +364,7 @@
                 android:layout_height="wrap_content"
                 android:text="---"
                 android:textColor="#00FF00"
-                android:textSize="16sp"
+                android:textSize="14sp"
                 android:textStyle="bold" />
             <TextView
                 android:id="@+id/audiRsPresRL_unit"
@@ -372,7 +372,7 @@
                 android:layout_height="wrap_content"
                 android:text=" kPa"
                 android:textColor="#00FF00"
-                android:textSize="11sp"
+                android:textSize="10sp"
                 android:layout_marginStart="2dp" />
         </LinearLayout>
 
@@ -382,7 +382,7 @@
             android:layout_height="wrap_content"
             android:text="--°C"
             android:textColor="#AAAAAA"
-            android:textSize="12sp" />
+            android:textSize="10sp" />
     </LinearLayout>
 
     <!-- TPMS Layout: Rear Right (Bottom Outer) -->
@@ -391,8 +391,8 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
-        android:layout_marginEnd="83dp"
-        android:layout_marginBottom="120dp"
+        android:layout_marginEnd="94dp"
+        android:layout_marginBottom="122dp"
         android:orientation="vertical"
         android:gravity="center">
 
@@ -407,7 +407,7 @@
                 android:layout_height="wrap_content"
                 android:text="---"
                 android:textColor="#00FF00"
-                android:textSize="16sp"
+                android:textSize="14sp"
                 android:textStyle="bold" />
             <TextView
                 android:id="@+id/audiRsPresRR_unit"
@@ -415,7 +415,7 @@
                 android:layout_height="wrap_content"
                 android:text=" kPa"
                 android:textColor="#00FF00"
-                android:textSize="11sp"
+                android:textSize="10sp"
                 android:layout_marginStart="2dp" />
         </LinearLayout>
 
@@ -425,7 +425,7 @@
             android:layout_height="wrap_content"
             android:text="--°C"
             android:textColor="#AAAAAA"
-            android:textSize="12sp" />
+            android:textSize="10sp" />
     </LinearLayout>
 
     <!-- 中间信息区 -->
@@ -442,28 +442,18 @@
             android:layout_width="170dp"
             android:layout_height="wrap_content"
             android:gravity="start"
-            android:text="总里程: 99999.9km"
+            android:text="总里程: 99999km"
             android:textColor="#FFFFFF"
-            android:textSize="18sp" />
-        <!-- 小计里程 -->
+            android:textSize="16sp" />
+        <!-- 剩余油量 -->
         <TextView
-            android:id="@+id/audiRsTripDist"
+            android:id="@+id/audiRsFuelRemain"
             android:layout_width="170dp"
             android:layout_height="wrap_content"
             android:gravity="end"
-            android:text="本次里程: 999.9km"
+            android:text="油量: --L"
             android:textColor="#FFFFFF"
-            android:textSize="18sp" />
-        <!-- 行驶时间 
-        <TextView
-            android:id="@+id/audiRsTripTime"
-            android:layout_width="100dp"
-            android:layout_height="wrap_content"
-            android:gravity="start"
-            android:text="耗时: 23:59"
-            android:textColor="#FFFFFF"
-            android:textSize="18sp"
-            android:textStyle="bold" /> -->
+            android:textSize="16sp" />
     </LinearLayout>
     <!-- 当前油耗 -->
     <TextView
@@ -484,7 +474,7 @@
         android:layout_width="120dp"
         android:layout_height="wrap_content"
         android:layout_gravity="top|end"
-        android:layout_marginEnd="150dp"
+        android:layout_marginEnd="100dp"
         android:layout_marginTop="12dp"
         android:gravity="start"
         android:text="In: 24°C"

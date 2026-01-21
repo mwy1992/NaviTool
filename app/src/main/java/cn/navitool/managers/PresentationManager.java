@@ -531,8 +531,8 @@ public class PresentationManager extends android.app.Dialog {
         setGear(gearCode);
     }
 
-    public void updateTripInfo(float distanceKm, long duration) {
-        if (mThemeController != null) mThemeController.updateTripInfo(distanceKm, duration);
+    public void updateFuelRemain(float fuelLiters) {
+        if (mThemeController != null) mThemeController.updateFuelRemain(fuelLiters);
     }
 
     public void updateOdometer(float odometer) {
@@ -826,7 +826,6 @@ public class PresentationManager extends android.app.Dialog {
                         || "song_1line".equals(data.type);
                 boolean isTurnSignal = "turn_signal".equals(data.type);
                 boolean isVolume = "volume".equals(data.type);
-                boolean isAutoHold = "auto_hold".equals(data.type);
                 boolean isMediaCover = "song_cover".equals(data.type);
                 
                 android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
@@ -887,7 +886,7 @@ public class PresentationManager extends android.app.Dialog {
 
                     params.width = 300;
                     view = ll;
-                } else if (isMediaCover || isTurnSignal || isVolume || isAutoHold) {
+                } else if (isMediaCover || isTurnSignal || isVolume) {
                     android.widget.ImageView iv = new android.widget.ImageView(getContext());
                     if (data.image != null) {
                         iv.setImageBitmap(data.image);
@@ -908,15 +907,13 @@ public class PresentationManager extends android.app.Dialog {
                         params.width = 100;
                         params.height = 100;
                     } else {
-                        if (isTurnSignal || isVolume || isAutoHold) {
+                        if (isTurnSignal || isVolume) {
                             params.height = 36;
                             if (data.image == null) {
                                 if (isTurnSignal) {
                                     iv.setImageDrawable(null);
                                 } else if (isVolume) {
                                     iv.setImageResource(R.drawable.ic_volume);
-                                } else if (isAutoHold) {
-                                    iv.setImageResource(R.drawable.ic_auto_hold);
                                 }
                             }
                         } else {
@@ -1020,6 +1017,13 @@ public class PresentationManager extends android.app.Dialog {
                     tv.setLineSpacing(0, 1f);
                     tv.setTypeface(android.graphics.Typeface.DEFAULT);
                     tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
+                    tv.setSingleLine(true);
+                    tv.setMaxLines(1);
+                    // navi_distance_remaining: fixed width + right align
+                    if ("navi_distance_remaining".equals(data.type)) {
+                        tv.setGravity(android.view.Gravity.END);
+                        params.width = 100;
+                    }
                     view = tv;
                 } else if ("gear".equals(data.type)) {
                     android.widget.TextView tv = new android.widget.TextView(getContext());
@@ -1027,6 +1031,8 @@ public class PresentationManager extends android.app.Dialog {
                     tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 48); 
                     tv.setTextColor(data.color);
                     tv.setGravity(android.view.Gravity.CENTER);
+                    tv.setSingleLine(true);
+                    tv.setMaxLines(1);
                     params.width = 100;
                     view = tv;
                 } else if ("fuel_range".equals(data.type) || "fuel".equals(data.type)) {
@@ -1067,10 +1073,14 @@ public class PresentationManager extends android.app.Dialog {
                     view = tv;
                     if ("hud_rpm".equals(data.type)) {
                         tv.setGravity(android.view.Gravity.END);
-                        params.width = 200;
+                        tv.setSingleLine(true);
+                        tv.setMaxLines(1);
+                        params.width = 100;
                     } else if ("temp_out".equals(data.type) || "temp_in".equals(data.type)) {
                         tv.setGravity(android.view.Gravity.END);
-                        params.width = 120;
+                        tv.setSingleLine(true);
+                        tv.setMaxLines(1);
+                        params.width = 90;
                     }
                 }
 
