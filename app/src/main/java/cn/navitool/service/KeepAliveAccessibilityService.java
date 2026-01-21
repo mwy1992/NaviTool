@@ -40,6 +40,8 @@ import cn.navitool.managers.BaiduMonitorManager;
 import cn.navitool.managers.AmapMonitorManager;
 import cn.navitool.managers.SunshadeManager;
 import cn.navitool.managers.CarServiceManager;
+import cn.navitool.managers.ClusterHudManager;
+import cn.navitool.managers.ClusterHudManagerApi30;
 import cn.navitool.utils.MemoryMonitor;
 import cn.navitool.managers.AppLaunchManager;
 
@@ -338,7 +340,12 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         unregisterHeavySensors();
         
         // 3. Notify ClusterHudManager to enter Standby Mode (Clean UI/Cache)
-        ClusterHudManager.getInstance(this).enterStandbyMode();
+        // 3. Notify ClusterHudManager to enter Standby Mode (Clean UI/Cache)
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            ClusterHudManagerApi30.getInstance(this).enterStandbyMode();
+        } else {
+            ClusterHudManager.getInstance(this).enterStandbyMode();
+        }
         
         DebugLogger.i(TAG, "Ignition State Reset Complete. Waiting for next DRIVING event.");
     }
@@ -370,12 +377,17 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 // Instead of broadcasting to Activity (which might not exist), we call Manager
                 // directly.
                 DebugLogger.i(TAG, "Ignition + 3s: Calling ensureUiVisible() directly");
-                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).ensureUiVisible();
-
-                // [FIX] Auto-Switch to Instrument Mode (NaviMode 3)
-                // Only depends on Ignition Driving, NOT Amap status.
-                DebugLogger.i(TAG, "Ignition + 3s: Auto-Switching to NaviMode 3 (Instrument Mode)");
-                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).applyNaviMode(3);
+                // [FIX] Direct UI Activation from Service (Headless Support)
+                DebugLogger.i(TAG, "Ignition + 3s: Calling ensureUiVisible() directly");
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    ClusterHudManagerApi30.getInstance(KeepAliveAccessibilityService.this).ensureUiVisible();
+                    DebugLogger.i(TAG, "Ignition + 3s: Auto-Switching to NaviMode 3 (Instrument Mode) [API30]");
+                    ClusterHudManagerApi30.getInstance(KeepAliveAccessibilityService.this).applyNaviMode(3);
+                } else {
+                    ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).ensureUiVisible();
+                    DebugLogger.i(TAG, "Ignition + 3s: Auto-Switching to NaviMode 3 (Instrument Mode)");
+                    ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).applyNaviMode(3);
+                }
             }
         }, 3000);
 
@@ -501,7 +513,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private static final int SENSOR_TYPE_GEAR = 2097664; // 0x200200
     // [BUG 4 FIX] 车速传感器 (from ecarx.adaptapi.jar.src -> ISensor.java)
 
-    private static final int SENSOR_TYPE_DIM_CAR_SPEED = 1055232; // 仪表盘显示速度 (与原车仪表一致)
+// DIM Speed Removed to fix jitter conflict with VehicleSensorManager
     private static final int SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER = 2110464; // Event Type
     private static final int SEAT_OCCUPATION_STATUS_NONE = 2110209;     // 无人
     private static final int SEAT_OCCUPATION_STATUS_OCCUPIED = 2110210; // 有人
@@ -687,14 +699,10 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                     .getInstance(KeepAliveAccessibilityService.this)
                                     .onSensorChanged(sensorType, value);
 
-                        } else if (sensorType == SENSOR_TYPE_DIM_CAR_SPEED) {
-                            // DIM速度与实际车速格式相同，都需要乘以3.6转换为km/h
-                            int speedKmh = (int) (value * 3.6f);
-                            // [DEBUG] Log Speed Update Frequency
-                            // DebugLogger.d(TAG, "Sensor Speed Update: " + speedKmh + " km/h");
-                            ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
-                                    .updateSpeed(speedKmh);
-                        }
+                        } 
+                        // [FIX] Removed DIM_CAR_SPEED handling to prevent conflict with VehicleSensorManager
+                        // The dual update was causing pointer jitter.
+                        
                         // [FIX] Removed SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER from Float callback.
                         // It is an Event (Int) sensor.
                     } catch (Exception e) {
@@ -724,8 +732,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                     mInitialGearSkipped = true;
                                 }
                                 // 不管是否播放声音，仪表盘显示始终更新
-                                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
-                                        .updateGear(value);
+                                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                                    ClusterHudManagerApi30.getInstance(KeepAliveAccessibilityService.this).updateGear(value);
+                                } else {
+                                    ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).updateGear(value);
+                                }
                                 mLastGear = value;
                             }
                         } else if (sensorType == ISensor.SENSOR_TYPE_DAY_NIGHT) {
@@ -755,7 +766,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             iSensor.registerListener(mHeavySensorListener, ISensor.SENSOR_TYPE_DAY_NIGHT);
             iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_GEAR);
             iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_LIGHT);
-            iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_DIM_CAR_SPEED);
+            // iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_DIM_CAR_SPEED); // Removed Conflict
             iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER);
 
             DebugLogger.i(TAG, "Heavy Sensors Registered Successfully (DayNight, Gear, Light, Speed, PassSeat).");
@@ -793,7 +804,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             int gear = iSensor.getSensorEvent(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_GEAR);
             DebugLogger.d(TAG, "Polled Gear: " + gear);
             if (gear != 0) {
-                ClusterHudManager.getInstance(this).updateGear(gear);
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    ClusterHudManagerApi30.getInstance(this).updateGear(gear);
+                } else {
+                     ClusterHudManager.getInstance(this).updateGear(gear);
+                }
                 mLastGear = gear;
             } else {
                 DebugLogger.w(TAG, "Polled Invalid Gear (0) - Ignoring to prevent default 'P' overwrite");

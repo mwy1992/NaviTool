@@ -1,6 +1,44 @@
 # Change Log
 
+## 2026-01-21
+
+### 车辆速度传感器冲突解决 (Vehicle Speed Sensor Conflict Resolution)
+
+- **主传感器源切换 (Primary Speed Source Switch)**:
+  - 将 `VehicleSensorManager` 的速度数据源从标准 `Car Speed` (1048832) 切换为用户指定的 `DIM Car Speed` (1055232)，确保仪表盘显示的速度与车辆核心数据一致。
+- **信号冲突修复 (Signal Conflict Fix)**:
+  - **现象**: 仪表盘指针出现高频抖动 (Jitter)。
+  - **原因**: `KeepAliveAccessibilityService` 和 `VehicleSensorManager` 同时监听并更新速度 UI，且使用了两个不同 ID 的传感器源，导致数据竞争。
+  - **修复**: 移除了 `KeepAliveAccessibilityService` 中对 `DIM Car Speed` 的冗余监听，将所有传感器逻辑统一收敛至 `VehicleSensorManager`，彻底消除了指针抖动。
+
+### HUD 辅助线拖拽修复 (HUD Auxiliary Line Drag Fix)
+
+- **严重 Bug 修复**:
+  - **现象**: 在 Android 11 系统下，拖动 HUD 横向辅助线 (`guide_line_h`) 时，组件瞬间跳至屏幕最底部并卡死，无法再次移动。
+  - **原因**: `MainActivity` 的触摸事件监听器中，底部边界检查逻辑漏写了 `if` 判断 (`if (newY + viewHeight > parentHeight ...)` )，导致每一帧移动事件都会无条件地将组件强行“钉”在容器底部边界上。
+  - **修复**: 补全了缺失的条件判断逻辑，恢复了正常的拖拽边界限制。
+- **稳定性增强 (Stability Enhancement)**:
+  - 增加了对组件宽高的防御性获取逻辑：当 `view.getHeight()` 在某些未测量完成的状态下返回 0 时，自动回退使用 `LayoutParams` 中的预设尺寸，防止因尺寸计算错误导致的边界逃逸。
+
+### Android 11 Presentation图层分析 (Presentation Layer Analysis)
+
+- **机制确认**:
+  - 确认 Android 11+ 的 Presentation 使用 `TYPE_APPLICATION_OVERLAY` (2038)，属于系统顶层悬浮窗。
+  - **透明性**: 虽然 Window 设置了全透明背景，但 `layout_cluster_standard.xml` 布局文件自身包含黑色背景 (`@android:color/black`)，因此会遮挡底层系统画面。若需实现“透明悬浮仪表”，需修改 XML 根布局背景为 transparent。
+
 ## 2026-01-20 (下午工作总结 / Afternoon Session Summary)
+
+### Android 11 多屏兼容性实现 (Android 11 Multi-Display Compatibility)
+
+- **多屏架构重构 (Multi-Display Architecture)**:
+  - **动态屏幕 ID 适配**: 重构了 `ClusterHudManager` 的显示目标逻辑，根据 Android 版本动态匹配屏幕 ID。
+    - **Android 11+**: 严格匹配 ID 4 (仪表屏) 和 ID 1 (HUD 屏)，并分别创建独立的 `PresentationManager` 实例，实现了内容分离（仪表显示 Cluster，HUD 显示 HUD）。
+    - **Android 9**: 维持原有的 ID 2 (混合模式) 适配，保障旧车型兼容性。
+  - **实例隔离 (Instance Isolation)**: 弃用了单例 `mPresentationManager`，改用 `Map<Integer, PresentationManager>` 管理所有屏幕实例，确保每个屏幕可以独立控制显隐、主题和导航状态。
+  
+- **状态同步机制 (State Synchronization)**:
+  - **全屏广播**: 对于速度、转速、档位、导航信息等全局数据，采用迭代广播机制 (`Map.values()`)，确保所有活跃屏幕（无论仪表还是 HUD）都能同步接收更新。
+  - **热插拔支持**: 完善了 `DisplayListener`，在新屏幕接入（如 HDMI 连接）时自动识别 ID 并根据当前 Android 版本策略加载对应的 UI 布局。
 
 ### 仪表动画平滑与奥迪主题增强 (Cluster Animation Smoothing & Audi RS Enhancements)
 

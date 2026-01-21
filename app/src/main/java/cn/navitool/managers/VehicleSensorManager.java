@@ -29,7 +29,9 @@ public class VehicleSensorManager {
     public static final int SENSOR_TYPE_SEAT_OCCUPIED = 2110464; // 座椅占用
 
     // 数值类型 (使用 getSensorLatestValue)
-    public static final int SENSOR_TYPE_SPEED = 1048832; // 车速 (m/s)
+    public static final int SENSOR_TYPE_SPEED = 1048832; // 车速 (m/s) (Registered but unused)
+    public static final int SENSOR_TYPE_DIM_CAR_SPEED = 1055232; // [NEW] DIM Car Speed (Primary Source)
+
     public static final int SENSOR_TYPE_RPM = 1050880; // 转速
     public static final int SENSOR_TYPE_FUEL = 1050112; // 油量 (升)
     public static final int SENSOR_TYPE_FUEL_PERCENT = 4211968; // 油量百分比
@@ -190,6 +192,7 @@ public class VehicleSensorManager {
 
         // 注册数值类型传感器 (添加新传感器)
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_SPEED, ISensor.RATE_UI);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_DIM_CAR_SPEED, ISensor.RATE_UI); // [NEW] Register DIM Speed
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_RPM, ISensor.RATE_UI);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL_PERCENT, ISensor.RATE_NORMAL);
@@ -293,10 +296,16 @@ public class VehicleSensorManager {
     private void handleValueSensor(int sensorType, float value) {
         switch (sensorType) {
             case SENSOR_TYPE_SPEED:
-                float speedKmh = value * 3.6f; // m/s -> km/h
-                if (Math.abs(mSpeed - speedKmh) > 0.5f) {
-                    mSpeed = speedKmh;
-                    notifySpeedChanged(speedKmh);
+                // [FIX] Standard Car Speed registered but ignored for UI updates (User Request)
+                // float speedKmh = value * 3.6f; 
+                 //DebugLogger.v(TAG, "Ignored Std Speed: " + (value * 3.6f));
+                break;
+            case SENSOR_TYPE_DIM_CAR_SPEED:
+                // [NEW] Use DIM Car Speed as Primary Source
+                float dimSpeedKmh = value * 3.6f; // m/s -> km/h
+                if (Math.abs(mSpeed - dimSpeedKmh) > 0.5f) {
+                    mSpeed = dimSpeedKmh;
+                    notifySpeedChanged(dimSpeedKmh);
                 }
                 break;
             case SENSOR_TYPE_RPM:

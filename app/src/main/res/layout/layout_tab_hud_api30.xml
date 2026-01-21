@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/layoutContentHud"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:padding="12dp">
+
+    <!-- Left: Control Panel (Vertical) -->
+    <ScrollView
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/layoutHudEditorControls"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:paddingEnd="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/header_hud_control"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="16dp"
+                android:textColor="?android:attr/textColorPrimary"/>
+
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchHud"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="HUD开关"
+                android:layout_marginBottom="16dp"/>
+
+            <Button
+                android:id="@+id/btnHudAdd"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_add"
+                android:layout_marginBottom="8dp"/>
+
+            <Button
+                android:id="@+id/btnHudModify"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_modify"
+                android:layout_marginBottom="8dp"/>
+
+            <Button
+                android:id="@+id/btnHudDelete"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_delete"
+                android:layout_marginBottom="8dp"/>
+
+            <Button
+                android:id="@+id/btnHudSave"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_save"
+                android:layout_marginBottom="8dp"/>
+
+            <Button
+                android:id="@+id/btnHudReset"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_reset"
+                android:layout_marginBottom="8dp"/>
+
+            <Button
+                android:id="@+id/btnHudSwitchMode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_ar_mode"
+                android:layout_marginBottom="8dp"/>
+
+            <Button
+                android:id="@+id/btnHudSnowMode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_snow_mode"
+                android:layout_marginBottom="8dp"/>
+
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- Right: Preview Area -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <!-- Preview Container -->
+        <!-- Positioned at top-center, allowing intrusion upwards if needed via negative margin -->
+        <FrameLayout
+            android:id="@+id/layoutHudPreviewContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="-10dp"
+            android:padding="4dp"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:background="@drawable/border_hud_preview"
+            android:visibility="gone">
+
+            <!-- HUD Preview Content Area: 800x480 (1:1 with Real HUD) -->
+            <FrameLayout
+                android:id="@+id/layoutHudPreview"
+                android:layout_width="800px"
+                android:layout_height="480px"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:background="#000000"
+                android:visibility="gone">
+                <!-- Dynamic Components Added Here -->
+            </FrameLayout>
+
+            <!-- Vertical Center Guide Line -->
+            <!-- Width 480px rotated 90deg becomes Height 480px -->
+            <View
+                android:layout_width="480px"
+                android:layout_height="2dp"
+                android:layout_gravity="center"
+                android:rotation="90"
+                android:layerType="software"
+                android:background="@drawable/line_dashed_cyan" />
+            
+            <!-- Horizontal Center Guide Line -->
+            <View
+                android:layout_width="800px"
+                android:layout_height="2dp"
+                android:layout_gravity="center"
+                android:layerType="software"
+                android:background="@drawable/line_dashed_cyan" />
+
+        </FrameLayout>
+    </FrameLayout>
+
+</LinearLayout>

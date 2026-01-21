@@ -288,8 +288,9 @@ public class AudiRsThemeController extends BaseThemeController {
             updateTrafficLightImages(info.status, 1.0f);
         }
 
-        // Arrow Rotation
+    // Arrow Rotation
         if (mDirectionArrow != null) {
+            mDirectionArrow.setVisibility(View.VISIBLE); // [FIX] Restore Visibility
             mDirectionArrow.setImageResource(R.drawable.ic_direction_arrow);
             float rotation = 0;
             switch (info.direction) {
@@ -300,6 +301,11 @@ public class AudiRsThemeController extends BaseThemeController {
             }
             mDirectionArrow.setRotation(rotation);
         }
+        
+        // [FIX] Ensure Light ImageViews are visible (alpha controls appearance)
+        if (mLightRed != null) mLightRed.setVisibility(View.VISIBLE);
+        if (mLightYellow != null) mLightYellow.setVisibility(View.VISIBLE);
+        if (mLightGreen != null) mLightGreen.setVisibility(View.VISIBLE);
     }
 
     private void updateTrafficLightImages(int rawStatus, float activeAlpha) {

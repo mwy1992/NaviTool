@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent">
+
+    <!-- Cluster Container: 1920x720 -->
+    <!-- Used on Display ID 4 (Real) or 3 (Semulator) -->
+    <!-- Positioned at (0,0) relative to its window -->
+    <FrameLayout
+        android:id="@+id/layoutCluster"
+        android:layout_width="1920px"
+        android:layout_height="720px"
+        android:layout_gravity="top|start"
+        android:visibility="gone">
+        
+
+    </FrameLayout>
+
+    <!-- HUD Container: 800x480 -->
+    <!-- Used on Display ID 1 (Real) or 2 (Semulator) -->
+    <!-- Positioned at (0,0) relative to its window -->
+    <!-- 1:1 Mapping with Preview Area (No scaling) -->
+    <FrameLayout
+        android:id="@+id/layoutHud"
+        android:layout_width="800px"
+        android:layout_height="480px"
+        android:layout_gravity="top|start"
+        android:background="@android:color/transparent"
+        android:visibility="gone">
+        
+        <!-- HUD Components added programmatically -->
+
+    </FrameLayout>
+
+</FrameLayout>

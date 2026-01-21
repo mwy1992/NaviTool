@@ -203,4 +203,9 @@
     <string name="toast_sunshade_auto_enabled">遮阳帘自动开启已启用</string>
     <string name="toast_floating_position_instruction">悬浮红绿灯定位模式开启，请拖动位置</string>
     <string name="toast_position_saved_simple">位置已保存</string>
+    <!-- Android 11 Adaptation -->
+    <string name="btn_emulator_mode">模拟器模式</string>
+    <string name="btn_emulator_mode_on">模拟器(开)</string>
+    <string name="btn_emulator_mode_off">模拟器(关)</string>
+    <string name="hud_guide_line_h">横辅助线</string>
 </resources>

@@ -48,6 +48,7 @@ import android.widget.Spinner;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 
 import cn.navitool.managers.ClusterHudManager;
+import cn.navitool.managers.ClusterHudManagerApi30;
 import cn.navitool.managers.ConfigManager;
 import cn.navitool.managers.CustomThemeManager;
 import cn.navitool.managers.AppLaunchManager;
@@ -532,6 +533,59 @@ public class MainActivity extends AppCompatActivity {
                     mLayoutHud.setVisibility(View.VISIBLE);
             }
         });
+        
+        // [FIX] Setup Debug Buttons (Engine Start, Turn Signal, HUD Green Bg)
+        setupDebugButtons();
+    }
+
+    private void setupDebugButtons() {
+        android.widget.Button btnHudGreenBg = findViewById(R.id.btnHudGreenBg);
+        if (btnHudGreenBg != null) {
+            // [FIX] Restore saved state
+            boolean savedState = ConfigManager.getInstance().getBoolean("config_hud_green_bg_enabled", false);
+            btnHudGreenBg.setText(savedState ? "HUD浅绿(开)" : "HUD浅绿(关)");
+            
+            // Apply initial state
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                 cn.navitool.managers.ClusterHudManagerApi30.getInstance(this).setHudGreenBg(savedState);
+            } else {
+                 ClusterHudManager.getInstance(this).setHudGreenBgEnabled(savedState);
+            }
+
+            btnHudGreenBg.setOnClickListener(v -> {
+                boolean isGreen = "HUD浅绿(开)".equals(btnHudGreenBg.getText());
+                // Toggle state
+                isGreen = !isGreen;
+                
+                // Save state
+                ConfigManager.getInstance().setBoolean("config_hud_green_bg_enabled", isGreen);
+                
+                // Update UI text
+                btnHudGreenBg.setText(isGreen ? "HUD浅绿(开)" : "HUD浅绿(关)");
+                
+                // Dispatch to Managers
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                     cn.navitool.managers.ClusterHudManagerApi30.getInstance(this).setHudGreenBg(isGreen);
+                } else {
+                     ClusterHudManager.getInstance(this).setHudGreenBgEnabled(isGreen);
+                }
+                DebugLogger.action("MainActivity", "Debug: Set HUD Green Bg -> " + isGreen);
+            });
+        }
+        
+        // Simulate Engine Start
+        android.widget.Button btnSimulateEngineStart = findViewById(R.id.btnSimulateEngineStart);
+        if (btnSimulateEngineStart != null) {
+            // [FIX] Use SimulateFunction logic for Android 9+ compatibility
+            new SimulateFunction(this).setupEngineStartButton(btnSimulateEngineStart);
+        }
+
+        // Simulate Turn Signal
+        com.google.android.material.button.MaterialButton btnSimulateTurnSignal = findViewById(R.id.btnSimulateTurnSignal);
+        if (btnSimulateTurnSignal != null) {
+             // [FIX] Use SimulateFunction logic to restore button text update and cycle logic
+             new SimulateFunction(this).setupTurnSignalButton(btnSimulateTurnSignal);
+        }
     }
 
     private View tryInflate(View currentView, int stubId, int targetId) {
@@ -614,6 +668,12 @@ public class MainActivity extends AppCompatActivity {
 
     private void ensureHudInflated() {
         if (mLayoutHud == null) {
+            android.view.ViewStub stub = findViewById(R.id.stubHud);
+            if (stub != null) {
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                     stub.setLayoutResource(R.layout.layout_tab_hud_api30);
+                }
+            }
             View v = tryInflate(mLayoutHud, R.id.stubHud, R.id.layoutContentHud);
             mLayoutHud = v;
             setupHud();
@@ -916,13 +976,22 @@ public class MainActivity extends AppCompatActivity {
         updateAudiRsThemeCheckmarks(savedTheme, checkDefault, checkAudiRs, themeDefault, themeAudiRs);
 
         // Apply saved theme on startup
-        ClusterHudManager.getInstance(this).setClusterTheme(savedTheme);
+        // Apply saved theme on startup
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            ClusterHudManagerApi30.getInstance(this).setClusterTheme(savedTheme);
+        } else {
+            ClusterHudManager.getInstance(this).setClusterTheme(savedTheme);
+        }
 
         // Audi RS theme click handler
         if (themeAudiRs != null) {
             themeAudiRs.setOnClickListener(v -> {
                 DebugLogger.action("MainActivity", "切换仪表主题: 奥迪RS");
-                ClusterHudManager.getInstance(this).setClusterTheme(PresentationManager.THEME_AUDI_RS);
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    ClusterHudManagerApi30.getInstance(this).setClusterTheme(PresentationManager.THEME_AUDI_RS);
+                } else {
+                    ClusterHudManager.getInstance(this).setClusterTheme(PresentationManager.THEME_AUDI_RS);
+                }
                 ConfigManager.getInstance().setInt("cluster_theme_builtin", PresentationManager.THEME_AUDI_RS);
                 updateAudiRsThemeCheckmarks(PresentationManager.THEME_AUDI_RS, checkDefault, checkAudiRs,
                         themeDefault, themeAudiRs);
@@ -934,7 +1003,11 @@ public class MainActivity extends AppCompatActivity {
             final View.OnClickListener existingListener = null; // May need to chain
             themeDefault.setOnClickListener(v -> {
                 DebugLogger.action("MainActivity", "切换仪表主题: 默认");
-                ClusterHudManager.getInstance(this).setClusterTheme(PresentationManager.THEME_DEFAULT);
+                if (android.os.Build.VERSION.SDK_INT >= 30) {
+                    ClusterHudManagerApi30.getInstance(this).setClusterTheme(PresentationManager.THEME_DEFAULT);
+                } else {
+                    ClusterHudManager.getInstance(this).setClusterTheme(PresentationManager.THEME_DEFAULT);
+                }
                 ConfigManager.getInstance().setInt("cluster_theme_builtin", PresentationManager.THEME_DEFAULT);
                 updateAudiRsThemeCheckmarks(PresentationManager.THEME_DEFAULT, checkDefault, checkAudiRs,
                         themeDefault, themeAudiRs);
@@ -1207,7 +1280,8 @@ public class MainActivity extends AppCompatActivity {
                     float scale = (float) obj.optDouble("scale", 1.0f);
 
                     ClusterHudManager.HudComponentData data = new ClusterHudManager.HudComponentData(type, text,
-                            x * 0.5f, y * 0.5f, color);
+                            android.os.Build.VERSION.SDK_INT >= 30 ? x : x * 0.5f, 
+                            android.os.Build.VERSION.SDK_INT >= 30 ? y : y * 0.5f, color);
                     data.scale = scale;
                     syncList.add(data);
                 }
@@ -1275,9 +1349,10 @@ public class MainActivity extends AppCompatActivity {
                     }
 
                     int color = mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF;
-                    // [FIX] Scale coordinates for Real HUD (728x190 = 0.5x of Preview 1456x380)
+                    // [FIX] Scale coordinates: Android 30+ (1:1), Legacy (0.5x)
+                    float scaleFactor = android.os.Build.VERSION.SDK_INT >= 30 ? 1.0f : 0.5f;
                     ClusterHudManager.HudComponentData data = new ClusterHudManager.HudComponentData(type, text,
-                            x * 0.5f, y * 0.5f, color);
+                            x * scaleFactor, y * scaleFactor, color);
                     data.scale = scale;
                     syncList.add(data);
                 }
@@ -1300,7 +1375,11 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // Sync to Real HUD
-        ClusterHudManager.getInstance(this).syncHudLayout(syncList);
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            ClusterHudManagerApi30.getInstance(this).syncHudLayout(syncList);
+        } else {
+            ClusterHudManager.getInstance(this).syncHudLayout(syncList);
+        }
     }
 
     private void toggleSnowMode() {
@@ -1560,6 +1639,44 @@ public class MainActivity extends AppCompatActivity {
             container.addView(tvCoord, tvParams);
 
             view = container;
+        } else if ("guide_line_h".equals(type)) {
+             // [Feature] Moveable Horizontal Guide Line
+            android.widget.FrameLayout container = new android.widget.FrameLayout(this);
+            // Full Width (380px), Height distinct enough to drag (e.g. 100px)
+            android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
+                    380, 100);
+            container.setLayoutParams(params);
+
+            // 1. The Horizontal Line (Centered)
+            View line = new View(this);
+            // Width 380, Height 4
+            android.widget.FrameLayout.LayoutParams lineParams = new android.widget.FrameLayout.LayoutParams(
+                    380, 4);
+            lineParams.gravity = android.view.Gravity.CENTER;
+            line.setBackgroundResource(R.drawable.line_dashed_cyan);
+            // No rotation needed for horizontal
+            line.setLayoutParams(lineParams);
+            line.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+            container.addView(line);
+
+            // 2. The Coordinate Text (Centered)
+            TextView tvCoord = new TextView(this);
+            tvCoord.setText("Y:0");
+            tvCoord.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 36); 
+            tvCoord.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
+            tvCoord.setShadowLayer(4, 2, 2, android.graphics.Color.BLACK);
+            tvCoord.setSingleLine(true);
+            
+            android.widget.FrameLayout.LayoutParams tvParams = new android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
+            tvParams.gravity = android.view.Gravity.CENTER;
+            // Shift text slightly above the line
+            tvParams.bottomMargin = 30; 
+            tvCoord.setLayoutParams(tvParams);
+            container.addView(tvCoord, tvParams);
+            
+            view = container;
         } else if ("time".equals(type)) {
             // [FIX] Use TextClock for dynamic time in Preview
             android.widget.TextClock tc = new android.widget.TextClock(this);
@@ -1725,8 +1842,14 @@ public class MainActivity extends AppCompatActivity {
                         View parent = (View) view.getParent();
                         int parentWidth = parent.getWidth();
                         int parentHeight = parent.getHeight();
-                        int viewWidth = (int) (view.getWidth() * view.getScaleX());
-                        int viewHeight = (int) (view.getHeight() * view.getScaleY());
+                        
+                        int wPrompt = view.getWidth();
+                        if (wPrompt == 0 && view.getLayoutParams() != null) wPrompt = view.getLayoutParams().width;
+                        int hPrompt = view.getHeight();
+                        if (hPrompt == 0 && view.getLayoutParams() != null) hPrompt = view.getLayoutParams().height;
+
+                        int viewWidth = (int) (wPrompt * view.getScaleX());
+                        int viewHeight = (int) (hPrompt * view.getScaleY());
 
                         if (newX < 0)
                             newX = 0;
@@ -1757,22 +1880,6 @@ public class MainActivity extends AppCompatActivity {
                             // 单独设置：歌曲组件强制 margin 为 0，防止贴边裁剪
                              offsetTop = 0;
                              offsetBottom = 0;
-                        } else if (tagStr.contains("type_guide_line")) {
-                            newY = 0; // Force Top to 0
-
-                            // Update Coordinate Text
-                            if (view instanceof android.view.ViewGroup) {
-                                android.view.ViewGroup vg = (android.view.ViewGroup) view;
-                                for (int k = 0; k < vg.getChildCount(); k++) {
-                                    View child = vg.getChildAt(k);
-                                    if (child instanceof TextView) {
-                                        // Center of the line is newX + width/2.
-                                        // The container is 100px wide. Center is +50.
-                                        int centerX = (int) (newX + view.getWidth() / 2f);
-                                        ((TextView) child).setText("" + centerX);
-                                    }
-                                }
-                            }
                         } else if (view instanceof TextView) {
                             float scaledTextSize = ((TextView) view).getTextSize() * view.getScaleY();
                             offsetTop = scaledTextSize * FACTOR_TOP;
@@ -1802,6 +1909,35 @@ public class MainActivity extends AppCompatActivity {
                         // Bottom Bound: Parent Height + Offset (so bottom of view can go below parent)
                         if (newY + viewHeight > parentHeight + offsetBottom)
                             newY = parentHeight - viewHeight + offsetBottom;
+
+                        // [FIX] Update Text Coordinates AFTER clamping
+                        if (tagStr.contains("type_guide_line_h")) {
+                             newX = 0;
+                             if (view instanceof android.view.ViewGroup) {
+                                android.view.ViewGroup vg = (android.view.ViewGroup) view;
+                                for (int k = 0; k < vg.getChildCount(); k++) {
+                                    View child = vg.getChildAt(k);
+                                    if (child instanceof TextView) {
+                                        // Center of the line is newY + height/2
+                                        int centerY = (int) (newY + view.getHeight() / 2f);
+                                        ((TextView) child).setText("Y:" + centerY);
+                                    }
+                                }
+                             }
+                        } else if (tagStr.contains("type_guide_line")) {
+                             newY = 0;
+                             if (view instanceof android.view.ViewGroup) {
+                                android.view.ViewGroup vg = (android.view.ViewGroup) view;
+                                for (int k = 0; k < vg.getChildCount(); k++) {
+                                    View child = vg.getChildAt(k);
+                                    if (child instanceof TextView) {
+                                        // Center of the line is newX + width/2
+                                        int centerX = (int) (newX + view.getWidth() / 2f);
+                                        ((TextView) child).setText("X:" + centerX);
+                                    }
+                                }
+                             }
+                        }
 
                         // [REMOVED] Collision Detection - Now allowing overlapping
                         // if (wouldOverlap(view, newX, newY, viewWidth, viewHeight)) {
@@ -1916,8 +2052,8 @@ public class MainActivity extends AppCompatActivity {
             ClusterHudManager.HudComponentData data = new ClusterHudManager.HudComponentData(
                     type,
                     text,
-                    child.getX() * 0.5f,
-                    child.getY() * 0.5f,
+                    android.os.Build.VERSION.SDK_INT >= 30 ? child.getX() : child.getX() * 0.5f,
+                    android.os.Build.VERSION.SDK_INT >= 30 ? child.getY() : child.getY() * 0.5f,
                     color);
             // 同步缩放值
             if (tag.contains(":scale_")) {
@@ -1930,9 +2066,13 @@ public class MainActivity extends AppCompatActivity {
             } else {
                 data.scale = child.getScaleX();
             }
-            list.add(data);
+        list.add(data);
         }
-        ClusterHudManager.getInstance(this).syncHudLayout(list);
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            ClusterHudManagerApi30.getInstance(this).syncHudLayout(list);
+        } else {
+            ClusterHudManager.getInstance(this).syncHudLayout(list);
+        }
     }
 
     private void updateHudModeButton() {
@@ -2081,6 +2221,8 @@ public class MainActivity extends AppCompatActivity {
                     createAndAddHudComponent("navi_distance_remaining", "8.5km", 0, 0);
                 } else if ("guide_line".equals(type)) {
                     createAndAddHudComponent("guide_line", "X:0", 0, 0);
+                } else if ("guide_line_h".equals(type)) {
+                    createAndAddHudComponent("guide_line_h", "Y:0", 0, 0);
                 } else if ("hud_rpm".equals(type)) {
                     createAndAddHudComponent("hud_rpm", "0rpm", 0, 0);
                 }
@@ -2096,7 +2238,8 @@ public class MainActivity extends AppCompatActivity {
         addButton.accept(colBasic, "系统时间", "time");
         addButton.accept(colBasic, "车内温度", "temp_in");
         addButton.accept(colBasic, "车外温度", "temp_out");
-        addButton.accept(colBasic, "辅助线", "guide_line");
+        addButton.accept(colBasic, "辅助线 (竖向)", "guide_line");
+        addButton.accept(colBasic, "辅助线 (横向)", "guide_line_h");
 
         // Group 2: Driving
         addButton.accept(colDrive, "剩余油量", "fuel");
@@ -2327,8 +2470,8 @@ public class MainActivity extends AppCompatActivity {
                         return true;
 
                     case android.view.MotionEvent.ACTION_MOVE:
-                        // [FIX] Disable Scaling for Volume AND Guide Line
-                        if (tagStr != null && (tagStr.contains("type_volume") || tagStr.contains("type_guide_line"))) {
+                        // [FIX] Disable Scaling for Volume AND Guide Lines
+                        if (tagStr != null && (tagStr.contains("type_volume") || tagStr.contains("type_guide_line") || tagStr.contains("type_guide_line_h"))) {
                             return true;
                         }
 
@@ -4413,12 +4556,34 @@ public class MainActivity extends AppCompatActivity {
                 DebugLogger.toast(this, newState ? "HUD 浅绿底色已开启" : "HUD 浅绿底色已关闭");
             });
         }
+
+        // [NEW] Android 11+ Emulator Mode Button
+        com.google.android.material.button.MaterialButton btnEmulatorMode = findViewById(R.id.btnEmulatorMode);
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+             btnEmulatorMode.setVisibility(View.VISIBLE);
+             boolean isEmulator = ConfigManager.getInstance().getBoolean("config_emulator_mode_enabled", false);
+             updateEmulatorModeButton(btnEmulatorMode, isEmulator);
+             
+             btnEmulatorMode.setOnClickListener(v -> {
+                 boolean newState = !ConfigManager.getInstance().getBoolean("config_emulator_mode_enabled", false);
+                 ConfigManager.getInstance().setBoolean("config_emulator_mode_enabled", newState); // Use setBoolean for consistency
+                 ClusterHudManagerApi30.getInstance(this).setEmulatorMode(newState);
+                 updateEmulatorModeButton(btnEmulatorMode, newState);
+                 DebugLogger.toast(this, newState ? "模拟器模式已开启" : "模拟器模式已关闭");
+             });
+        }
     }
 
     // 更新 HUD 浅绿底色按钮的图标和文字状态
     private void updateHudGreenBgButton(com.google.android.material.button.MaterialButton btn, boolean isEnabled) {
         btn.setIconResource(isEnabled ? R.drawable.ic_check : R.drawable.ic_close);
         btn.setText(isEnabled ? "HUD浅绿(开)" : "HUD浅绿(关)");
+    }
+    
+    // [NEW] Helper for Emulator Button
+    private void updateEmulatorModeButton(com.google.android.material.button.MaterialButton btn, boolean isEnabled) {
+        btn.setIconResource(isEnabled ? R.drawable.ic_check : R.drawable.ic_close);
+        btn.setText(isEnabled ? getString(R.string.btn_emulator_mode_on) : getString(R.string.btn_emulator_mode_off));
     }
 
     private void setupPsdTestButtons() {

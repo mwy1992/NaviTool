@@ -2647,6 +2647,31 @@ public class ClusterHudManager
         }
     }
 
+    public void onNaviStatusUpdate(int state) {
+        // Exposed for MainActivity Debug Button
+        DebugLogger.d(TAG, "External Navi Status Update: " + state);
+        boolean isNavigating = (state == 1 || state == 8 || state == 9);
+        boolean isStop = (state == 2);
+
+        mMainHandler.post(() -> {
+            if (mPresentationManager != null) {
+                if (isNavigating) {
+                    mPresentationManager.setNavigating(true);
+                } else if (isStop) {
+                    mPresentationManager.setNavigating(false);
+                }
+                
+                if (state == 2) {
+                    mPresentationManager.resetTrafficLights();
+                    mPresentationManager.resetNaviInfo();
+                    new Thread(() -> {
+                        applyNaviMode(3, "NAVI-END");
+                    }).start();
+                }
+            }
+        });
+    }
+
     public boolean isSnowModeEnabled() {
         return ConfigManager.getInstance().getBoolean("hud_snow_mode", false);
     }

@@ -763,12 +763,49 @@ public class PresentationManager extends android.app.Dialog {
     }
     
     private void updateTrafficLightGeneric(List<View> viewList, TrafficLightInfo info) {
-        // Implement generic updates if needed
+        if (info == null) return;
+        int mappedStatus = NaviInfoController.mapStatus(info.status);
+        
+        for (View v : viewList) {
+            Object tag = v.getTag();
+            String viewType = null;
+            if (tag instanceof ClusterHudManager.HudComponentData) {
+                viewType = ((ClusterHudManager.HudComponentData) tag).type;
+            }
+
+            if ("traffic_light".equals(viewType) && v instanceof cn.navitool.view.TrafficLightView) {
+                cn.navitool.view.TrafficLightView tlv = (cn.navitool.view.TrafficLightView) v;
+                tlv.setVisibility(View.VISIBLE); // Ensure visible
+                tlv.updateState(mappedStatus, info.redCountdown, info.direction);
+            }
+        }
     }
     
     private void updateGuideInfoGeneric(List<View> viewList, GuideInfo info) {
          if (info == null) return;
-         // TODO: Generic guide info views
+         
+         for (View v : viewList) {
+            Object tag = v.getTag();
+            String viewType = null;
+            if (tag instanceof ClusterHudManager.HudComponentData) {
+                viewType = ((ClusterHudManager.HudComponentData) tag).type;
+            }
+            
+            if (viewType == null) continue;
+
+            if (v instanceof android.widget.TextView) {
+                if ("navi_arrival_time".equals(viewType)) {
+                    String eta = NaviInfoController.parseEta(info.etaText);
+                    String display = eta.isEmpty() ? "--:--" : eta;
+                    ((android.widget.TextView) v).setText(display);
+                    v.setVisibility(View.VISIBLE);
+                } else if ("navi_distance_remaining".equals(viewType)) {
+                    String dist = NaviInfoController.formatDistance(info.routeRemainDis);
+                    ((android.widget.TextView) v).setText(dist);
+                    v.setVisibility(View.VISIBLE);
+                }
+            }
+         }
     }
     
     // --- Layout Sync Logic ---
