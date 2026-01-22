@@ -897,9 +897,7 @@ public class ClusterHudManager
 
     @Override
     public void onFuelChanged(float fuel, float percent) {
-        mCachedFuelLiters = fuel; // Already converted to L in Manager
-        updateFuelRangeComponent();
-        updateComponentText("fuel", String.format(Locale.US, "%.0fL", fuel));
+        updateFuelWithValue(fuel);
     }
 
     @Override
@@ -1522,6 +1520,11 @@ public class ClusterHudManager
             DebugLogger.w(TAG, "DimMenuInteraction is null, skipping switchNaviMode");
         }
     }
+
+    public boolean isClusterEnabled() {
+        return mIsClusterEnabled;
+    }
+
 
     public void setHudEnabled(boolean enabled) {
         if (mIsHudEnabled == enabled)
@@ -2543,6 +2546,8 @@ public class ClusterHudManager
         return "P"; // Default
     }
 
+
+
     @Override
     public void onDayNightChanged(int mode) {
         // Disabled per user request: "Amap checks system dark/light theme, not car
@@ -2770,6 +2775,7 @@ public class ClusterHudManager
         if (mPresentationManager != null) {
             updateComponentText("fuel", text);
             updateFuelRangeComponent();
+            mPresentationManager.updateFuelRemain(liters);
         }
     }
 

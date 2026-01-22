@@ -92,7 +92,8 @@
                 android:textColor="?android:attr/textColorSecondary"/>
             <Spinner
                 android:id="@+id/spinnerShortPressAction"
-                android:layout_width="140dp"
+                android:layout_width="wrap_content"
+                android:minWidth="140dp"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="8dp"/>
             <Spinner
@@ -120,7 +121,8 @@
                 android:textColor="?android:attr/textColorSecondary"/>
             <Spinner
                 android:id="@+id/spinnerLongPressAction"
-                android:layout_width="140dp"
+                android:layout_width="wrap_content"
+                android:minWidth="140dp"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="8dp"/>
             <Spinner

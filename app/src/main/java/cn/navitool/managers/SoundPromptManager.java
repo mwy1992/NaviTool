@@ -100,32 +100,61 @@ public class SoundPromptManager {
         // Legacy method, logic moved to KeepAliveAccessibilityService
     }
 
+
     public void playDoorDriverSound() {
         playSound("sound_door_driver");
+    }
+
+    public void playDoorDriverCloseSound() {
+        playSound("sound_door_driver_close");
     }
 
     public void playDoorPassengerSound() {
         playSound("sound_door_passenger");
     }
 
+    public void playDoorPassengerCloseSound() {
+        playSound("sound_door_passenger_close");
+    }
+
     public void playDoorPassengerEmptySound() {
         playSound("sound_door_passenger_empty");
+    }
+
+    public void playDoorPassengerEmptyCloseSound() {
+        playSound("sound_door_passenger_empty_close");
     }
 
     public void playDoorRearLeftSound() {
         playSound("sound_door_rear_left");
     }
 
+    public void playDoorRearLeftCloseSound() {
+        playSound("sound_door_rear_left_close");
+    }
+
     public void playDoorRearRightSound() {
         playSound("sound_door_rear_right");
+    }
+
+    public void playDoorRearRightCloseSound() {
+        playSound("sound_door_rear_right_close");
     }
 
     public void playDoorHoodSound() {
         playSound("sound_door_hood");
     }
 
+    public void playDoorHoodCloseSound() {
+        playSound("sound_door_hood_close");
+    }
+
     public void playDoorTrunkSound() {
         playSound("sound_door_trunk");
+    }
+
+    public void playDoorTrunkCloseSound() {
+        playSound("sound_door_trunk_close");
     }
 
     public void playCustomSound(String absolutePath) {
@@ -137,6 +166,14 @@ public class SoundPromptManager {
 
     private void playSound(String prefKeyPrefix) {
         SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
+        
+        // [FIX] Check Master Switch first
+        boolean isMasterEnabled = prefs.getBoolean("sound_master_enabled", true);
+        if (!isMasterEnabled) {
+            DebugLogger.d(TAG, "Sound skipped (Master Disabled): " + prefKeyPrefix);
+            return;
+        }
+
         boolean enabled = prefs.getBoolean(prefKeyPrefix + "_enabled", false);
         if (!enabled) {
             DebugLogger.d(TAG, "Sound skipped (Disabled): " + prefKeyPrefix);

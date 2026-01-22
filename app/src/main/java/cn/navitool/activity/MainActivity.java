@@ -426,11 +426,7 @@ public class MainActivity extends AppCompatActivity {
         // [NEW] 注册仪表/HUD激活广播接收器 (延迟3秒后由KeepAliveService发送)
         android.content.IntentFilter clusterHudFilter = new android.content.IntentFilter(
                 "cn.navitool.ACTION_ACTIVATE_CLUSTER_HUD");
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(mClusterHudActivationReceiver, clusterHudFilter, Context.RECEIVER_EXPORTED);
-        } else {
-            registerReceiver(mClusterHudActivationReceiver, clusterHudFilter);
-        }
+        registerReceiver(mClusterHudActivationReceiver, clusterHudFilter);
 
         // [FIX] Request initial status after registering receiver
         ThemeBrightnessManager.getInstance(this).broadcastStatus();
@@ -646,12 +642,7 @@ public class MainActivity extends AppCompatActivity {
         // Sunshade Control
         setupSunshadeControl();
 
-        // 24/25 Model Light Sensor
-        SwitchMaterial switch2425 = mLayoutGeneral.findViewById(R.id.switch2425LightSensor);
-        if (switch2425 != null) {
-            switch2425.setChecked(ConfigManager.getInstance().getBoolean("enable_24_25_sensor", false));
-            switch2425.setEnabled(false); // Placeholder as per original
-        }
+
 
         // Festival Wallpaper
         android.widget.Spinner spinnerFestival = mLayoutGeneral.findViewById(R.id.spinnerFestivalWallpaper);
@@ -2823,12 +2814,25 @@ public class MainActivity extends AppCompatActivity {
         setupSoundItem(R.id.cardSoundGearP, R.string.switch_sound_gear_p, "sound_gear_p");
         
         setupSoundItem(R.id.cardSoundDoorDriver, R.string.switch_sound_door_driver, "sound_door_driver");
+        setupSoundItem(R.id.cardSoundDoorDriverClose, R.string.switch_sound_door_driver_close, "sound_door_driver_close");
+
         setupSoundItem(R.id.cardSoundDoorPassenger, R.string.switch_sound_door_passenger, "sound_door_passenger");
+        setupSoundItem(R.id.cardSoundDoorPassengerClose, R.string.switch_sound_door_passenger_close, "sound_door_passenger_close");
+        
         setupSoundItem(R.id.cardSoundDoorPassengerEmpty, R.string.switch_sound_door_passenger_empty, "sound_door_passenger_empty");
+        setupSoundItem(R.id.cardSoundDoorPassengerEmptyClose, R.string.switch_sound_door_passenger_empty_close, "sound_door_passenger_empty_close");
+        
         setupSoundItem(R.id.cardSoundDoorRearLeft, R.string.switch_sound_door_rear_left, "sound_door_rear_left");
+        setupSoundItem(R.id.cardSoundDoorRearLeftClose, R.string.switch_sound_door_rear_left_close, "sound_door_rear_left_close");
+        
         setupSoundItem(R.id.cardSoundDoorRearRight, R.string.switch_sound_door_rear_right, "sound_door_rear_right");
+        setupSoundItem(R.id.cardSoundDoorRearRightClose, R.string.switch_sound_door_rear_right_close, "sound_door_rear_right_close");
+        
         setupSoundItem(R.id.cardSoundDoorHood, R.string.switch_sound_door_hood, "sound_door_hood");
+        setupSoundItem(R.id.cardSoundDoorHoodClose, R.string.switch_sound_door_hood_close, "sound_door_hood_close");
+        
         setupSoundItem(R.id.cardSoundDoorTrunk, R.string.switch_sound_door_trunk, "sound_door_trunk");
+        setupSoundItem(R.id.cardSoundDoorTrunkClose, R.string.switch_sound_door_trunk_close, "sound_door_trunk_close");
 
         configureTestButtonsVisibility();
     }
@@ -3009,12 +3013,19 @@ public class MainActivity extends AppCompatActivity {
             R.id.cardSoundGearR,
             R.id.cardSoundGearP,
             R.id.cardSoundDoorDriver,
+            R.id.cardSoundDoorDriverClose,
             R.id.cardSoundDoorPassenger,
+            R.id.cardSoundDoorPassengerClose,
             R.id.cardSoundDoorPassengerEmpty,
+            R.id.cardSoundDoorPassengerEmptyClose,
             R.id.cardSoundDoorRearLeft,
+            R.id.cardSoundDoorRearLeftClose,
             R.id.cardSoundDoorRearRight,
+            R.id.cardSoundDoorRearRightClose,
             R.id.cardSoundDoorHood,
-            R.id.cardSoundDoorTrunk
+            R.id.cardSoundDoorHoodClose,
+            R.id.cardSoundDoorTrunk,
+            R.id.cardSoundDoorTrunkClose
         };
 
         for (int cardId : cardIds) {
@@ -3063,18 +3074,7 @@ public class MainActivity extends AppCompatActivity {
         Intent requestIntent = new Intent("cn.navitool.ACTION_REQUEST_DAY_NIGHT_STATUS");
         sendBroadcast(requestIntent);
 
-        // 24-25 Model Light Sensor Switch
-        SwitchMaterial switch2425LightSensor = findViewById(R.id.switch2425LightSensor);
-        if (switch2425LightSensor != null) {
-            boolean is2425Enabled = ConfigManager.getInstance().getBoolean("enable_24_25_light_sensor", false);
-            switch2425LightSensor.setChecked(is2425Enabled);
-            switch2425LightSensor.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                ConfigManager.getInstance().setBoolean("enable_24_25_light_sensor", isChecked);
-                if (isChecked) {
-                    DebugLogger.toast(this, "已开启24-25款光感切换");
-                }
-            });
-        }
+
 
         // 节日壁纸 Spinner
         setupFestivalWallpaper();
@@ -3310,6 +3310,7 @@ public class MainActivity extends AppCompatActivity {
         actionOptions.add("- - - -");
         actionOptions.add(getString(R.string.action_launch_app));
         actionOptions.add(getString(R.string.action_kill_app));
+        actionOptions.add(getString(R.string.action_toggle_cluster));
         ArrayAdapter<String> actionAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item,
                 actionOptions);
         actionAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
@@ -4382,6 +4383,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private SimulateFunction mSimulateFunction;
+    private boolean mSimulateAmapNightMode = false;
 
     private void setupSimulateEngineStartButton() {
         // 初始化模拟功能管理器
@@ -4396,6 +4398,17 @@ public class MainActivity extends AppCompatActivity {
         // 设置模拟转向灯按钮
         com.google.android.material.button.MaterialButton btnTurnSignal = findViewById(R.id.btnSimulateTurnSignal);
         mSimulateFunction.setupTurnSignalButton(btnTurnSignal);
+
+        // [NEW] 模拟高德日夜切换
+        com.google.android.material.button.MaterialButton btnAmapTheme = findViewById(R.id.btnSimulateAmapTheme);
+        if (btnAmapTheme != null) {
+             btnAmapTheme.setOnClickListener(v -> {
+                 mSimulateAmapNightMode = !mSimulateAmapNightMode;
+                 int mode = mSimulateAmapNightMode ? 2 : 1;
+                 sendAutoNaviBroadcast(mode);
+                 DebugLogger.toast(MainActivity.this, "模拟高德: " + (mode == 1 ? "白天" : "黑夜"));
+             });
+        }
 
         // [NEW] HUD 浅绿底色调试按钮 (Toggle Button)
         com.google.android.material.button.MaterialButton btnHudGreenBg = findViewById(R.id.btnHudGreenBg);

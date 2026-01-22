@@ -65,7 +65,8 @@ public class PresentationManager extends android.app.Dialog {
 
     // HUD Style Views
     private View mContainerDashboard;
-    private cn.navitool.view.TrafficLightView mHudTrafficLightView;
+    private cn.navitool.view.TrafficLightView mHudTrafficLightView; // Floating HUD Style
+    private cn.navitool.view.TrafficLightView mRealHudTrafficLight; // Real HUD (Projector)
     private NaviInfoController.TrafficLightInfo mLatestTrafficLightInfo = null; // Track latest data
     
     // Generic Component Lists (For backward compatibility with existing generic logic if needed)
@@ -90,6 +91,9 @@ public class PresentationManager extends android.app.Dialog {
 
         mLayoutCluster = findViewById(R.id.layoutCluster);
         mLayoutHud = findViewById(R.id.layoutHud);
+        if (mLayoutHud != null) {
+            mRealHudTrafficLight = mLayoutHud.findViewById(R.id.hudTrafficLightView);
+        }
         
         // Cache Standard Layout immediately (it's part of the main included layout usually, or we inflate/find it)
         // Assuming layout_cluster_standard is included or part of layoutCluster
@@ -543,6 +547,10 @@ public class PresentationManager extends android.app.Dialog {
         if (mThemeController != null) mThemeController.updateInstantFuel(fuel);
     }
 
+    public void updateFuelRemain(float fuelLiters) {
+        if (mThemeController != null) mThemeController.updateFuelRemain(fuelLiters);
+    }
+
     public void updateIndoorTemp(float temp) {
         if (mThemeController != null) mThemeController.updateIndoorTemp(temp);
     }
@@ -763,7 +771,18 @@ public class PresentationManager extends android.app.Dialog {
     }
     
     private void updateTrafficLightGeneric(List<View> viewList, TrafficLightInfo info) {
-        // Implement generic updates if needed
+        if (mRealHudTrafficLight == null) return;
+        
+        if (info == null) {
+            mRealHudTrafficLight.setVisibility(View.GONE);
+            return;
+        }
+
+        mRealHudTrafficLight.setVisibility(View.VISIBLE);
+        // Assuming TrafficLightView handles mapping or we map it here.
+        // updateState(int status, int time, int direction)
+        int mappedStatus = NaviInfoController.mapStatus(info.status);
+        mRealHudTrafficLight.updateState(mappedStatus, info.redCountdown, info.direction);
     }
     
     private void updateGuideInfoGeneric(List<View> viewList, GuideInfo info) {

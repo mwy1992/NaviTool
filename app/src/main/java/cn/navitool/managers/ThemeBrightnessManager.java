@@ -104,7 +104,7 @@ public class ThemeBrightnessManager {
         mTargetBrightnessAvm = config.getInt("override_avm_value", 15);
 
         boolean forceAuto = config.getBoolean("force_auto_day_night", false);
-        boolean sensor2425 = config.getBoolean("enable_24_25_light_sensor", false);
+
 
         // ... Logic continues
 
@@ -318,8 +318,7 @@ public class ThemeBrightnessManager {
     public void checkMonitoringRequirement() {
         SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
         boolean forceAuto = prefs.getBoolean("force_auto_day_night", false);
-        boolean sensor2425 = prefs.getBoolean("enable_24_25_light_sensor", false);
-        if (forceAuto || sensor2425) {
+        if (forceAuto) {
             startMonitoring();
         } else {
             stopMonitoring();
@@ -346,7 +345,7 @@ public class ThemeBrightnessManager {
         if (sensorType == SENSOR_TYPE_LIGHT) {
             if (mLastLightSensorValue != value) {
                 mLastLightSensorValue = value;
-                check2425LightSensorLogic();
+                mLastLightSensorValue = value;
             }
         }
     }
@@ -444,7 +443,7 @@ public class ThemeBrightnessManager {
                     }
                 }
 
-                check2425LightSensorLogic();
+
             } catch (Exception e) {
                 DebugLogger.e(TAG, "Error checking Day/Night status", e);
             }
@@ -457,31 +456,7 @@ public class ThemeBrightnessManager {
         checkDayNightStatus(true);
     }
 
-    private void check2425LightSensorLogic() {
-        SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
-        boolean enabled = prefs.getBoolean("enable_24_25_light_sensor", false);
-        ICarFunction carFunc = CarServiceManager.getInstance(mContext).getCarFunction();
 
-        if (!enabled || carFunc == null || mLastDayNightSensorValue == -1)
-            return;
-
-        try {
-            int currentMode = carFunc.getFunctionValue(FUNC_DAYMODE_SETTING, ZONE_ALL);
-            if (mLastDayNightSensorValue == ISensorEvent.DAY_NIGHT_MODE_NIGHT) {
-                if (currentMode != VALUE_DAYMODE_NIGHT) {
-                    DebugLogger.i(TAG, "24-25 Logic: Sensor NIGHT -> Theme NIGHT");
-                    carFunc.setFunctionValue(FUNC_DAYMODE_SETTING, ZONE_ALL, VALUE_DAYMODE_NIGHT);
-                }
-            } else if (mLastDayNightSensorValue == ISensorEvent.DAY_NIGHT_MODE_DAY) {
-                if (currentMode != VALUE_DAYMODE_DAY) {
-                    DebugLogger.i(TAG, "24-25 Logic: Sensor DAY -> Theme DAY");
-                    carFunc.setFunctionValue(FUNC_DAYMODE_SETTING, ZONE_ALL, VALUE_DAYMODE_DAY);
-                }
-            }
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Error in 24-25 Logic", e);
-        }
-    }
 
     private void checkAndEnforceBrightness() {
         if (!mIsOverrideEnabled)
@@ -617,7 +592,7 @@ public class ThemeBrightnessManager {
 
     public void syncAutoNaviTheme() {
         SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
-        if (!prefs.getBoolean("auto_theme_sync", false))
+        if (!prefs.getBoolean("auto_theme_sync", true))
             return;
 
         int currentNightMode = mContext.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;

@@ -50,8 +50,7 @@ public class AudiRsThemeController extends BaseThemeController {
     private ImageView mBackground; 
     
     // New Sensor Data Views
-    private TextView mTripDistText;
-    private TextView mTripTimeText;
+    private TextView mFuelRemainText;
     private TextView mOdometerText;
     private TextView mFuelConsText;
     private TextView mTempInText;
@@ -192,7 +191,7 @@ public class AudiRsThemeController extends BaseThemeController {
         bindTpmsViews(rootView);
         
         // Sensor Data
-        mTripDistText = rootView.findViewById(R.id.audiRsTripDist);
+        mFuelRemainText = rootView.findViewById(R.id.audiRsFuelRemain);
         mOdometerText = rootView.findViewById(R.id.audiRsOdometer);
         mFuelConsText = rootView.findViewById(R.id.audiRsFuelCons);
         mTempInText = rootView.findViewById(R.id.audiRsTempIn);
@@ -290,6 +289,7 @@ public class AudiRsThemeController extends BaseThemeController {
 
         // Arrow Rotation
         if (mDirectionArrow != null) {
+            mDirectionArrow.setVisibility(View.VISIBLE);
             mDirectionArrow.setImageResource(R.drawable.ic_direction_arrow);
             float rotation = 0;
             switch (info.direction) {
@@ -307,9 +307,18 @@ public class AudiRsThemeController extends BaseThemeController {
         int mappedStatus = NaviInfoController.mapStatus(rawStatus);
         float inactiveAlpha = (mappedStatus == 0) ? 0f : ALPHA_DIM;
 
-        if (mLightRed != null) mLightRed.setAlpha(mappedStatus == TrafficLightView.STATUS_RED ? activeAlpha : inactiveAlpha);
-        if (mLightYellow != null) mLightYellow.setAlpha(mappedStatus == TrafficLightView.STATUS_YELLOW ? activeAlpha : inactiveAlpha);
-        if (mLightGreen != null) mLightGreen.setAlpha(mappedStatus == TrafficLightView.STATUS_GREEN ? activeAlpha : inactiveAlpha);
+        if (mLightRed != null) {
+             mLightRed.setVisibility(View.VISIBLE);
+             mLightRed.setAlpha(mappedStatus == TrafficLightView.STATUS_RED ? activeAlpha : inactiveAlpha);
+        }
+        if (mLightYellow != null) {
+             mLightYellow.setVisibility(View.VISIBLE);
+             mLightYellow.setAlpha(mappedStatus == TrafficLightView.STATUS_YELLOW ? activeAlpha : inactiveAlpha);
+        }
+        if (mLightGreen != null) {
+             mLightGreen.setVisibility(View.VISIBLE);
+             mLightGreen.setAlpha(mappedStatus == TrafficLightView.STATUS_GREEN ? activeAlpha : inactiveAlpha);
+        }
 
         int color = 0xFFFFFFFF; // White
         if (mappedStatus == TrafficLightView.STATUS_RED) color = 0xFFFF0000;
@@ -504,21 +513,16 @@ public class AudiRsThemeController extends BaseThemeController {
     }
 
     @Override
-    public void updateTripInfo(float distanceKm, long duration) {
-        if (mTripDistText != null) {
-             mTripDistText.setText(String.format(java.util.Locale.US, "本次里程: %.1fkm", distanceKm));
-        }
-        if (mTripTimeText != null) {
-            long hours = duration / 3600;
-            long minutes = (duration % 3600) / 60;
-            mTripTimeText.setText(String.format(java.util.Locale.US, "耗时: %02d:%02d", hours, minutes));
+    public void updateFuelRemain(float fuelLiters) {
+        if (mFuelRemainText != null) {
+             mFuelRemainText.setText(String.format(java.util.Locale.US, "剩余油量: %.0fL", fuelLiters));
         }
     }
     
     @Override
     public void updateOdometer(float odometer) {
         if (mOdometerText != null) {
-            mOdometerText.setText(String.format(java.util.Locale.US, "总里程: %.1fkm", odometer));
+            mOdometerText.setText(String.format(java.util.Locale.US, "总里程: %.0fkm", odometer));
         }
     }
     

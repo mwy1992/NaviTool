@@ -4,274 +4,296 @@
     android:id="@+id/layoutContentGeneral"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="8dp">
+    android:padding="4dp">
 
-    <GridLayout
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:columnCount="2"
-        android:orientation="horizontal">
+        android:orientation="vertical">
 
-        <!-- 1. Auto Switch Theme -->
+        <!-- Row 1 -->
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_columnWeight="1"
-            android:layout_gravity="fill_horizontal|center_vertical"
-            android:layout_marginEnd="8dp"
-            android:layout_marginBottom="16dp"
-            android:minHeight="60dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/auto_switch_theme"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary"/>
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switchAutoTheme"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
-        </LinearLayout>
+            android:orientation="horizontal"
+            android:baselineAligned="false"
+            android:layout_marginBottom="16dp">
 
-        <!-- 2. Sunshade Control -->
-        <LinearLayout
-            android:id="@+id/layoutSunshade"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1"
-            android:layout_gravity="fill_horizontal|center_vertical"
-            android:layout_marginStart="8dp"
-            android:layout_marginBottom="16dp"
-            android:minHeight="60dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/sunshade_auto_open"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary"/>
-            <SeekBar
-                android:id="@+id/sbSunshadePosition"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginHorizontal="8dp"
-                android:max="100"
-                android:min="0"
-                android:progress="100"/>
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnSunshadeNightOnly"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:minHeight="40dp"
-                android:minWidth="120dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:text="@string/sunshade_sensor_open"
-                android:textSize="12sp"
-                app:icon="@drawable/ic_check"
-                app:iconGravity="textStart"
-                app:iconPadding="4dp"
-                app:iconSize="18dp"
-                app:iconTint="@android:color/white"/>
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/swSunshadeAutoOpen"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
-        </LinearLayout>
-
-        <!-- 3. Force Auto Day/Night -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1"
-            android:layout_gravity="fill_horizontal|center_vertical"
-            android:layout_marginEnd="8dp"
-            android:layout_marginBottom="16dp"
-            android:minHeight="60dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/force_auto_mode"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary"/>
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switchForceAutoDayNight"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
-        </LinearLayout>
-
-        <!-- 4. 24-25 Model Light Sensor -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1"
-            android:layout_gravity="fill_horizontal|center_vertical"
-            android:layout_marginStart="8dp"
-            android:layout_marginBottom="16dp"
-            android:minHeight="60dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/switch_24_25_light_sensor"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary"/>
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switch2425LightSensor"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
-        </LinearLayout>
-
-        <!-- 5. Festival Wallpaper -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1"
-            android:layout_gravity="fill_horizontal|center_vertical"
-            android:layout_marginEnd="8dp"
-            android:layout_marginBottom="16dp"
-            android:minHeight="60dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/festival_wallpaper"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary"/>
-            <Spinner
-                android:id="@+id/spinnerFestivalWallpaper"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minWidth="120dp"/>
-        </LinearLayout>
-
-        <!-- 6. Floating Traffic Light -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1"
-            android:layout_gravity="fill_horizontal|center_vertical"
-            android:layout_marginStart="8dp"
-            android:layout_marginBottom="16dp"
-            android:minHeight="60dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/floating_traffic_light_title"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary"/>
-            <Button
-                android:id="@+id/btnPositionTrafficLight"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/action_settings"
-                android:layout_marginEnd="8dp"
-                android:visibility="gone"/>
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switchFloatingTrafficLight"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
-        </LinearLayout>
-
-        <!-- 7. Simulated Gear -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1"
-            android:layout_gravity="fill_horizontal|center_vertical"
-            android:layout_marginEnd="8dp"
-            android:layout_marginBottom="16dp"
-            android:minHeight="60dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-            
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:orientation="horizontal">
+                android:layout_gravity="center_vertical"
+                android:layout_marginEnd="12dp"
+                android:minHeight="60dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_item_underline"
+                android:paddingHorizontal="12dp">
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="@string/simulated_gear_title"
+                    android:layout_weight="1"
+                    android:text="@string/auto_switch_theme"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary"/>
-                <TextView
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchAutoTheme"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="感谢群友大胖提供代码"
-                    android:textSize="12sp"
-                    android:textColor="?android:attr/textColorSecondary"
-                    android:layout_marginStart="6dp"/>
+                    android:layout_height="wrap_content"/>
             </LinearLayout>
 
-            <Button
-                android:id="@+id/btnTransmissionType"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="我是8AT车型"
-                android:textSize="12sp"
-                android:layout_marginEnd="8dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:minHeight="40dp"
-                android:minWidth="120dp"/>
-
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switchSimulatedGear"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
-        </LinearLayout>
-
-
-
-        <!-- 9. Floating Ball -->
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_columnWeight="1"
-            android:layout_gravity="fill_horizontal|center_vertical"
-            android:layout_marginStart="8dp"
-            android:layout_marginBottom="16dp"
-            android:minHeight="60dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-            <TextView
+            <!-- 2. Sunshade Control (Right) -->
+            <LinearLayout
+                android:id="@+id/layoutSunshade"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="@string/floating_ball_title"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:textColor="?android:attr/textColorPrimary"/>
-            <com.google.android.material.switchmaterial.SwitchMaterial
-                android:id="@+id/switchFloatingBall"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="12dp"
+                android:minHeight="60dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_item_underline"
+                android:paddingHorizontal="12dp">
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/sunshade_auto_open"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"/>
+                <SeekBar
+                    android:id="@+id/sbSunshadePosition"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginHorizontal="8dp"
+                    android:max="100"
+                    android:min="0"
+                    android:progress="100"/>
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSunshadeNightOnly"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:minHeight="40dp"
+                    android:minWidth="120dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:text="@string/sunshade_sensor_open"
+                    android:textSize="12sp"
+                    app:icon="@drawable/ic_check"
+                    app:iconGravity="textStart"
+                    app:iconPadding="4dp"
+                    app:iconSize="18dp"
+                    app:iconTint="@android:color/white"/>
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/swSunshadeAutoOpen"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </LinearLayout>
         </LinearLayout>
 
-    </GridLayout>
+        <!-- Row 2 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:baselineAligned="false"
+            android:layout_marginBottom="16dp">
+
+            <!-- 3. Force Auto Day/Night (Left) -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_gravity="center_vertical"
+                android:layout_marginEnd="12dp"
+                android:minHeight="60dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_item_underline"
+                android:paddingHorizontal="12dp">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/force_auto_mode"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"/>
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchForceAutoDayNight"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <!-- 4. Festival Wallpaper (Right) -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="12dp"
+                android:minHeight="60dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_item_underline"
+                android:paddingHorizontal="12dp">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/festival_wallpaper"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"/>
+                <Spinner
+                    android:id="@+id/spinnerFestivalWallpaper"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="120dp"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Row 3 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:baselineAligned="false"
+            android:layout_marginBottom="16dp">
+
+            <!-- 5. Floating Traffic Light (Left) -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_gravity="center_vertical"
+                android:layout_marginEnd="12dp"
+                android:minHeight="60dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_item_underline"
+                android:paddingHorizontal="12dp">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/floating_traffic_light_title"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"/>
+                <Button
+                    android:id="@+id/btnPositionTrafficLight"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/action_settings"
+                    android:layout_marginEnd="8dp"
+                    android:visibility="gone"/>
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchFloatingTrafficLight"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <!-- 6. Simulated Gear (Right) -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="12dp"
+                android:minHeight="60dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_item_underline"
+                android:paddingHorizontal="12dp">
+                
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/simulated_gear_title"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="?android:attr/textColorPrimary"/>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="感谢群友大胖提供代码"
+                        android:textSize="12sp"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:layout_marginStart="6dp"/>
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/btnTransmissionType"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="我是8AT车型"
+                    android:textSize="12sp"
+                    android:layout_marginEnd="8dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:minHeight="40dp"
+                    android:minWidth="120dp"/>
+
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchSimulatedGear"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Row 4 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:baselineAligned="false"
+            android:layout_marginBottom="16dp">
+
+            <!-- 7. Floating Ball (Left) -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_gravity="center_vertical"
+                android:layout_marginEnd="12dp"
+                android:minHeight="60dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:background="@drawable/bg_item_underline"
+                android:paddingHorizontal="12dp">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/floating_ball_title"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="?android:attr/textColorPrimary"/>
+                <com.google.android.material.switchmaterial.SwitchMaterial
+                    android:id="@+id/switchFloatingBall"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <!-- Spacer (Right) -->
+            <View
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginStart="12dp"/>
+        </LinearLayout>
+
+    </LinearLayout>
 </ScrollView>

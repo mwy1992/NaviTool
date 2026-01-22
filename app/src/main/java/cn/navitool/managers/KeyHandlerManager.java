@@ -283,6 +283,13 @@ public class KeyHandlerManager {
             return;
 
         int action = prefs.getInt("wechat_" + type + "_press_action", 0);
+        
+        if (action == 3) {
+            // Action 3: Toggle Cluster
+            toggleClusterState();
+            return;
+        }
+
         String packageName = prefs.getString("wechat_" + type + "_press_app", "");
 
         if (packageName.isEmpty()) {
@@ -295,6 +302,17 @@ public class KeyHandlerManager {
         } else if (action == 2) { // Kill
             killApp(packageName);
         }
+    }
+
+    private void toggleClusterState() {
+        ClusterHudManager manager = ClusterHudManager.getInstance(mContext);
+        boolean currentState = manager.isClusterEnabled();
+        boolean newState = !currentState;
+        
+        manager.setClusterEnabled(newState);
+        ConfigManager.getInstance().setBoolean("is_cluster_enabled", newState);
+        
+        DebugLogger.toast(mContext, newState ? "仪表已开启" : "仪表已关闭");
     }
 
     private void launchApp(String packageName) {

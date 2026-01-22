@@ -1,5 +1,32 @@
 # Change Log
 
+## 2026-01-22
+
+### 奥迪 RS 主题同步更新 (Audi RS Theme Synchronization)
+
+- **功能同步 (Feature Sync with KX11-A2)**:
+  - **油量显示集成 (Fuel Level Integration)**: 全面替换了原有的“本次里程”显示逻辑。现在仪表盘右侧区域实时显示剩余油量 ("油量: XX L")，底层逻辑已接入 `VehicleSensorManager` 的实时油量数据。
+  - **总里程整数化 (Integer Odometer)**: 调整了总里程显示格式，移除了小数位 (99999.9 -> 99999 km)，并优化了字体大小 (18sp -> 16sp) 以符合新的视觉规范。
+  - **TPMS 布局校准**: 根据参考设计，精确调整了胎压监测区域的边距、字体大小 (压力值 14sp / 单位 10sp / 温度 10sp) 和布局结构。
+  - **实时数据驱动**: 在 `ClusterHudManager` 中实现了完善的传感器监听接口 (`onFuelChanged`, `onOdometerChanged`, `onTemperatureChanged`, `onTireDataChanged`)，确保所有仪表数据均为毫秒级实时更新。
+
+### 传感器与逻辑优化 (Sensor & Logic Optimization)
+
+- **车速传感器冲突解决 (Speed Sensor Conflict Resolution)**:
+  - **优先级调整**: 发现并解决了由 `KeepAliveAccessibilityService` 注册的 `DIM_CAR_SPEED` (1055232) 与 `VehicleSensorManager` 注册的通用车速 (1048832) 之间的冲突。通过移除 Service 中的冗余监听，确立了 `VehicleSensorManager` 为唯一权威车速数据源。
+
+- **高德主题同步修复 (Amap Theme Sync Fix)**:
+  - **环境光联动**: 扩展了 `ThemeBrightnessManager` 的逻辑。现在，当环境光传感器发生变化时，会自动检查并向高德地图发送正确的日夜模式广播，修复了自动模式失效的问题。
+  - **模拟测试工具**: 在主界面调试区新增了“模拟高德日夜”按钮，便于开发者验证主题同步功能。
+
+### 交互体验增强 (User Experience Enhancements)
+
+- **落锁音效定制 (Door Closing Sounds)**:
+  - **场景化反馈**: 新增了车门关闭音效功能。
+    - **主驾侧**: 关闭时播放特定音效。
+    - **副驾侧**: 智能识别副驾占用状态。若有人乘坐，播放“关门音效”；若无人，播放“空门音效” (需配置)。
+  - **配置 UI**: 在声音设置页新增了“关门提示音”配置列，支持独立开关和文件路径配置。
+
 ## 2026-01-20 (下午工作总结 / Afternoon Session Summary)
 
 ### 仪表动画平滑与奥迪主题增强 (Cluster Animation Smoothing & Audi RS Enhancements)

@@ -28,6 +28,7 @@ public interface IClusterTheme {
     void updateTripInfo(float distance, long duration);
     void updateOdometer(float odometer);
     void updateInstantFuel(float fuel);
+    void updateFuelRemain(float fuelLiters);
     
     // Environment
     void updateIndoorTemp(float temp);

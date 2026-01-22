@@ -73,7 +73,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
     // ... existing fields ...
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (sharedPreferences, key) -> {
-        if ("force_auto_day_night".equals(key) || "enable_24_25_light_sensor".equals(key)) {
+        if ("force_auto_day_night".equals(key)) {
             cn.navitool.managers.ThemeBrightnessManager.getInstance(this).checkMonitoringRequirement();
         } else if ("adb_wireless_enabled".equals(key)) {
             if (sharedPreferences.getBoolean(key, false)) {
@@ -157,11 +157,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         // filter.addAction("cn.navitool.ACTION_SIMULATE_ENGINE_START"); // Now handled
         // by Manifest Receiver
         try {
-            if (Build.VERSION.SDK_INT >= 33) {
-                registerReceiver(configChangeReceiver, filter, Context.RECEIVER_EXPORTED);
-            } else {
-                registerReceiver(configChangeReceiver, filter);
-            }
+            registerReceiver(configChangeReceiver, filter);
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to register configChangeReceiver", e);
         }
@@ -173,11 +169,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         try {
             mSimulateReceiver = new SimulateFunction.IgnitionReceiver();
             IntentFilter simFilter = new IntentFilter("cn.navitool.ACTION_SIMULATE_ENGINE_START");
-            if (Build.VERSION.SDK_INT >= 33) {
-                registerReceiver(mSimulateReceiver, simFilter, Context.RECEIVER_EXPORTED);
-            } else {
-                registerReceiver(mSimulateReceiver, simFilter);
-            }
+            registerReceiver(mSimulateReceiver, simFilter);
             DebugLogger.i(TAG, "Dynamic SimulateFunction.IgnitionReceiver Registered");
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to register SimulateFunction.IgnitionReceiver", e);
@@ -501,7 +493,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     private static final int SENSOR_TYPE_GEAR = 2097664; // 0x200200
     // [BUG 4 FIX] 车速传感器 (from ecarx.adaptapi.jar.src -> ISensor.java)
 
-    private static final int SENSOR_TYPE_DIM_CAR_SPEED = 1055232; // 仪表盘显示速度 (与原车仪表一致)
+
     private static final int SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER = 2110464; // Event Type
     private static final int SEAT_OCCUPATION_STATUS_NONE = 2110209;     // 无人
     private static final int SEAT_OCCUPATION_STATUS_OCCUPIED = 2110210; // 有人
@@ -687,13 +679,6 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                                     .getInstance(KeepAliveAccessibilityService.this)
                                     .onSensorChanged(sensorType, value);
 
-                        } else if (sensorType == SENSOR_TYPE_DIM_CAR_SPEED) {
-                            // DIM速度与实际车速格式相同，都需要乘以3.6转换为km/h
-                            int speedKmh = (int) (value * 3.6f);
-                            // [DEBUG] Log Speed Update Frequency
-                            // DebugLogger.d(TAG, "Sensor Speed Update: " + speedKmh + " km/h");
-                            ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
-                                    .updateSpeed(speedKmh);
                         }
                         // [FIX] Removed SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER from Float callback.
                         // It is an Event (Int) sensor.
@@ -755,7 +740,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
             iSensor.registerListener(mHeavySensorListener, ISensor.SENSOR_TYPE_DAY_NIGHT);
             iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_GEAR);
             iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_LIGHT);
-            iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_DIM_CAR_SPEED);
+            // iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_DIM_CAR_SPEED); // [CONFLICT FIX] Handled by VehicleSensorManager
             iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER);
 
             DebugLogger.i(TAG, "Heavy Sensors Registered Successfully (DayNight, Gear, Light, Speed, PassSeat).");
@@ -991,48 +976,54 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     }
 
     private void handleDoorStatus(int zone, int value) {
-        // Only play sound when door opens (value == 1)
-        if (value != 1) {
-            return;
-        }
-
-        DebugLogger.d(TAG, "Door Opened! Zone=" + zone);
+        // [KX11-A2 Sync] Support both Open and Close sounds
+        // value == 1 (Open), value == 0 (Close)
+        
         cn.navitool.managers.SoundPromptManager soundMgr = cn.navitool.managers.SoundPromptManager.getInstance(this);
 
-        switch (zone) {
-            case ZONE_DOOR_FL: // Driver (1)
-                soundMgr.playDoorDriverSound();
-                break;
-
-            case ZONE_DOOR_FR: // Passenger (4)
-                if (mIsPassengerOccupied) {
-                    DebugLogger.d(TAG, "Passenger Door Open & Occupied -> Playing 'Passenger' Sound");
-                    soundMgr.playDoorPassengerSound();
-                } else {
-                    DebugLogger.d(TAG, "Passenger Door Open & Empty -> Playing 'Passenger Empty' Sound");
-                    soundMgr.playDoorPassengerEmptySound();
-                }
-                break;
-
-            case ZONE_DOOR_RL: // Rear Left (16)
-                soundMgr.playDoorRearLeftSound();
-                break;
-
-            case ZONE_DOOR_RR: // Rear Right (64)
-                soundMgr.playDoorRearRightSound();
-                break;
-            
-            case ZONE_DOOR_HOOD: // Hood
-                soundMgr.playDoorHoodSound();
-                break;
-            
-            case ZONE_DOOR_REAR: // Trunk
-                soundMgr.playDoorTrunkSound();
-                break;
-
-            default:
-                DebugLogger.d(TAG, "Unknown Door Zone: " + zone);
-                break;
+        if (value == 1) {
+            // --- OPEN Logic ---
+            DebugLogger.d(TAG, "Door Opened! Zone=" + zone);
+            switch (zone) {
+                case ZONE_DOOR_FL: // Driver
+                    soundMgr.playDoorDriverSound();
+                    break;
+                case ZONE_DOOR_FR: // Passenger
+                    // Open logic: Can check occupancy, but typically 'open' sound is same?
+                    // User said "Passenger also has occupation detection".
+                    // Assuming occupation detection applies to interactions.
+                    if (mIsPassengerOccupied) {
+                         soundMgr.playDoorPassengerSound();
+                    } else {
+                         soundMgr.playDoorPassengerEmptySound();
+                    }
+                    break;
+                case ZONE_DOOR_RL: soundMgr.playDoorRearLeftSound(); break;
+                case ZONE_DOOR_RR: soundMgr.playDoorRearRightSound(); break;
+                case ZONE_DOOR_HOOD: soundMgr.playDoorHoodSound(); break;
+                case ZONE_DOOR_REAR: soundMgr.playDoorTrunkSound(); break;
+            }
+        } else if (value == 0) {
+            // --- CLOSE Logic ---
+            DebugLogger.d(TAG, "Door Closed! Zone=" + zone);
+            switch (zone) {
+                case ZONE_DOOR_FL: // Driver
+                    soundMgr.playDoorDriverCloseSound();
+                    break;
+                case ZONE_DOOR_FR: // Passenger
+                    if (mIsPassengerOccupied) {
+                        DebugLogger.d(TAG, "Passenger Door Closed & Occupied");
+                        soundMgr.playDoorPassengerCloseSound();
+                    } else {
+                        DebugLogger.d(TAG, "Passenger Door Closed & Empty");
+                        soundMgr.playDoorPassengerEmptyCloseSound();
+                    }
+                    break;
+                case ZONE_DOOR_RL: soundMgr.playDoorRearLeftCloseSound(); break;
+                case ZONE_DOOR_RR: soundMgr.playDoorRearRightCloseSound(); break;
+                case ZONE_DOOR_HOOD: soundMgr.playDoorHoodCloseSound(); break;
+                case ZONE_DOOR_REAR: soundMgr.playDoorTrunkCloseSound(); break;
+            }
         }
     }
 
@@ -1044,6 +1035,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
                 DebugLogger.d(TAG, "Configuration changed, checking day/night status...");
                 cn.navitool.managers.ThemeBrightnessManager.getInstance(KeepAliveAccessibilityService.this)
                         .checkDayNightStatus(false);
+                // [FIX] Force sync on broadcast to ensure we catch system UI changes reliably
+                cn.navitool.managers.ThemeBrightnessManager.getInstance(KeepAliveAccessibilityService.this)
+                        .syncAutoNaviTheme();
             } else if ("cn.navitool.ACTION_REQUEST_ONEOS_STATUS".equals(action)) {
                 boolean isConnected = cn.navitool.managers.KeyHandlerManager
                         .getInstance(KeepAliveAccessibilityService.this).isOneOSConnected();

@@ -142,21 +142,31 @@ public class StandardThemeController extends BaseThemeController {
         }
         mLastSpeed = clampedSpeed;
 
+        // [CONFLICT FIX] Bypass Smooth Animator, use direct set
         // 1. Update Pointer Target
-        if (mSpeedPointerAnimator != null) {
-            mSpeedPointerAnimator.updateTarget(clampedSpeed);
+        // if (mSpeedPointerAnimator != null) {
+        //    mSpeedPointerAnimator.updateTarget(clampedSpeed);
+        // }
+        // Direct set:
+        if (mPointerLeft != null) {
+            float angle = SPEED_START_ANGLE + (clampedSpeed * (MAX_SPEED_ANGLE / (float)MAX_SPEED));
+            mPointerLeft.setRotation(angle);
         }
 
         // 2. Update Text Target
-        if (mSpeedTextAnimator != null) {
-            mSpeedTextAnimator.updateTargetValue((int) clampedSpeed);
+        // if (mSpeedTextAnimator != null) {
+        //    mSpeedTextAnimator.updateTargetValue((int) clampedSpeed);
+        // }
+        // Direct set:
+        if (mSpeedText != null) {
+            mSpeedText.setText(String.valueOf((int) clampedSpeed));
         }
 
         // 3. Ensure Animation Loop is running
-        if (!mIsAnimating) {
-            mIsAnimating = true;
-            mHandler.post(mAnimationRunnable);
-        }
+        // if (!mIsAnimating) {
+        //    mIsAnimating = true;
+        //    mHandler.post(mAnimationRunnable);
+        // }
     }
 
     @Override
