@@ -20,9 +20,9 @@ import cn.navitool.theme.StandardThemeController;
 import cn.navitool.theme.AudiRsThemeController;
 import cn.navitool.theme.BaseThemeController;
 import cn.navitool.interfaces.IClusterTheme;
-import cn.navitool.controller.NaviInfoController;
-import cn.navitool.controller.NaviInfoController.TrafficLightInfo;
-import cn.navitool.controller.NaviInfoController.GuideInfo;
+import cn.navitool.managers.NaviInfoManager;
+import cn.navitool.managers.NaviInfoManager.TrafficLightInfo;
+import cn.navitool.managers.NaviInfoManager.GuideInfo;
 import cn.navitool.R;
 import cn.navitool.view.TrafficLightView;
 
@@ -66,8 +66,8 @@ public class PresentationManager extends android.app.Dialog {
     // HUD Style Views
     private View mContainerDashboard;
     private cn.navitool.view.TrafficLightView mHudTrafficLightView; // Floating HUD Style
-    private cn.navitool.view.TrafficLightView mRealHudTrafficLight; // Real HUD (Projector)
-    private NaviInfoController.TrafficLightInfo mLatestTrafficLightInfo = null; // Track latest data
+
+    private NaviInfoManager.TrafficLightInfo mLatestTrafficLightInfo = null; // Track latest data
     
     // Generic Component Lists (For backward compatibility with existing generic logic if needed)
     private List<View> mRealHudComponents = new ArrayList<>();
@@ -92,7 +92,7 @@ public class PresentationManager extends android.app.Dialog {
         mLayoutCluster = findViewById(R.id.layoutCluster);
         mLayoutHud = findViewById(R.id.layoutHud);
         if (mLayoutHud != null) {
-            mRealHudTrafficLight = mLayoutHud.findViewById(R.id.hudTrafficLightView);
+            // HUD Layout found
         }
         
         // Cache Standard Layout immediately (it's part of the main included layout usually, or we inflate/find it)
@@ -326,7 +326,7 @@ public class PresentationManager extends android.app.Dialog {
     }
     
     // --- Logic Update for Traffic Light Data ---
-    private void updateFloatingTrafficLightLogic(NaviInfoController.TrafficLightInfo info) {
+    private void updateFloatingTrafficLightLogic(NaviInfoManager.TrafficLightInfo info) {
         mLatestTrafficLightInfo = info;
         if (mFloatingTrafficLightContainer == null) initializeFloatingTrafficLight();
         if (mFloatingTrafficLightContainer == null) return;
@@ -346,7 +346,7 @@ public class PresentationManager extends android.app.Dialog {
         if (mContainerDashboard != null) mContainerDashboard.setVisibility(!mIsHudStyle ? View.VISIBLE : View.GONE);
         if (mHudTrafficLightView != null) mHudTrafficLightView.setVisibility(mIsHudStyle ? View.VISIBLE : View.GONE);
 
-        int mappedStatus = NaviInfoController.mapStatus(info.status);
+        int mappedStatus = NaviInfoManager.mapStatus(info.status);
         int time = info.redCountdown;
 
         if (mIsHudStyle && mHudTrafficLightView != null) {
@@ -501,7 +501,7 @@ public class PresentationManager extends android.app.Dialog {
         updateTrafficLightGeneric(mRealHudComponents, info);
     }
 
-    public void updateGuideInfo(NaviInfoController.GuideInfo info) {
+    public void updateGuideInfo(NaviInfoManager.GuideInfo info) {
         if (mThemeController != null) mThemeController.updateGuideInfo(info);
         updateGuideInfoGeneric(mRealHudComponents, info);
     }
@@ -629,6 +629,9 @@ public class PresentationManager extends android.app.Dialog {
     }
 
     public void syncHudLayout(List<ClusterHudManager.HudComponentData> components) {
+        if (mLayoutHud != null) {
+            mLayoutHud.setVisibility(View.VISIBLE);
+        }
         syncLayoutGeneric(mLayoutHud, mRealHudComponents, components, 728, 189);
     }
     
@@ -770,24 +773,53 @@ public class PresentationManager extends android.app.Dialog {
         }
     }
     
-    private void updateTrafficLightGeneric(List<View> viewList, TrafficLightInfo info) {
-        if (mRealHudTrafficLight == null) return;
-        
-        if (info == null) {
-            mRealHudTrafficLight.setVisibility(View.GONE);
-            return;
+    private void updateTrafficLightGeneric(List<View> viewList, NaviInfoManager.TrafficLightInfo info) {
+        // Update Dynamic Traffic Light Components in the list
+        if (viewList != null) {
+            for (View v : viewList) {
+                Object tag = v.getTag();
+                if (tag instanceof ClusterHudManager.HudComponentData) {
+                    ClusterHudManager.HudComponentData data = (ClusterHudManager.HudComponentData) tag;
+                    if ("traffic_light".equals(data.type) && v instanceof cn.navitool.view.TrafficLightView) {
+                         cn.navitool.view.TrafficLightView tlv = (cn.navitool.view.TrafficLightView) v;
+                         if (info == null) {
+                             tlv.setVisibility(View.GONE);
+                         } else {
+                             tlv.setVisibility(View.VISIBLE);
+                             int mappedStatus = NaviInfoManager.mapStatus(info.status);
+                             tlv.updateState(mappedStatus, info.redCountdown, info.direction);
+                         }
+                    }
+                }
+            }
         }
-
-        mRealHudTrafficLight.setVisibility(View.VISIBLE);
-        // Assuming TrafficLightView handles mapping or we map it here.
-        // updateState(int status, int time, int direction)
-        int mappedStatus = NaviInfoController.mapStatus(info.status);
-        mRealHudTrafficLight.updateState(mappedStatus, info.redCountdown, info.direction);
     }
     
     private void updateGuideInfoGeneric(List<View> viewList, GuideInfo info) {
-         if (info == null) return;
-         // TODO: Generic guide info views
+        if (info == null) return;
+        
+        // [FIX] Update Cache
+        mCachedNaviArrivalTime = NaviInfoManager.parseEta(info.etaText);
+        if (info.routeRemainDis < 0) {
+            mCachedNaviDistance = ""; // or specific placeholder
+        } else if (info.routeRemainDis >= 1000) {
+            mCachedNaviDistance = String.format(java.util.Locale.US, "%.1fKM", info.routeRemainDis / 1000f);
+        } else {
+            mCachedNaviDistance = info.routeRemainDis + "M";
+        }
+
+        // Update Dynamic Views
+        for (View view : viewList) {
+            Object tag = view.getTag();
+            if (tag instanceof cn.navitool.managers.ClusterHudManager.HudComponentData) {
+                cn.navitool.managers.ClusterHudManager.HudComponentData data = (cn.navitool.managers.ClusterHudManager.HudComponentData) tag;
+                if ("navi_arrival_time".equals(data.type) && mCachedNaviArrivalTime != null) {
+                    ((TextView) view).setText(mCachedNaviArrivalTime);
+                } else if ("navi_distance_remaining".equals(data.type) && mCachedNaviDistance != null) {
+                    ((TextView) view).setText(mCachedNaviDistance);
+                }
+            }
+        }
     }
     
     // --- Layout Sync Logic ---
@@ -980,7 +1012,7 @@ public class PresentationManager extends android.app.Dialog {
                     params.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
                     view = tlv;
                     if (mLatestTrafficLightInfo != null) {
-                        int mappedStatus = NaviInfoController.mapStatus(mLatestTrafficLightInfo.status);
+                        int mappedStatus = NaviInfoManager.mapStatus(mLatestTrafficLightInfo.status);
                         tlv.updateState(mappedStatus, mLatestTrafficLightInfo.redCountdown, mLatestTrafficLightInfo.direction);
                     }
                 } else if ("navi_arrival_time".equals(data.type) || "navi_distance_remaining".equals(data.type)) {
@@ -1037,22 +1069,42 @@ public class PresentationManager extends android.app.Dialog {
                     
                     view = ll;
                     params.width = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
+                } else if ("guide_line".equals(data.type)) {
+                     // [Feature] Guide Line (Visual Only, No Text)
+                     // Use Container to match Preview logic and center the rotated line correctly
+                     android.widget.FrameLayout guideContainer = new android.widget.FrameLayout(getContext());
+                     params.width = 100;
+                     params.height = 380;
+                     
+                     android.view.View line = new android.view.View(getContext());
+                     line.setBackgroundResource(R.drawable.line_dashed_cyan);
+                     
+                     android.widget.FrameLayout.LayoutParams lineParams = new android.widget.FrameLayout.LayoutParams(380, 4);
+                     lineParams.gravity = android.view.Gravity.CENTER;
+                     line.setLayoutParams(lineParams);
+                     line.setRotation(90);
+                     line.setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null); // Important for dashed effect
+                     
+                     guideContainer.addView(line);
+                     view = guideContainer;
                 } else {
                     // Generic
                     android.widget.TextView tv = new android.widget.TextView(getContext());
                     tv.setText(data.text != null ? data.text : "");
                     tv.setTextColor(data.color);
                     tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24f); 
+                    tv.setIncludeFontPadding(false); // [FIX] Match Preview logic
                     if (data.typeface != null) {
                         tv.setTypeface(data.typeface);
                     }
                     view = tv;
                     if ("hud_rpm".equals(data.type)) {
                         tv.setGravity(android.view.Gravity.END);
-                        params.width = 200;
+                        params.width = 120;
+                        tv.setSingleLine(true);
                     } else if ("temp_out".equals(data.type) || "temp_in".equals(data.type)) {
                         tv.setGravity(android.view.Gravity.END);
-                        params.width = 120;
+                        params.width = 90;
                     }
                 }
 
@@ -1100,6 +1152,16 @@ public class PresentationManager extends android.app.Dialog {
                 float effectiveScale = isTurnSignal ? 1.0f : data.scale;
                 float scaledWidth = measuredWidth * effectiveScale;
                 float scaledHeight = measuredHeight * effectiveScale;
+                
+                // Bound Limits
+                float minX = 0f;
+                float maxXLimit = maxWidth - scaledWidth;
+                
+                // [Feature] guide_line relax bounds (50% width tolerance)
+                if ("guide_line".equals(data.type)) {
+                    minX = -0.5f * scaledWidth;
+                    maxXLimit = maxWidth - (0.5f * scaledWidth);
+                }
 
                 // [FIX] Allow overshoot for TextViews to match Preview logic (Visual Margin Compensation)
                 float toleranceTop = 0f;
@@ -1136,7 +1198,7 @@ public class PresentationManager extends android.app.Dialog {
                     }
                 }
 
-                float clampedX = Math.max(0, Math.min(data.x, maxWidth - scaledWidth));
+                float clampedX = Math.max(minX, Math.min(data.x, maxXLimit));
                 // Allow Y to go slightly negative (by toleranceTop) or beyond bottom (by toleranceBottom) to hide padding
                 float clampedY = Math.max(-toleranceTop, Math.min(data.y, maxHeight - scaledHeight + toleranceBottom));
 

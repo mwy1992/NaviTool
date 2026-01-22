@@ -43,7 +43,7 @@ import cn.navitool.managers.CarServiceManager;
 import cn.navitool.utils.MemoryMonitor;
 import cn.navitool.managers.AppLaunchManager;
 
-public class KeepAliveAccessibilityService extends AccessibilityService {
+public class KeepAliveAccessibilityService extends AccessibilityService implements VehicleSensorManager.Listener {
 
     private static final String TAG = "KeepAliveService";
     private static final String AUTONAVI_PKG = "com.autonavi.amapauto";
@@ -55,13 +55,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
     }
 
     // ... existing fields ...
-    private ICarFunction iCarFunction;
-
-    public ICarFunction getCarFunction() {
-        return iCarFunction;
-    }
-
-    private ISensor iSensor;
+    // [Refactor] Direct ICarFunction/ISensor fields removed
     // ...
 
     private boolean mAmapDetected = false; // Gate for Amap Services
@@ -113,7 +107,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         // 启动 OneOS 服务 (方控/微信按键) - 必须在 onCreate 调用以确保最快绑定
         cn.navitool.managers.KeyHandlerManager.getInstance(this).init();
 
-        initCar();
+        // initCar(); // Removed, using VehicleSensorManager
     }
 
     @Override
@@ -131,6 +125,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         cn.navitool.managers.SoundPromptManager.getInstance(this).init();
         cn.navitool.managers.KeyHandlerManager.getInstance(this).init();
         cn.navitool.managers.VehicleSensorManager.getInstance(this).init();
+        cn.navitool.managers.VehicleSensorManager.getInstance(this).registerListener(this);
+        checkInitialVehicleState();
 
         // Initialize PSD
         boolean mIsPsdAlwaysOnEnabled = ConfigManager.getInstance().getBoolean("psd_always_on_enabled", false);
@@ -326,8 +322,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         mIgnitionReady = false;
         mEngineStarted = false; // [FIX] Reset engine start flag
         
-        // 2. Unregister Heavy Sensors to prevent double-registration on restart
-        unregisterHeavySensors();
+        // 2. Unregister Heavy Sensors - Removed (VSM stays active or is managed separately)
+        // unregisterHeavySensors(); // Removed
         
         // 3. Notify ClusterHudManager to enter Standby Mode (Clean UI/Cache)
         ClusterHudManager.getInstance(this).enterStandbyMode();
@@ -354,21 +350,16 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         // 1. Trigger Lightweight Auto Start
         triggerAutoStart();
 
-        // 2. Schedule Heavy Sensor Audio/Logic
+        // 2. Schedule Heavy Sensor Audio/Logic (Logic managed by VSM mostly now)
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-            if (!mHeavySensorsRegistered) {
-                registerHeavySensors();
-                // [FIX] Direct UI Activation from Service (Headless Support)
-                // Instead of broadcasting to Activity (which might not exist), we call Manager
-                // directly.
-                DebugLogger.i(TAG, "Ignition + 3s: Calling ensureUiVisible() directly");
-                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).ensureUiVisible();
+            // [Refactor] registerHeavySensors removed - VSM always listens
+            // Just ensure UI is visible and mode applied
+            DebugLogger.i(TAG, "Ignition + 3s: Calling ensureUiVisible() directly");
+            ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).ensureUiVisible();
 
-                // [FIX] Auto-Switch to Instrument Mode (NaviMode 3)
-                // Only depends on Ignition Driving, NOT Amap status.
-                DebugLogger.i(TAG, "Ignition + 3s: Auto-Switching to NaviMode 3 (Instrument Mode)");
-                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).applyNaviMode(3);
-            }
+            // [FIX] Auto-Switch to Instrument Mode (NaviMode 3)
+            DebugLogger.i(TAG, "Ignition + 3s: Auto-Switching to NaviMode 3 (Instrument Mode)");
+            ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).applyNaviMode(3);
         }, 3000);
 
         // 3. Check Amap Services & Map Monitors
@@ -405,6 +396,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
         cn.navitool.managers.KeyHandlerManager.getInstance(this).destroy();
         cn.navitool.managers.PsdManager.getInstance(this).destroy();
         ClusterHudManager.getInstance(this).destroy();
+        ClusterHudManager.getInstance(this).destroy();
+        cn.navitool.managers.VehicleSensorManager.getInstance(this).unregisterListener(this); // [Refactor] Unregister VSM
         cn.navitool.managers.VehicleSensorManager.getInstance(this).destroy();
 
         // Unregister Dynamic Simulation Receiver
@@ -525,296 +518,123 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
     // --- Car AdaptAPI Implementation ---
 
-    private void initCar() {
-        cn.navitool.managers.CarServiceManager manager = cn.navitool.managers.CarServiceManager.getInstance(this);
+    // [Refactor] Direct CarServiceManager init removed. Logic moved to VehicleSensorManager.Listener callbacks.
+    // mIgnitionReady field is defined below.
 
-        // [FIX] Use callback pattern to wait for async connection
-        manager.registerListener(() -> onCarServiceReady());
-        manager.init();
-    }
-
-    private void onCarServiceReady() {
-        cn.navitool.managers.CarServiceManager manager = cn.navitool.managers.CarServiceManager.getInstance(this);
-        this.iCarFunction = manager.getCarFunction();
-        this.iSensor = manager.getSensor();
-
-        DebugLogger.i(TAG, "Car Service Ready! iCarFunction=" + (iCarFunction != null) +
-                ", iSensor=" + (iSensor != null));
-
-        if (iSensor != null) {
-            registerSensorListeners();
+    private void checkInitialVehicleState() {
+        VehicleSensorManager vsm = VehicleSensorManager.getInstance(this);
+        
+        // check Ignition
+        int ign = vsm.getIgnition();
+        if (ign == ISensorEvent.IGNITION_STATE_DRIVING) {
+             handleIgnitionDriving();
         }
-        if (iCarFunction != null) {
-            registerFunctionListeners();
+        
+        // Initial Gear
+        int gear = vsm.getGear();
+        if (gear != 0) {
+             ClusterHudManager.getInstance(this).updateGear(gear);
+             mLastGear = gear;
         }
+        
+        // Passenger Seat
+        mIsPassengerOccupied = vsm.isSeatOccupied();
     }
 
     private boolean mIgnitionReady = false;
-    private boolean mHeavySensorsRegistered = false;
-    private ISensor.ISensorListener mHeavySensorListener; // [Refactor] Promoted to field for unregistering
+    private boolean mIsPassengerOccupied = false;
+    // [Refactor] Sensor/Function Listeners & Polling Removed - Replaced by VSM Callbacks
 
-    private void registerSensorListeners() {
-        // [New Logic] Only register Ignition listener initially
-        try {
-            if (iSensor != null) {
-                ISensor.ISensorListener listener = new ISensor.ISensorListener() {
-                    @Override
-                    public void onSensorValueChanged(int sensorType, float value) {
-                        try {
-                            if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
-                                int val = (int) value;
-                                DebugLogger.d(TAG, "Ignition State Changed (float): " + val);
-                                if (val == ISensorEvent.IGNITION_STATE_DRIVING) {
-                                    handleIgnitionDriving();
-                                } else if (val == ISensorEvent.IGNITION_STATE_OFF || 
-                                           val == ISensorEvent.IGNITION_STATE_ACC || 
-                                           val == ISensorEvent.IGNITION_STATE_LOCK) {
-                                    // [FIX] Warm Restart: Reset state when ignition goes OFF/ACC/LOCK
-                                    if (mIgnitionReady) {
-                                        // [Thread Safety] Dispatch to Main Thread
-                                        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> resetIgnitionState());
-                                    }
-                                }
-                            }
-                        } catch (Exception e) {
-                            DebugLogger.e(TAG, "Error in onSensorValueChanged", e);
-                        }
-                    }
-
-                    @Override
-                    public void onSensorEventChanged(int sensorType, int value) {
-                        try {
-                            if (sensorType == ISensor.SENSOR_TYPE_IGNITION_STATE) {
-                                DebugLogger.d(TAG, "Ignition State Changed (int): " + value);
-                                mLastIgnition = value;
-                                if (value == ISensorEvent.IGNITION_STATE_DRIVING) {
-                                    handleIgnitionDriving();
-                                } else if (value == ISensorEvent.IGNITION_STATE_OFF || 
-                                           value == ISensorEvent.IGNITION_STATE_ACC || 
-                                           value == ISensorEvent.IGNITION_STATE_LOCK) {
-                                    // [FIX] Warm Restart: Reset state when ignition goes OFF/ACC/LOCK
-                                    if (mIgnitionReady) {
-                                        // [Thread Safety] Dispatch to Main Thread
-                                        new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> resetIgnitionState());
-                                    }
-                                }
-                            }
-                        } catch (Exception e) {
-                            DebugLogger.e(TAG, "Error in onSensorEventChanged", e);
-                        }
-                    }
-
-                    @Override
-                    public void onSensorSupportChanged(int sensorType, com.ecarx.xui.adaptapi.FunctionStatus status) {
-                    }
-                };
-
-                // Only Register Ignition initially
-                iSensor.registerListener(listener, ISensor.SENSOR_TYPE_IGNITION_STATE);
-                DebugLogger.i(TAG, "Ignition Listener Registered. Waiting for DRIVING state...");
-
-                // Start Polling with Retry (Logic Update 2026-01-17)
-                pollIgnitionStateWithRetry();
-
+    @Override
+    public void onIgnitionChanged(int state) {
+        DebugLogger.d(TAG, "Ignition State Changed (VSM): " + state);
+        mLastIgnition = state;
+        if (state == ISensorEvent.IGNITION_STATE_DRIVING) {
+            handleIgnitionDriving();
+        } else if (state == ISensorEvent.IGNITION_STATE_OFF || 
+                   state == ISensorEvent.IGNITION_STATE_ACC || 
+                   state == ISensorEvent.IGNITION_STATE_LOCK) {
+            if (mIgnitionReady) {
+                 new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> resetIgnitionState());
             }
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to register sensor listeners", e);
+        }
+    }
+
+    @Override
+    public void onGearChanged(int gear) {
+        DebugLogger.d(TAG, "Gear Changed (VSM): " + gear);
+        if (mLastGear != gear) {
+            boolean isInitialP = !mInitialGearSkipped &&
+                    (gear == cn.navitool.managers.SoundPromptManager.GEAR_PARK ||
+                            gear == cn.navitool.managers.SoundPromptManager.TRSM_GEAR_PARK);
+            if (isInitialP) {
+                mInitialGearSkipped = true;
+                DebugLogger.d(TAG, "Skipping initial P gear sound");
+            } else if (mEngineStarted) {
+                cn.navitool.managers.SoundPromptManager
+                        .getInstance(this)
+                        .playGearSound(gear);
+                mInitialGearSkipped = true;
+            }
+            ClusterHudManager.getInstance(this).updateGear(gear);
+            mLastGear = gear;
         }
     }
 
-    private int mIgnitionRetryCount = 0;
-    private static final int MAX_IGNITION_RETRIES = 5;
-
-    private void pollIgnitionStateWithRetry() {
-        mIgnitionRetryCount = 0;
-        Runnable pollRunnable = new Runnable() {
-            @Override
-            public void run() {
-                if (mIgnitionReady || iSensor == null) {
-                    return; // Already ready or invalid
-                }
-
-                try {
-                    int currentIgnition = iSensor.getSensorEvent(ISensor.SENSOR_TYPE_IGNITION_STATE);
-                    DebugLogger.i(TAG, "Poll Ignition (" + (mIgnitionRetryCount + 1) + "/" + MAX_IGNITION_RETRIES + "): " + currentIgnition);
-
-                    if (currentIgnition == ISensorEvent.IGNITION_STATE_DRIVING) {
-                        handleIgnitionDriving();
-                        return; // Success, stop polling
-                    }
-                } catch (Exception e) {
-                    DebugLogger.w(TAG, "Poll Ignition Failed: " + e.getMessage());
-                }
-
-                mIgnitionRetryCount++;
-                if (mIgnitionRetryCount < MAX_IGNITION_RETRIES) {
-                    // Schedule next poll in 1 second
-                    new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this, 1000);
-                } else {
-                    DebugLogger.i(TAG, "Poll Ignition: Max retries reached. Waiting for passive event.");
-                }
-            }
-        };
-
-        // Execute first poll immediately
-        pollRunnable.run();
+    @Override
+    public void onLightChanged(float light) {
+        cn.navitool.managers.ThemeBrightnessManager
+                .getInstance(this)
+                .onSensorChanged(SENSOR_TYPE_LIGHT, light);
+    }
+    
+    @Override
+    public void onDayNightChanged(int mode) {
+         cn.navitool.managers.ThemeBrightnessManager
+                .getInstance(this)
+                .onSensorEventChanged(ISensor.SENSOR_TYPE_DAY_NIGHT, mode);
     }
 
-    // handleIgnitionDriving moved to line 166
-
-    private void registerHeavySensors() {
-        if (mHeavySensorsRegistered || iSensor == null)
-            return;
-        mHeavySensorsRegistered = true;
-
-        DebugLogger.i(TAG, "Registering HEAVY Sensors (Gear, Light, Speed)...");
-        try {
-            // [Refactor] Use member variable instead of local
-            mHeavySensorListener = new ISensor.ISensorListener() {
-                @Override
-                public void onSensorValueChanged(int sensorType, float value) {
-                    try {
-                        if (sensorType == SENSOR_TYPE_LIGHT) {
-                            cn.navitool.managers.ThemeBrightnessManager
-                                    .getInstance(KeepAliveAccessibilityService.this)
-                                    .onSensorChanged(sensorType, value);
-
-                        }
-                        // [FIX] Removed SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER from Float callback.
-                        // It is an Event (Int) sensor.
-                    } catch (Exception e) {
-                        DebugLogger.e(TAG, "Error in Heavy onSensorValueChanged", e);
-                    }
-                }
-
-                @Override
-                public void onSensorEventChanged(int sensorType, int value) {
-                    try {
-                        if (sensorType == SENSOR_TYPE_GEAR) {
-                            DebugLogger.d(TAG, "Gear Changed (int): " + value);
-                            if (mLastGear != value) {
-                                // Bug 7: 忽略启动时的第一次P档事件
-                                boolean isInitialP = !mInitialGearSkipped &&
-                                        (value == cn.navitool.managers.SoundPromptManager.GEAR_PARK ||
-                                                value == cn.navitool.managers.SoundPromptManager.TRSM_GEAR_PARK);
-                                if (isInitialP) {
-                                    mInitialGearSkipped = true;
-                                    DebugLogger.d(TAG, "Skipping initial P gear sound");
-                                } else if (mEngineStarted) {
-                                    cn.navitool.managers.SoundPromptManager
-                                            .getInstance(KeepAliveAccessibilityService.this)
-                                            .playGearSound(value);
-                                    // [FIX] Mark initial phase as done if we played a sound (e.g. started in D)
-                                    // This prevents the *next* P gear (Parking) from being skipped.
-                                    mInitialGearSkipped = true;
-                                }
-                                // 不管是否播放声音，仪表盘显示始终更新
-                                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
-                                        .updateGear(value);
-                                mLastGear = value;
-                            }
-                        } else if (sensorType == ISensor.SENSOR_TYPE_DAY_NIGHT) {
-                            cn.navitool.managers.ThemeBrightnessManager
-                                    .getInstance(KeepAliveAccessibilityService.this)
-                                    .onSensorEventChanged(sensorType, value);
-                        } else if (sensorType == SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER) {
-                            // [FIX] Correctly handle Passenger Sensor as Event (Int)
-                            // 2110210 = Occupied, 2110209 = Empty
-                            boolean occupied = (value == SEAT_OCCUPATION_STATUS_OCCUPIED);
-                            if (mIsPassengerOccupied != occupied) {
-                                mIsPassengerOccupied = occupied;
-                                DebugLogger.i(TAG, "Passenger Seat Occupation Changed (Event): " + occupied + " (Val: " + value + ")");
-                            }
-                        }
-                    } catch (Exception e) {
-                        DebugLogger.e(TAG, "Error in Heavy onSensorEventChanged", e);
-                    }
-                }
-
-                @Override
-                public void onSensorSupportChanged(int sensorType, com.ecarx.xui.adaptapi.FunctionStatus status) {
-                }
-            };
-
-            // Register for Heavy Sensors
-            iSensor.registerListener(mHeavySensorListener, ISensor.SENSOR_TYPE_DAY_NIGHT);
-            iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_GEAR);
-            iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_LIGHT);
-            // iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_DIM_CAR_SPEED); // [CONFLICT FIX] Handled by VehicleSensorManager
-            iSensor.registerListener(mHeavySensorListener, SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER);
-
-            DebugLogger.i(TAG, "Heavy Sensors Registered Successfully (DayNight, Gear, Light, Speed, PassSeat).");
-
-            // Poll Initial Data for these sensors (Delayed 500ms to allow AdaptAPI to
-            // fetch)
-            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this::pollInitialSensorData, 500);
-
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to register heavy sensors", e);
+    @Override
+    public void onSeatOccupiedChanged(boolean occupied) {
+        if (mIsPassengerOccupied != occupied) {
+            mIsPassengerOccupied = occupied;
+            DebugLogger.i(TAG, "Passenger Seat Occupation (VSM): " + occupied);
         }
     }
 
-    private void unregisterHeavySensors() {
-        if (iSensor != null && mHeavySensorListener != null && mHeavySensorsRegistered) {
-            DebugLogger.i(TAG, "Unregistering Heavy Sensors...");
-            try {
-                // Must unregister all types we registered
-                // [FIX] ISensor.unregisterListener takes only the listener instance and removes it for all types.
-                iSensor.unregisterListener(mHeavySensorListener);
-            } catch (Exception e) {
-                DebugLogger.e(TAG, "Failed to unregister heavy sensors", e);
-            }
-        }
-        mHeavySensorsRegistered = false;
-        mHeavySensorListener = null;
+    @Override
+    public void onDoorChanged(int zone, int status) {
+        DebugLogger.d(TAG, "Door Changed (VSM): Zone=" + zone + ", Status=" + status);
+        handleDoorStatus(zone, status);
     }
 
-    private void pollInitialSensorData() {
-        if (iSensor == null)
-            return;
-        DebugLogger.i(TAG, "Polling initial sensor data (Fuel, Range, Temp, Gear)...");
-        try {
-            // 1. Gear (Event Type)
-            int gear = iSensor.getSensorEvent(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_GEAR);
-            DebugLogger.d(TAG, "Polled Gear: " + gear);
-            if (gear != 0) {
-                ClusterHudManager.getInstance(this).updateGear(gear);
-                mLastGear = gear;
-            } else {
-                DebugLogger.w(TAG, "Polled Invalid Gear (0) - Ignoring to prevent default 'P' overwrite");
-            }
+    @Override
+    public void onTurnSignalChanged(boolean isLeft, boolean isOn) {
+        // Handled by ClusterHudManager directly listing to VSM, 
+        // BUT KeepAlive historically logged it and called ClusterHudManager.
+        // Since ClusterHudManager now listens to VSM directly, we DON'T need to forward it here.
+        // We can just log it if we want.
+    }
 
-            // 2. Fuel Level (Value Type - Float, returns ml)
-            float fuelMl = iSensor.getSensorLatestValue(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_FUEL);
-            DebugLogger.d(TAG, "Polled Fuel: " + fuelMl + " ml");
-            float fuelLiters = fuelMl / 1000f;
-            ClusterHudManager.getInstance(this).updateFuelWithValue(fuelLiters);
+    @Override
+    public void onCustomizeFunctionChanged(int functionId, int zone, float value) {
+        if (functionId == FUNC_BRIGHTNESS_DAY || functionId == FUNC_BRIGHTNESS_NIGHT) {
+            cn.navitool.managers.ThemeBrightnessManager
+                    .getInstance(this)
+                    .onCustomizeFunctionValueChanged(functionId, value);
+        }
+    }
 
-            // 3. Range (Value Type - Float)
-            float range = iSensor.getSensorLatestValue(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_RANGE);
-            DebugLogger.d(TAG, "Polled Range: " + range);
-            ClusterHudManager.getInstance(this).updateRange((int) range + "km");
-
-            // 4. Outside Temp (Value Type - Float)
-            float tempOut = iSensor
-                    .getSensorLatestValue(cn.navitool.managers.VehicleSensorManager.SENSOR_TYPE_TEMP_OUTDOOR);
-            DebugLogger.d(TAG, "Polled TempOut: " + tempOut);
-            ClusterHudManager.getInstance(this).updateTempOut(tempOut + "°C");
-
-            // [FIX] 5. Passenger Seat (Event Type)
-            // Fixes bug where initial state is unknown if user is already seated
-            int passSeat = iSensor.getSensorEvent(SENSOR_TYPE_SEAT_OCCUPATION_STATUS_PASSENGER);
-            DebugLogger.d(TAG, "Polled Passenger Seat: " + passSeat);
-            if (passSeat == SEAT_OCCUPATION_STATUS_OCCUPIED) {
-                mIsPassengerOccupied = true;
-                DebugLogger.i(TAG, "Init: Passenger Seat is OCCUPIED");
-            } else if (passSeat == SEAT_OCCUPATION_STATUS_NONE) {
-                mIsPassengerOccupied = false;
-                DebugLogger.i(TAG, "Init: Passenger Seat is EMPTY");
-            }
-
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to poll initial sensor data", e);
+    @Override
+    public void onFunctionChanged(int functionId, int zone, int value) {
+        if (functionId == FUNC_AVM_STATUS || functionId == FUNC_BRIGHTNESS_DAY
+                || functionId == FUNC_BRIGHTNESS_NIGHT || functionId == FUNC_DAYMODE_SETTING) {
+            cn.navitool.managers.ThemeBrightnessManager
+                    .getInstance(this)
+                    .onFunctionValueChanged(functionId, value);
+        } else if (functionId == FUNC_PSD_SCREEN_SWITCH) {
+             cn.navitool.managers.PsdManager.getInstance(this).onPsdStatusChanged(value);
         }
     }
 
@@ -865,115 +685,11 @@ public class KeepAliveAccessibilityService extends AccessibilityService {
 
 
 
-    private void registerFunctionListeners() {
-        try {
-            if (iCarFunction != null) {
-                ICarFunction.IFunctionValueWatcher watcher = new ICarFunction.IFunctionValueWatcher() {
-
-                    @Override
-                    public void onFunctionValueChanged(int functionId, int zone, int value) {
-                        try {
-                            if (functionId == FUNC_AVM_STATUS || functionId == FUNC_BRIGHTNESS_DAY
-                                    || functionId == FUNC_BRIGHTNESS_NIGHT || functionId == FUNC_DAYMODE_SETTING) {
-                                cn.navitool.managers.ThemeBrightnessManager
-                                        .getInstance(KeepAliveAccessibilityService.this)
-                                        .onFunctionValueChanged(functionId, value);
-                            }
-
-                            // Door Logic
-                            if (functionId == BCM_FUNC_DOOR) {
-                                DebugLogger.d(TAG, "Door Function Changed: Zone=" + zone + ", Value=" + value);
-                                handleDoorStatus(zone, value);
-                            } else if (functionId == BCM_FUNC_LIGHT_LEFT_TRUN_SIGNAL) {
-                                DebugLogger.d(TAG, "Left Turn Signal Changed: " + value);
-                                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
-                                        .updateTurnSignal(true, value == 1);
-                            } else if (functionId == BCM_FUNC_LIGHT_RIGHT_TRUN_SIGNAL) {
-                                DebugLogger.d(TAG, "Right Turn Signal Changed: " + value);
-                                ClusterHudManager.getInstance(KeepAliveAccessibilityService.this)
-                                        .updateTurnSignal(false, value == 1);
-                            } else if (functionId == FUNC_PSD_SCREEN_SWITCH) {
-                                DebugLogger.d(TAG, "PSD Screen Status Changed: " + value);
-                                cn.navitool.managers.PsdManager.getInstance(KeepAliveAccessibilityService.this)
-                                        .onPsdStatusChanged(value);
-                            }
-                        } catch (Exception e) {
-                            DebugLogger.e(TAG, "Error in onFunctionValueChanged", e);
-                        }
-                    }
-
-                    @Override
-                    public void onCustomizeFunctionValueChanged(int functionId, int zone, float value) {
-                        try {
-                            if (functionId == FUNC_BRIGHTNESS_DAY || functionId == FUNC_BRIGHTNESS_NIGHT) {
-                                cn.navitool.managers.ThemeBrightnessManager
-                                        .getInstance(KeepAliveAccessibilityService.this)
-                                        .onCustomizeFunctionValueChanged(functionId, value);
-                            }
-                        } catch (Exception e) {
-                            DebugLogger.e(TAG, "Error in onCustomizeFunctionValueChanged", e);
-                        }
-                    }
-
-                    @Override
-                    public void onFunctionChanged(int functionId) {
-                        // Not used
-                    }
-
-                    @Override
-                    public void onSupportedFunctionStatusChanged(int functionId, int zone,
-                            com.ecarx.xui.adaptapi.FunctionStatus status) {
-                    }
-
-                    @Override
-                    public void onSupportedFunctionValueChanged(int functionId, int[] values) {
-                    }
-                };
-
-                // Register Watchers
-                iCarFunction.registerFunctionValueWatcher(FUNC_AVM_STATUS, watcher);
-                iCarFunction.registerFunctionValueWatcher(FUNC_BRIGHTNESS_DAY, watcher);
-                iCarFunction.registerFunctionValueWatcher(FUNC_BRIGHTNESS_NIGHT, watcher);
-                iCarFunction.registerFunctionValueWatcher(BCM_FUNC_DOOR, watcher);
-                iCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_LEFT_TRUN_SIGNAL, watcher);
-                iCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_RIGHT_TRUN_SIGNAL, watcher);
-                iCarFunction.registerFunctionValueWatcher(FUNC_PSD_SCREEN_SWITCH, watcher);
-                iCarFunction.registerFunctionValueWatcher(FUNC_DAYMODE_SETTING, watcher);
-
-                DebugLogger.i(TAG, "Function watchers registered (AVM, Brightness, Door, Lights)");
-
-                // [Fix Door Sound] Poll door status immediately
-                pollDoorStatus();
-            }
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to register function listeners", e);
-        }
-    }
-
-    // Sensor ID for Passenger Seat Occupation (Moved to Top)
-    private boolean mIsPassengerOccupied = false; // Default to false (Empty)
-
     private void pollDoorStatus() {
-        if (iCarFunction == null)
-            return;
-        try {
-            // Poll all doors is ideal, but let's stick to reactive for now or just poll FR
-            // Poll Passenger Door (Zone 4) as it has complex logic
-            int val = iCarFunction.getFunctionValue(BCM_FUNC_DOOR, 4);
-            if (val == 1) {
-                // If open on boot/init, maybe we shouldn't play sound?
-                // Logic says: "handleDoorStatus" plays sound if value == 1.
-                // We might want to avoid playing sound on service init if door is already open?
-                // For now, keep existing behavior (if it was polling, it implies checking current state)
-                // Actually, existing code played sound if 1.
-                // Let's keep it but maybe we only want to update state?
-                // The prompt implies "Sound", so let's stick to logic which triggers sound on event.
-                // Polling on init might trigger sound if door is open. That seems to be the intent of "poll".
-            }
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to poll door status", e);
-        }
+         // [Refactor] Door polling removed - relying on VSM callbacks and init
     }
+
+    // pollDoorStatus removed
 
     private void handleDoorStatus(int zone, int value) {
         // [KX11-A2 Sync] Support both Open and Close sounds

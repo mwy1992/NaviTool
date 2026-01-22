@@ -98,35 +98,56 @@ public class VehicleSensorManager {
     private int mIgnition = 0;
     private int mGear = 0;
     private int mDayNight = 0;
+    private boolean mSeatOccupied = false;
 
     // TPMS Cache (0:FL, 1:FR, 2:RL, 3:RR)
     private float[] mTirePressure = new float[4];
     private float[] mTireTemp = new float[4];
 
+
+    // --- ICarFunction 引用 ---
+    private com.ecarx.xui.adaptapi.car.base.ICarFunction mCarFunction;
+    private com.ecarx.xui.adaptapi.car.base.ICarFunction.IFunctionValueWatcher mFunctionWatcher;
+
+    // --- Function Constants ---
+    private static final int BCM_FUNC_DOOR = 553779456;
+    private static final int BCM_FUNC_LIGHT_LEFT_TRUN_SIGNAL = 0x21051100;
+    private static final int BCM_FUNC_LIGHT_RIGHT_TRUN_SIGNAL = 0x21051200;
+    private static final int FUNC_CLUSTER_LEFT_TURN = 553980160; 
+    private static final int FUNC_CLUSTER_RIGHT_TURN = 553980416;
+    public static final int FUNC_AUTOHOLD_STATUS = 33661;
+    private static final int FUNC_PSD_SCREEN_SWITCH = 539495936;
+    private static final int FUNC_AVM_STATUS = 2097152; // IPAS.PAS_FUNC_PAC_ACTIVATION (Check value) -> Assuming 2097152 based on usage in KeepAlive
+    // KeepAlive defines: private static final int FUNC_AVM_STATUS = IPAS.PAS_FUNC_PAC_ACTIVATION;
+    // We should use the raw imports or value if IPAS is not imported. 
+    // Let's import IPAS or use dynamic value. 
+    // Importing com.ecarx.xui.adaptapi.car.vehicle.IPAS;
+    
     // --- 监听器 ---
     private final List<Listener> mListeners = new ArrayList<>();
     private ISensor.ISensorListener mSensorListener;
-    // Trip Listener removed
 
     public interface Listener {
         default void onSpeedChanged(float speedKmh) {}
         default void onRpmChanged(float rpm) {}
         default void onFuelChanged(float fuel, float percent) {}
-        // 新增: 油耗回调
         default void onFuelConsumptionChanged(float instant, float average) {}
         default void onTemperatureChanged(float indoor, float outdoor) {}
         default void onRangeChanged(float range) {}
-        // 新增: 里程回调
         default void onOdometerChanged(float odometer) {}
         default void onGearChanged(int gear) {}
         default void onIgnitionChanged(int state) {}
         default void onDayNightChanged(int mode) {}
         default void onLightChanged(float light) {}
         default void onTireDataChanged(int index, float pressure, float temp) {}
-        // [NEW] Trip Data Callback (Updated to float distance for km)
-        // distance: Current Trip (km) if calculated, or API Trip (km)
-        // duration: seconds
         default void onTripDataChanged(float distanceKm, long durationSec, float avgFuel) {}
+        
+        // [NEW] Added Callbacks
+        default void onSeatOccupiedChanged(boolean occupied) {}
+        default void onDoorChanged(int zone, int status) {} // 1: Open, 0: Close
+        default void onTurnSignalChanged(boolean isLeft, boolean isOn) {}
+        default void onFunctionChanged(int functionId, int zone, int value) {} // Generic Fallback (AVM, PSD, Brightness)
+        default void onCustomizeFunctionChanged(int functionId, int zone, float value) {} // Generic Float
     }
 
     // --- 单例获取 ---
@@ -151,13 +172,19 @@ public class VehicleSensorManager {
 
         CarServiceManager.getInstance(mContext).registerListener(() -> {
             mSensor = CarServiceManager.getInstance(mContext).getSensor();
+            mCarFunction = CarServiceManager.getInstance(mContext).getCarFunction();
+            
             if (mSensor != null) {
                 registerSensors();
-                checkTripReset(); // [NEW] Check logic for Soft Trip
+                checkTripReset();
+            }
+            if (mCarFunction != null) {
+                registerFunctions();
+            }
+            
+            if (mSensor != null || mCarFunction != null) {
                 mIsInitialized = true;
-                DebugLogger.action(TAG, "传感器管理器初始化完成");
-            } else {
-                DebugLogger.e(TAG, "Failed to get ISensor");
+                DebugLogger.action(TAG, "车辆传感器与功能监听初始化完成");
             }
         });
     }
@@ -179,17 +206,17 @@ public class VehicleSensorManager {
 
                 @Override
                 public void onSensorSupportChanged(int sensorType, com.ecarx.xui.adaptapi.FunctionStatus status) {
-                    // Not used
                 }
             };
         }
 
-        // 注册事件类型传感器 (保持不变)
+        // 注册事件类型传感器
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_IGNITION);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_GEAR);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_DAY_NIGHT);
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_SEAT_OCCUPIED); // [NEW] Register Seat Occupied
 
-        // 注册数值类型传感器 (添加新传感器)
+        // 注册数值类型传感器
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_SPEED, ISensor.RATE_UI);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_RPM, ISensor.RATE_UI);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL, ISensor.RATE_NORMAL);
@@ -200,23 +227,69 @@ public class VehicleSensorManager {
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TEMP_OUTDOOR, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_RANGE, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_ODOMETER, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_ODOMETER, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_LIGHT, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_DIM_CAR_SPEED, ISensor.RATE_UI); // [NEW] Register DIM Speed
+        mSensor.registerListener(mSensorListener, SENSOR_TYPE_DIM_CAR_SPEED, ISensor.RATE_UI);
 
-        // 注册 TPMS 传感器 (保持不变)
+        // 注册 TPMS
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_FL, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_FR, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_RL, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_RR, ISensor.RATE_NORMAL);
-
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_FL, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_FR, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_RL, ISensor.RATE_NORMAL);
         mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_RR, ISensor.RATE_NORMAL);
 
-        DebugLogger.i(TAG, "All sensors registered (including Fuel Consumption)");
+        DebugLogger.i(TAG, "All sensors registered (including Seat Occupied)");
         refreshAllValues();
+    }
+
+    // [NEW] Register Functions
+    private void registerFunctions() {
+        if (mCarFunction == null) return;
+        
+        if (mFunctionWatcher == null) {
+            mFunctionWatcher = new com.ecarx.xui.adaptapi.car.base.ICarFunction.IFunctionValueWatcher() {
+                 @Override
+                 public void onFunctionValueChanged(int functionId, int zone, int value) {
+                     handleFunctionValue(functionId, zone, value);
+                 }
+
+                 @Override
+                 public void onCustomizeFunctionValueChanged(int functionId, int zone, float value) {
+                     notifyCustomizeFunctionChanged(functionId, zone, value);
+                 }
+
+                 @Override
+                 public void onFunctionChanged(int functionId) {}
+
+                 @Override
+                 public void onSupportedFunctionStatusChanged(int functionId, int zone, com.ecarx.xui.adaptapi.FunctionStatus status) {}
+
+                 @Override
+                 public void onSupportedFunctionValueChanged(int functionId, int[] values) {}
+            };
+        }
+        
+        // Register Watchers
+        mCarFunction.registerFunctionValueWatcher(BCM_FUNC_DOOR, mFunctionWatcher);
+        mCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_LEFT_TRUN_SIGNAL, mFunctionWatcher);
+        mCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_RIGHT_TRUN_SIGNAL, mFunctionWatcher);
+        mCarFunction.registerFunctionValueWatcher(FUNC_CLUSTER_LEFT_TURN, mFunctionWatcher);
+        mCarFunction.registerFunctionValueWatcher(FUNC_CLUSTER_RIGHT_TURN, mFunctionWatcher);
+        mCarFunction.registerFunctionValueWatcher(FUNC_AUTOHOLD_STATUS, mFunctionWatcher);
+        mCarFunction.registerFunctionValueWatcher(FUNC_PSD_SCREEN_SWITCH, mFunctionWatcher);
+        
+        // Also register AVM and Brightness related functions if we want full centralization
+        // For now, KeepAlive still handles Brightness directly via ThemeBrightnessManager, but eventually we should proxy it.
+        // Let's add them to be safe and future proof.
+        // Assuming constants are defined or we use raw values.
+        mCarFunction.registerFunctionValueWatcher(2097152 /*FUNC_AVM_STATUS*/, mFunctionWatcher);
+        mCarFunction.registerFunctionValueWatcher(538448128 /*FUNC_BRIGHTNESS_DAY*/, mFunctionWatcher); // IVehicle.SETTING_FUNC_BRIGHTNESS_DAY
+        mCarFunction.registerFunctionValueWatcher(538448384 /*FUNC_BRIGHTNESS_NIGHT*/, mFunctionWatcher); // IVehicle.SETTING_FUNC_BRIGHTNESS_NIGHT
+        mCarFunction.registerFunctionValueWatcher(538251520 /*FUNC_DAYMODE_SETTING*/, mFunctionWatcher); // 0x20150100 
+        
+        DebugLogger.i(TAG, "Function watchers registered (Doors, Lights, AVM...)");
     }
 
     /**
@@ -240,17 +313,12 @@ public class VehicleSensorManager {
         
         if (needReset) {
             DebugLogger.i(TAG, "Trip Data Reset Triggered (Soft Trip)");
-            // We can't set mStartOdo yet if we don't have current Odometer.
-            // We just clear it to force reset on next Odometer update.
             mStartOdo = -1f; 
             mStartTime = now;
-            
-            // Clear prefs
             mPrefs.edit()
                 .putFloat(KEY_START_ODO, -1f)
                 .putLong(KEY_START_TIME, now)
                 .apply();
-                
             mCurrentTripKm = 0;
             mCurrentTripDuration = 0;
             notifyTripDataChanged();
@@ -265,14 +333,11 @@ public class VehicleSensorManager {
                 if (mIgnition != value) {
                     mIgnition = value;
                     DebugLogger.action(TAG, "点火状态变化: " + value);
-                    
-                    // Handle Soft Trip Persistence on Ignition Off
                     if (value == ISensorEvent.IGNITION_STATE_OFF || value == ISensorEvent.IGNITION_STATE_ACC) {
                          mPrefs.edit().putLong(KEY_LAST_IGNITION_OFF, System.currentTimeMillis()).apply();
                     } else if (value == ISensorEvent.IGNITION_STATE_DRIVING || value == ISensorEvent.IGNITION_STATE_ON) {
                          checkTripReset();
                     }
-                    
                     notifyIgnitionChanged(value);
                 }
                 break;
@@ -290,21 +355,33 @@ public class VehicleSensorManager {
                     notifyDayNightChanged(value);
                 }
                 break;
+            case SENSOR_TYPE_SEAT_OCCUPIED:
+                // 2110210 = Occupied, 2110209 = Empty
+                boolean occupied = (value == 2110210);
+                mSeatOccupied = occupied;
+                notifySeatOccupiedChanged(occupied);
+                break;
+        }
+    }
+
+    private void handleFunctionValue(int functionId, int zone, int value) {
+        if (functionId == BCM_FUNC_DOOR) {
+            notifyDoorChanged(zone, value);
+        } else if (functionId == BCM_FUNC_LIGHT_LEFT_TRUN_SIGNAL || functionId == FUNC_CLUSTER_LEFT_TURN) {
+            notifyTurnSignalChanged(true, value == 1);
+        } else if (functionId == BCM_FUNC_LIGHT_RIGHT_TRUN_SIGNAL || functionId == FUNC_CLUSTER_RIGHT_TURN) {
+            notifyTurnSignalChanged(false, value == 1);
+        } else {
+            notifyFunctionChanged(functionId, zone, value);
         }
     }
 
     private void handleValueSensor(int sensorType, float value) {
         switch (sensorType) {
             case SENSOR_TYPE_SPEED:
-                // [CONFLICT FIX] Keep registered but IGNORE value to prevent jitter
-                // float speedKmh = value * 3.6f;
-                // if (Math.abs(mSpeed - speedKmh) > 0.5f) {
-                //    mSpeed = speedKmh;
-                //    notifySpeedChanged(speedKmh);
-                // }
+                // IGNORE (Use DIM Speed)
                 break;
             case SENSOR_TYPE_DIM_CAR_SPEED:
-                // [CONFLICT FIX] Use DIM Speed as primary source
                 float dimSpeedKmh = value * 3.6f;
                 if (Math.abs(mSpeed - dimSpeedKmh) > 0.5f) {
                     mSpeed = dimSpeedKmh;
@@ -318,12 +395,8 @@ public class VehicleSensorManager {
                 }
                 break;
             case SENSOR_TYPE_FUEL:
-                // [FIX] 统一单位转换: ml -> L
-                // 假设原始值小于1000则已经是L，否则是ml需要除以1000 (安全策略)
-                // 原 ClusterHudManager 逻辑: String.format("%.0fL", value / 1000.0f)
-                // 这里我们统一存储为 L (Float)
                 float fuelL;
-                if (value > 200.0f) { // 阈值判断，通常油箱不会超过200L，如果数值很大说明是ml
+                if (value > 200.0f) {
                      fuelL = value / 1000.0f;
                 } else {
                      fuelL = value;
@@ -358,8 +431,6 @@ public class VehicleSensorManager {
             case SENSOR_TYPE_ODOMETER:
                 mOdometer = value;
                 notifyOdometerChanged(value);
-                
-                // [Soft Trip Logic] Update Trip Distance
                 updateSoftTripDistance(value);
                 break;
             case SENSOR_TYPE_LIGHT:
@@ -367,7 +438,7 @@ public class VehicleSensorManager {
                 notifyLightChanged(value);
                 break;
 
-            // TPMS Logic (Preserved)
+            // TPMS Logic
             case SENSOR_TYPE_TIRE_PRESSURE_FL: mTirePressure[0] = value; notifyTireDataChanged(0); break;
             case SENSOR_TYPE_TIRE_PRESSURE_FR: mTirePressure[1] = value; notifyTireDataChanged(1); break;
             case SENSOR_TYPE_TIRE_PRESSURE_RL: mTirePressure[2] = value; notifyTireDataChanged(2); break;
@@ -385,7 +456,6 @@ public class VehicleSensorManager {
             mSpeed = mSensor.getSensorLatestValue(SENSOR_TYPE_SPEED) * 3.6f;
             mRpm = mSensor.getSensorLatestValue(SENSOR_TYPE_RPM);
             
-            // Fuel Logic with safety check
             float rawFuel = mSensor.getSensorLatestValue(SENSOR_TYPE_FUEL);
              if (rawFuel > 200.0f) {
                  mFuel = rawFuel / 1000.0f;
@@ -394,7 +464,6 @@ public class VehicleSensorManager {
             }
             mFuelPercent = mSensor.getSensorLatestValue(SENSOR_TYPE_FUEL_PERCENT);
             
-            // New Fuel Cons
             mFuelIns = mSensor.getSensorLatestValue(SENSOR_TYPE_FUEL_CONSUMPTION_INS);
             mFuelAvg = mSensor.getSensorLatestValue(SENSOR_TYPE_FUEL_CONSUMPTION_AVG);
 
@@ -420,7 +489,6 @@ public class VehicleSensorManager {
 
             DebugLogger.d(TAG, "Refreshed all sensor values");
             
-            // Initial Trip Calc if needed
             if (mOdometer > 0) {
                  updateSoftTripDistance(mOdometer);
             }
@@ -433,7 +501,6 @@ public class VehicleSensorManager {
     private void updateSoftTripDistance(float currentOdo) {
         if (currentOdo <= 0) return;
         
-        // If start odo is invalid (e.g. freshly reset or first run), capture current
         if (mStartOdo < 0) {
             mStartOdo = currentOdo;
             mStartTime = System.currentTimeMillis();
@@ -444,13 +511,11 @@ public class VehicleSensorManager {
              DebugLogger.i(TAG, "Soft Trip Initialized: StartOdo=" + mStartOdo);
         }
         
-        // Calculate Delta
         mCurrentTripKm = currentOdo - mStartOdo;
-        if (mCurrentTripKm < 0) mCurrentTripKm = 0; // Should not happen unless rollback
+        if (mCurrentTripKm < 0) mCurrentTripKm = 0; 
         
-        // Calculate Duration
         long durationMs = System.currentTimeMillis() - mStartTime;
-        mCurrentTripDuration = durationMs / 1000; // Seconds
+        mCurrentTripDuration = durationMs / 1000; 
         
         notifyTripDataChanged();
     }
@@ -472,10 +537,6 @@ public class VehicleSensorManager {
     public float getFuelIns() { return mFuelIns; }
     public float getFuelAvg() { return mFuelAvg; }
     
-    // [NEW] Trip getters (Soft Trip)
-    // removed getTripDistance() as it was integer meters, changed to getSoftTripKm logic if needed
-    // or just use getCurrentTripKm
-    
     public long getTripDuration() { return mCurrentTripDuration; }
     public float getAvgFuelConsumption() { return mAvgFuelConsumption; }
 
@@ -486,19 +547,22 @@ public class VehicleSensorManager {
     public boolean isDayMode() {
         return mDayNight == ISensorEvent.DAY_NIGHT_MODE_DAY;
     }
+    
+    public boolean isSeatOccupied() {
+        return mSeatOccupied;
+    }
 
-    // [NEW] Getters for Calculated Current Trip
     public float getCurrentTripKm() { return mCurrentTripKm; }
     public long getCurrentTripDuration() { return mCurrentTripDuration; }
 
-    // --- 监听器管理 ---
-    public void addListener(Listener listener) {
+    // --- 监听器管理 (Renamed to register/unregister) ---
+    public void registerListener(Listener listener) {
         if (!mListeners.contains(listener)) {
             mListeners.add(listener);
         }
     }
 
-    public void removeListener(Listener listener) {
+    public void unregisterListener(Listener listener) {
         mListeners.remove(listener);
     }
 
@@ -552,33 +616,54 @@ public class VehicleSensorManager {
     }
 
     private void notifyTripDataChanged() {
-        // [FIX] Use Calculated Current Trip (Since Ignition) as priority, 
-        // fallback to API Trip if calculating isn't active (e.g. ODO start invalid),
-        // BUT user strictly wants "Current Trip". 
-        // We pass mCurrentTripKm (Calculated) and mCurrentTripDuration (Calculated).
-        // For Avg Fuel, we still use API value as we can't calculate it easily.
-        
-        // If Ignition hasn't triggered reset, mOdometerStart is -1. 
-        // In that case mCurrentTripKm is 0.
-        
         for (Listener l : mListeners) l.onTripDataChanged(mCurrentTripKm, mCurrentTripDuration, mAvgFuelConsumption);
+    }
+
+    // [NEW] Notification Methods for Functions
+    private void notifySeatOccupiedChanged(boolean occupied) {
+        for (Listener l : mListeners) l.onSeatOccupiedChanged(occupied);
+    }
+
+    private void notifyDoorChanged(int zone, int status) {
+         for (Listener l : mListeners) l.onDoorChanged(zone, status);
+    }
+
+    private void notifyTurnSignalChanged(boolean isLeft, boolean isOn) {
+        for (Listener l : mListeners) l.onTurnSignalChanged(isLeft, isOn);
+    }
+    
+    private void notifyFunctionChanged(int functionId, int zone, int value) {
+        for (Listener l : mListeners) l.onFunctionChanged(functionId, zone, value);
+    }
+
+    private void notifyCustomizeFunctionChanged(int functionId, int zone, float value) {
+        for (Listener l : mListeners) l.onCustomizeFunctionChanged(functionId, zone, value);
     }
 
     public void destroy() {
         if (mSensor != null && mSensorListener != null) {
             try {
                 mSensor.unregisterListener(mSensorListener);
-                DebugLogger.i(TAG, "Unregistered all sensors");
+                DebugLogger.i(TAG, "Unregistered sensors");
             } catch (Exception e) {
                 DebugLogger.e(TAG, "Error unregistering sensors", e);
             }
         }
         
+        if (mCarFunction != null && mFunctionWatcher != null) {
+            try {
+                mCarFunction.unregisterFunctionValueWatcher(mFunctionWatcher);
+                DebugLogger.i(TAG, "Unregistered function watchers");
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Error unregistering function watchers", e);
+            }
+        }
         
-        // Removed TripData unregister logic
         mListeners.clear();
         mSensorListener = null;
+        mFunctionWatcher = null;
         mSensor = null;
+        mCarFunction = null;
         mIsInitialized = false;
         sInstance = null;
     }

@@ -63,7 +63,7 @@ public class SunshadeManager {
 
     public void setSunshadePosition(int percent) {
         try {
-            ICarFunction carFunction = KeepAliveAccessibilityService.getInstance().getCarFunction();
+            ICarFunction carFunction = cn.navitool.managers.CarServiceManager.getInstance(mContext).getCarFunction();
             if (carFunction != null) {
                 // Ensure range 0-100
                 if (percent < 0)

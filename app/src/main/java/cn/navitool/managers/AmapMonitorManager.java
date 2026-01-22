@@ -102,9 +102,9 @@ public class AmapMonitorManager {
 
     // Listener Interface for Broadcast Updates
     public interface OnBroadcastListener {
-        void onTrafficLightUpdate(cn.navitool.controller.NaviInfoController.TrafficLightInfo info);
+        void onTrafficLightUpdate(cn.navitool.managers.NaviInfoManager.TrafficLightInfo info);
 
-        void onGuideInfoUpdate(cn.navitool.controller.NaviInfoController.GuideInfo info);
+        void onGuideInfoUpdate(cn.navitool.managers.NaviInfoManager.GuideInfo info);
 
         void onNaviStatusUpdate(int state);
     }
@@ -137,7 +137,7 @@ public class AmapMonitorManager {
             int wait = getInt(extras, "waitRound");
 
             if (mListener != null) {
-                cn.navitool.controller.NaviInfoController.TrafficLightInfo info = new cn.navitool.controller.NaviInfoController.TrafficLightInfo();
+                cn.navitool.managers.NaviInfoManager.TrafficLightInfo info = new cn.navitool.managers.NaviInfoManager.TrafficLightInfo();
                 info.status = status;
                 info.redCountdown = time;
                 info.greenCountdown = greenTime;
@@ -155,7 +155,7 @@ public class AmapMonitorManager {
             int segRemainDis = getInt(extras, "SEG_REMAIN_DIS");
 
             if (mListener != null) {
-                cn.navitool.controller.NaviInfoController.GuideInfo info = new cn.navitool.controller.NaviInfoController.GuideInfo();
+                cn.navitool.managers.NaviInfoManager.GuideInfo info = new cn.navitool.managers.NaviInfoManager.GuideInfo();
                 info.currentRoadName = roadName;
                 info.nextRoadName = nextRoadName;
                 info.iconType = icon;

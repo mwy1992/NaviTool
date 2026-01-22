@@ -15,7 +15,7 @@ import cn.navitool.utils.AdbShell;
 import cn.navitool.utils.MemoryMonitor;
 import cn.navitool.managers.SimulateGear;
 import cn.navitool.activity.MainActivity;
-import cn.navitool.controller.NaviInfoController;
+import cn.navitool.managers.NaviInfoManager;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.ArrayList;
@@ -53,11 +53,7 @@ public class ClusterHudManager
     private int mRetryCount = 0;
 
     // ECarX Car API
-    private ICar mCar;
-    private ISensor mSensorManager;
-    private ICarFunction mCarFunction;
-    // [Refactor] ECarSensorListener removed
-    private ECarFunctionListener mFunctionListener;
+    // ECarX Car API fields removed - using VehicleSensorManager
 
     // Media & Volume
     private android.media.session.MediaSessionManager mMediaSessionManager;
@@ -83,9 +79,10 @@ public class ClusterHudManager
             mPresentationManager.resetNaviInfo();
         }
     };
-    // [FIX] Initialize to 0 (Park) instead of -1 (Manual) to prevent "M" gear
-    // flash on reset
-    private int mCachedGear = 0; // 0 for safe default (maps to "P")
+    // [FIX] Initialize to -999 (No Data) instead of 0 (P) or -1 (M)
+    // to prevent any default gear display before real data arrives.
+    private int mCachedGear = -999; 
+
     // [Fix Cold Boot] Add tracking for actually applied theme to avoid redundant
     // resets
     private int mCurrentAppliedTheme = -1;
@@ -157,7 +154,7 @@ public class ClusterHudManager
         loadSavedState();
 
         // Register Sensor Listener (including TPMS)
-        VehicleSensorManager.getInstance(mContext).addListener(this);
+        VehicleSensorManager.getInstance(mContext).registerListener(this);
 
         // [Refactor] Load initial sensor data directly from Manager (No more disk cache)
         loadInitialSensorData();
@@ -201,10 +198,14 @@ public class ClusterHudManager
                 .setListener(new cn.navitool.managers.AmapMonitorManager.OnBroadcastListener() {
                     @Override
                     public void onTrafficLightUpdate(
-                            NaviInfoController.TrafficLightInfo info) {
+                            NaviInfoManager.TrafficLightInfo info) {
+                        DebugLogger.d(TAG, "onTrafficLightUpdate: " + (info == null ? "null" : info.toString()));
                         // [FIX] Reset timeout timer on each traffic light update
                         mMainHandler.removeCallbacks(mTrafficLightTimeoutRunnable);
                         mMainHandler.postDelayed(mTrafficLightTimeoutRunnable, TRAFFIC_LIGHT_TIMEOUT_MS);
+
+                        // [FIX] Forward to NaviInfoManager for Main Screen/Floating Logic
+                        NaviInfoManager.getInstance(mContext).updateTrafficLight(info);
 
                         if (mPresentationManager != null) {
                             mPresentationManager.updateTrafficLight(info);
@@ -213,7 +214,7 @@ public class ClusterHudManager
 
                     @Override
                     public void onGuideInfoUpdate(
-                            NaviInfoController.GuideInfo info) {
+                            NaviInfoManager.GuideInfo info) {
                         // [SIMPLIFIED] No timeout logic - data is cleared by
                         // onNaviStatusUpdate(state==2)
                         // Call the new public method
@@ -297,40 +298,16 @@ public class ClusterHudManager
     // --- Traffic Light Listener (AIDL) --- [REMOVED]
 
     private void initCarService() {
-        // Use shared CarServiceManager to avoid multiple instances/connections
+        // Use shared CarServiceManager to ensure connection
         cn.navitool.managers.CarServiceManager.getInstance(mContext).registerListener(() -> {
-            mCar = cn.navitool.managers.CarServiceManager.getInstance(mContext).getCar();
-            if (mCar != null) {
-                // [Refactor] Sensor Logic moved to VehicleSensorManager
-                
-                mCarFunction = cn.navitool.managers.CarServiceManager.getInstance(mContext).getCarFunction();
-                if (mCarFunction != null) {
-                    registerFunctions();
-                }
-            }
+             // Just ensure init is called, actual logic is in VehicleSensorManager
         });
-
-        // Ensure init is called (safe to call multiple times)
         cn.navitool.managers.CarServiceManager.getInstance(mContext).init();
     }
     
     // [Refactor] registerSensors() removed - Logic moved to VehicleSensorManager
     
-    private void registerFunctions() {
-        if (mCarFunction == null)
-            return;
-        mFunctionListener = new ECarFunctionListener();
-        try {
-            // Register Turn Signals (Separate IDs)
-            mCarFunction.registerFunctionValueWatcher(FUNC_LEFT_TRUN_SIGNAL, mFunctionListener);
-            mCarFunction.registerFunctionValueWatcher(FUNC_RIGHT_TRUN_SIGNAL, mFunctionListener);
-
-            // Register Auto Hold
-            mCarFunction.registerFunctionValueWatcher(FUNC_AUTOHOLD_STATUS, mFunctionListener);
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Error registering functions", e);
-        }
-    }
+    // [Refactor] registerFunctions removed - Logic moved to VehicleSensorManager
 
     // --- Traffic Light Listener (AIDL) ---
 
@@ -511,49 +488,7 @@ public class ClusterHudManager
         }
     }
 
-    private class ECarFunctionListener implements ICarFunction.IFunctionValueWatcher {
-        @Override
-        public void onFunctionValueChanged(int funcId, int zone, int value) {
-            boolean isOn = (value == 1);
-            // [DEBUG] Log ALL function changes to find potential hidden IDs
-            DebugLogger.d(TAG, "onFunctionValueChanged: funcId=" + funcId + ", zone=" + zone + ", value=" + value);
-
-            if (funcId == FUNC_LEFT_TRUN_SIGNAL) {
-                if (mLeftTurnOn != isOn) {
-                    DebugLogger.d(TAG, "TurnSignal API: Left Changed -> " + isOn);
-                    updateTurnSignal(true, isOn);
-                }
-            } else if (funcId == FUNC_RIGHT_TRUN_SIGNAL) {
-                if (mRightTurnOn != isOn) {
-                    DebugLogger.d(TAG, "TurnSignal API: Right Changed -> " + isOn);
-                    updateTurnSignal(false, isOn);
-                }
-            } else if (funcId == FUNC_AUTOHOLD_STATUS) {
-                DebugLogger.e(TAG, "AutoHold API (33661): Changed -> " + value + " (IsOn=" + isOn + ")");
-                mIsAutoHoldOn = (value == 1);
-                android.graphics.Bitmap bitmap = getAutoHoldBitmap(mIsAutoHoldOn);
-                // 使用通用 updateComponentImage 更新，组件 key 为 "auto_hold"
-                updateComponentImage("auto_hold", bitmap);
-            }
-
-        }
-
-        @Override
-        public void onCustomizeFunctionValueChanged(int i, int i1, float v) {
-        }
-
-        @Override
-        public void onFunctionChanged(int i) {
-        }
-
-        @Override
-        public void onSupportedFunctionValueChanged(int i, int[] ints) {
-        }
-
-        @Override
-        public void onSupportedFunctionStatusChanged(int i, int i1, FunctionStatus functionStatus) {
-        }
-    }
+    // [Refactor] ECarFunctionListener removed - Logic moved to VSM callbacks
 
     // Cache bitmaps to avoid GC thrashing
     private android.graphics.Bitmap mBitmapLeft;
@@ -815,7 +750,7 @@ public class ClusterHudManager
         }
 
         // Unregister from VehicleSensorManager
-        VehicleSensorManager.getInstance(mContext).removeListener(this);
+        VehicleSensorManager.getInstance(mContext).unregisterListener(this);
     }
 
     // --- Volume Listener ---
@@ -904,7 +839,7 @@ public class ClusterHudManager
     public void onRangeChanged(float range) {
         mCachedRangeKm = range;
         updateFuelRangeComponent();
-        updateComponentText("range", String.format(Locale.US, "%.0fkm", range));
+        updateComponentText("range", String.format(Locale.US, "%.0fKM", range));
     }
 
     @Override
@@ -973,7 +908,42 @@ public class ClusterHudManager
         }
     }
     
+    // [Refactor] New VehicleSensorManager overrides
+    @Override
+    public void onTurnSignalChanged(boolean isLeft, boolean isOn) {
+        if (isLeft) {
+            if (mLeftTurnOn != isOn) {
+                DebugLogger.d(TAG, "TurnSignal (VSM): Left Changed -> " + isOn);
+                updateTurnSignal(true, isOn);
+            }
+        } else {
+            if (mRightTurnOn != isOn) {
+                DebugLogger.d(TAG, "TurnSignal (VSM): Right Changed -> " + isOn);
+                updateTurnSignal(false, isOn);
+            }
+        }
+    }
+
+    @Override
+    public void onFunctionChanged(int functionId, int zone, int value) {
+        boolean isOn = (value == 1);
+        if (functionId == VehicleSensorManager.FUNC_AUTOHOLD_STATUS) {
+            DebugLogger.d(TAG, "AutoHold (VSM): Changed -> " + value);
+            mIsAutoHoldOn = isOn;
+            android.graphics.Bitmap bitmap = getAutoHoldBitmap(mIsAutoHoldOn);
+            updateComponentImage("auto_hold", bitmap);
+        }
+    }
+    
     // [Refactor] Removed internal ECarSensorListener class and registerSensors method
+
+    /**
+     * [NEW] Public method to get current display gear string (including simulation logic)
+     * Used by HUD Editor to initialize component with correct value.
+     */
+    public String getCurrentDisplayGear() {
+        return getGearString(mCachedGear);
+    }
 
     private String getGearString(int gearValue) {
         // [FIX] Stagnation and Deadlock Fix
@@ -1005,6 +975,7 @@ public class ClusterHudManager
     private String mapRawGearToChar(int gearValue) {
         // [FIX] Add -1 mapping for Manual Mode
         if (gearValue == -1) return "M";
+        if (gearValue == -999) return ""; // No Data
 
         switch (gearValue) {
             case ISensorEvent.GEAR_PARK:
@@ -1043,7 +1014,7 @@ public class ClusterHudManager
     
     // ... (Existing updateFuelRangeComponent) ...
     private void updateFuelRangeComponent() {
-        String text = String.format("⛽ %.0fL|%.0fkm", mCachedFuelLiters, mCachedRangeKm);
+        String text = String.format("⛽ %.0fL|%.0fKM", mCachedFuelLiters, mCachedRangeKm);
         updateComponentText("fuel_range", text);
     }
 
@@ -1319,12 +1290,6 @@ public class ClusterHudManager
     private void initAdaptApi() {
         // Use the new Listener mechanism
         cn.navitool.managers.CarServiceManager.getInstance(mContext).registerListener(() -> {
-            mCarFunction = cn.navitool.managers.CarServiceManager.getInstance(mContext).getCarFunction();
-            // ISensor logic moved to VehicleSensorManager
-            
-            // Register Functions
-            registerFunctions();
-
             // Register Volume Listener
             initVolumeListener();
         });
@@ -2113,10 +2078,10 @@ public class ClusterHudManager
                     } else if ("temp_in".equals(newData.type)) {
                         if (mCachedTempInText != null) newData.text = mCachedTempInText;
                     } else if ("fuel_range".equals(newData.type)) {
-                        newData.text = String.format("⛽ %.0fL|%.0fkm", mCachedFuelLiters, mCachedRangeKm);
+                        newData.text = String.format("⛽ %.0fL|%.0fKM", mCachedFuelLiters, mCachedRangeKm);
                     } else if ("hud_rpm".equals(newData.type)) {
                         // [FIX] Backfill RPM with cached value
-                        newData.text = String.format(Locale.getDefault(), "%.0frpm", mCachedRpm);
+                        newData.text = String.format(Locale.getDefault(), "%.0fRPM", mCachedRpm);
                     } else {
                         // Standard Merge
                         for (HudComponentData oldData : mCachedHudComponents) {
@@ -2174,7 +2139,7 @@ public class ClusterHudManager
                     } else if ("temp_in".equals(newData.type)) {
                         if (mCachedTempInText != null) newData.text = mCachedTempInText;
                     } else if ("fuel_range".equals(newData.type)) {
-                        newData.text = String.format("⛽ %.0fL|%.0fkm", mCachedFuelLiters, mCachedRangeKm);
+                        newData.text = String.format("⛽ %.0fL|%.0fKM", mCachedFuelLiters, mCachedRangeKm);
                     }
                 }
             }
@@ -2290,7 +2255,7 @@ public class ClusterHudManager
         updateMediaPlayingState(true); // Force show for testing
     }
 
-    public void onGuideInfoUpdate(NaviInfoController.GuideInfo info) {
+    public void onGuideInfoUpdate(NaviInfoManager.GuideInfo info) {
         // DebugLogger.d(TAG, "onGuideInfoUpdate: " + info.toString());
         mMainHandler.removeCallbacks(mNaviInfoTimeoutRunnable);
         mMainHandler.postDelayed(mNaviInfoTimeoutRunnable, NAVI_INFO_TIMEOUT_MS);
@@ -2408,7 +2373,7 @@ public class ClusterHudManager
         // Logic: Round to nearest 50rpm for stability (prevent flickering digits)
         // e.g. 2123 -> 2100; 2135 -> 2150
         int displayRpm = Math.round(rpm / 50.0f) * 50;
-        String rpmText = displayRpm + "rpm";
+        String rpmText = displayRpm + "RPM";
         // Directly update component via text (handled by HUD logic)
         updateComponentText("hud_rpm", rpmText);
 
@@ -2663,10 +2628,10 @@ public class ClusterHudManager
     // --- Sensor Data Persistence [REMOVED] ---
     private boolean mSensorsRegistered = false; 
 
-    private String mCachedFuelText = "⛽ --L";
-    private String mCachedRangeText = "--km";
-    private String mCachedTempOutText = "--°C";
-    private String mCachedTempInText = "--°C";
+    private String mCachedFuelText = "⛽ 0L";
+    private String mCachedRangeText = "0KM";
+    private String mCachedTempOutText = "0.0°C";
+    private String mCachedTempInText = "0.0°C";
 
     /**
      * [NEW] Initialize sensor data from VehicleSensorManager
@@ -2681,7 +2646,7 @@ public class ClusterHudManager
         
         // Range
         float range = manager.getRange();
-        updateRange(String.format(Locale.US, "%.0fkm", range));
+        updateRange(String.format(Locale.US, "%.0fKM", range));
         
         // Temp
         updateTempOut(String.format(Locale.US, "%.1f°C", manager.getTempOutdoor())); // [FIX] Use %.1f matching runtime
@@ -2695,11 +2660,44 @@ public class ClusterHudManager
         updateSpeed(speed);
 
         // Gear
-        // Note: Gear is event-based, but we can try to get last known state if exposed,
-        // or wait for update. SimulateGear/SimulateFunction handles initial "D" usually.
-        // [FIX] Try to sync gear if possible
-        // int gear = manager.getGear(); // If available in future
+        // [FIX] Read current gear immediately to replace default
+        int gear = manager.getGear();
+        updateGear(gear);
 
+    }
+
+    /**
+     * [NEW] Live Sensor Data Getters for HUD Editor
+     * Bypasses internal cache to ensure Preview shows real-time data.
+     */
+    public String getCurrentFuelText() {
+        float val = VehicleSensorManager.getInstance(mContext).getFuel();
+        return String.format(Locale.US, "⛽ %.0fL", val);
+    }
+
+    public String getCurrentRangeText() {
+        float val = VehicleSensorManager.getInstance(mContext).getRange();
+        return String.format(Locale.US, "%.0fKM", val);
+    }
+
+    public String getCurrentTotalFuelRangeText() {
+        VehicleSensorManager vsm = VehicleSensorManager.getInstance(mContext);
+        return String.format(Locale.US, "⛽ %.0fL|%.0fKM", vsm.getFuel(), vsm.getRange());
+    }
+
+    public String getCurrentTempOutText() {
+        float val = VehicleSensorManager.getInstance(mContext).getTempOutdoor();
+        return String.format(Locale.US, "%.1f°C", val);
+    }
+
+    public String getCurrentTempInText() {
+        float val = VehicleSensorManager.getInstance(mContext).getTempIndoor();
+        return String.format(Locale.US, "%.1f°C", val);
+    }
+
+    public String getCurrentRpmText() {
+        float val = VehicleSensorManager.getInstance(mContext).getRpm();
+        return String.format(Locale.US, "%.0fRPM", val);
     }
 
     /**
@@ -2870,7 +2868,7 @@ public class ClusterHudManager
 
     /**
      * [Issue 3 / 8 Fix] Update Navigation State purely based on Data Input.
-     * Called by NaviInfoController when valid data arrives or times out.
+     * Called by NaviInfoManager when valid data arrives or times out.
      */
     public void updateNaviInputState(boolean isNavigating) {
         if (mPresentationManager != null) {

@@ -90,7 +90,6 @@
         android:layout_marginStart="1304px"
         android:layout_marginTop="298px"
         android:gravity="center"
-        android:text="P"
         android:textColor="#00FF00"
         android:textSize="48sp"
         android:textStyle="bold"/>

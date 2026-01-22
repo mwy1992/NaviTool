@@ -11,9 +11,9 @@ import android.widget.TextView;
 
 import cn.navitool.R;
 import cn.navitool.view.TrafficLightView;
-import cn.navitool.controller.NaviInfoController;
-import cn.navitool.controller.NaviInfoController.TrafficLightInfo;
-import cn.navitool.controller.NaviInfoController.GuideInfo;
+import cn.navitool.managers.NaviInfoManager;
+import cn.navitool.managers.NaviInfoManager.TrafficLightInfo;
+import cn.navitool.managers.NaviInfoManager.GuideInfo;
 import cn.navitool.utils.DebugLogger;
 import cn.navitool.view.ClippedImageView;
 import cn.navitool.view.animation.SmoothTextAnimator;
@@ -199,6 +199,9 @@ public class AudiRsThemeController extends BaseThemeController {
         DebugLogger.d(TAG, "Audi RS Views bound successfully");
 
         // Initial sync
+        String currentGear = cn.navitool.managers.ClusterHudManager.getInstance(rootView.getContext()).getCurrentDisplayGear();
+        setGear(currentGear);
+        
         updateDayMode();
         
         // Init Animator
@@ -263,7 +266,7 @@ public class AudiRsThemeController extends BaseThemeController {
             mNaviTrafficContainer.setVisibility(View.VISIBLE);
 
         mCurrentRawStatus = info.status;
-        int mappedStatus = NaviInfoController.mapStatus(info.status);
+        int mappedStatus = NaviInfoManager.mapStatus(info.status);
 
         boolean shouldFlash = false;
         if (mCountdownText != null) {
@@ -304,7 +307,7 @@ public class AudiRsThemeController extends BaseThemeController {
 
     private void updateTrafficLightImages(int rawStatus, float activeAlpha) {
         final float ALPHA_DIM = 0.3f;
-        int mappedStatus = NaviInfoController.mapStatus(rawStatus);
+        int mappedStatus = NaviInfoManager.mapStatus(rawStatus);
         float inactiveAlpha = (mappedStatus == 0) ? 0f : ALPHA_DIM;
 
         if (mLightRed != null) {
@@ -372,12 +375,19 @@ public class AudiRsThemeController extends BaseThemeController {
         }
 
         if (mNaviDistance != null) {
-            String distText = NaviInfoController.formatDistance(info.routeRemainDis);
+            String distText = "";
+            if (info.routeRemainDis < 0) {
+                 distText = "";
+            } else if (info.routeRemainDis >= 1000) {
+                 distText = String.format(java.util.Locale.US, "%.1fKM", info.routeRemainDis / 1000f);
+            } else {
+                 distText = info.routeRemainDis + "M";
+            }
             mNaviDistance.setText(distText);
         }
 
         if (mNaviEta != null) {
-            String eta = NaviInfoController.parseEta(info.etaText);
+            String eta = NaviInfoManager.parseEta(info.etaText);
             String displayEta = eta.isEmpty() ? "" : "ETA " + eta;
             mNaviEta.setText(displayEta);
         }

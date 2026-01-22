@@ -1,5 +1,38 @@
 # Change Log
 
+## 2026-01-23
+
+### HUD 显示一致性与导航信息修复 (HUD Consistency & Navi Info Fixes)
+
+- **档位默认值根除 (Gear Default Value Elimination)**:
+  - **问题**: 仪表主题及 HUD 在启动时始终显示 "P" 档，即使车辆处于 D 档。
+  - **原因**: `mCachedGear` 初始值为 `0` (映射 "P")；XML 中也硬编码了 `android:text="P"`。
+  - **修复**:
+    - 将 `ClusterHudManager.mCachedGear` 初始化为 `-999`，并在 `mapRawGearToChar` 中将 `-999` 映射为空字符串 `""`。
+    - 移除了 `layout_cluster_audi_rs.xml` 和 `layout_cluster_standard.xml` 中 `audiRsGearText` 和 `standardGearText` 的硬编码默认值。
+  - **效果**: 启动瞬间档位显示为空，直到传感器数据到达后才显示真实档位。
+
+- **HUD 导航信息不更新修复 (Navi Info Update Fix)**:
+  - **问题**: HUD 上的剩余里程 (`navi_distance_remaining`) 和到达时间 (`navi_arrival_time`) 组件显示占位符，不更新。
+  - **原因**: `PresentationManager.updateGuideInfoGeneric` 方法为空 (仅有 TODO 注释)。
+  - **修复**: 完整实现了该方法，遍历组件列表并更新对应 TextView 的文本内容，并同步更新 `mCachedNaviArrivalTime` 和 `mCachedNaviDistance` 缓存。
+  - **格式化**:
+    - 剩余里程: `>=1000m` 显示 `XX.XKM`，`<1000m` 显示 `XXM`。
+    - 到达时间: 使用 `NaviInfoManager.parseEta` 提取纯时间 (如 "00:12")，移除"预计"和"到达"字样。
+
+- **奥迪 RS 剩余里程格式化 (Audi RS Distance Formatting)**:
+  - 将 `AudiRsThemeController.updateGuideInfo` 中的里程显示格式化逻辑与 HUD 统一。
+
+- **HUD 辅助线支持 (Guide Line Support)**:
+  - **问题**: HUD 预览中的辅助线组件无法在真实 HUD 上显示，且编辑器拖拽时无法超出屏幕边界。
+  - **修复 (渲染)**: 在 `PresentationManager.syncHudLayout` 中新增对 `guide_line` 类型的支持，复刻预览界面的 `FrameLayout` 容器结构，并启用软件渲染 (`LAYER_TYPE_SOFTWARE`) 以确保虚线效果正常显示。
+  - **修复 (边界)**: 在 `HudSettingsController` 和 `PresentationManager` 中放宽了 `guide_line` 的坐标钳位逻辑，允许其左右超出屏幕边缘最多 50% 的组件宽度。
+
+- **HUD 组件字体边距修复 (Font Padding Fix)**:
+  - **问题**: HUD 预览与真实 HUD 的通用文本组件（如 `navi_arrival_time`）垂直边距不一致。
+  - **原因**: `HudSettingsController` 对所有 TextView 禁用了 Font Padding (`setIncludeFontPadding(false)`)，而 `PresentationManager` 漏了这一设置。
+  - **修复**: 在 `PresentationManager` 的通用 TextView 创建逻辑中补充了 `tv.setIncludeFontPadding(false);`。
+
 ## 2026-01-22
 
 ### 奥迪 RS 主题同步更新 (Audi RS Theme Synchronization)

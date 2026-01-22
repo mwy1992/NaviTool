@@ -107,7 +107,9 @@ public class StandardThemeController extends BaseThemeController {
         updateSpeed(0);
         updateRpm(0);
         // BaseThemeController handles gear update if set, but we might want to ensure default P
-        setGear(mCurrentGearIndex >= 0 ? GEARS[mCurrentGearIndex] : "P"); 
+        // BaseThemeController handles gear update if set, but we might want to ensure default P
+        String currentGear = cn.navitool.managers.ClusterHudManager.getInstance(rootView.getContext()).getCurrentDisplayGear();
+        setGear(currentGear); 
 
         // Init Animators
         mSpeedPointerAnimator = new SmoothValueAnimator(0);
