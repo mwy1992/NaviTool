@@ -128,29 +128,26 @@ public class AppLaunchManager {
     public static List<AppInfo> getInstalledApps(Context context) {
         List<AppInfo> apps = new ArrayList<>();
         PackageManager pm = context.getPackageManager();
-        Intent intent = new Intent(Intent.ACTION_MAIN, null);
-        intent.addCategory(Intent.CATEGORY_LAUNCHER);
-        List<android.content.pm.ResolveInfo> activities = pm.queryIntentActivities(intent, 0);
+        // [FIX] Use getInstalledPackages + getLaunchIntentForPackage to find ALL launchable apps
+        // (including those without standard launcher icons but with valid launch intents)
+        List<android.content.pm.PackageInfo> packages = pm.getInstalledPackages(0);
 
-        for (android.content.pm.ResolveInfo resolveInfo : activities) {
-            String packageName = resolveInfo.activityInfo.packageName;
-            String label = resolveInfo.loadLabel(pm).toString();
-            // Avoid duplicates if multiple activities point to same package?
-            // Usually we want the main one. We can check if package is already in list or
-            // allow multiple entries?
-            // For simplicity, let's keep it simple unique by package name if desired, or
-            // just allow all entry points.
-            // But AppConfig logic uses packageName, so we only need one entry per package.
-            boolean exists = false;
-            for (AppInfo info : apps) {
-                if (info.packageName.equals(packageName)) {
-                    exists = true;
-                    break;
-                }
+        for (android.content.pm.PackageInfo pkgInfo : packages) {
+            String packageName = pkgInfo.packageName;
+            
+            // Critical Check: Can we actually launch this?
+            if (pm.getLaunchIntentForPackage(packageName) == null) {
+                continue;
             }
-            if (!exists) {
-                apps.add(new AppInfo(label, packageName));
-            }
+
+            // Get Label
+            String label = pkgInfo.applicationInfo.loadLabel(pm).toString();
+            
+            // Deduplicate (Package Name is unique in this list, but check against existing list just in case?)
+            // getInstalledPackages returns unique packages, so no manual dedupe needed unless list is reused.
+            // But we created `apps` new list.
+            
+            apps.add(new AppInfo(label, packageName));
         }
         java.text.Collator collator = java.text.Collator.getInstance(java.util.Locale.CHINA);
         Collections.sort(apps, (a, b) -> collator.compare(a.name, b.name));

@@ -35,7 +35,7 @@ public class ButtonSettingsController {
         SwitchMaterial switchSteeringWheel = mLayoutButtons.findViewById(R.id.switchSteeringWheel);
         if (switchSteeringWheel == null) return;
         
-        boolean isEnabled = ConfigManager.getInstance().getBoolean("steering_wheel_control_v2", true);
+        boolean isEnabled = ConfigManager.getInstance().getBoolean("steering_wheel_control_v2", false);
         switchSteeringWheel.setChecked(isEnabled);
         switchSteeringWheel.setOnCheckedChangeListener((buttonView, isChecked) -> {
             ConfigManager.getInstance().setBoolean("steering_wheel_control_v2", isChecked);
@@ -80,7 +80,7 @@ public class ButtonSettingsController {
         spinnerLongPressApp.setAdapter(appAdapter);
 
         // Load Values from ConfigManager
-        boolean isWechatEnabled = ConfigManager.getInstance().getBoolean("wechat_button_enabled_v2", true);
+        boolean isWechatEnabled = ConfigManager.getInstance().getBoolean("wechat_button_enabled_v2", false);
         switchWechatButton.setChecked(isWechatEnabled);
 
         int shortPressActionIdx = ConfigManager.getInstance().getInt("wechat_short_press_action", 0);

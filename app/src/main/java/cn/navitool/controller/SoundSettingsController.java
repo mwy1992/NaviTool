@@ -44,7 +44,7 @@ public class SoundSettingsController {
 
         if (switchMaster != null) {
             // Default to TRUE to maintain backward compatibility
-            boolean isMaster = ConfigManager.getInstance().getBoolean("sound_master_enabled", true);
+            boolean isMaster = ConfigManager.getInstance().getBoolean("sound_master_enabled", false);
             switchMaster.setChecked(isMaster);
 
             // [FIX] Initial Visibility

@@ -1786,7 +1786,7 @@ public class ClusterHudManager
         }
 
         // 3. 重置内部状态
-        mSimulatedGearEnabled = ConfigManager.getInstance().getBoolean("simulated_gear_enabled", true);
+        mSimulatedGearEnabled = ConfigManager.getInstance().getBoolean("simulated_gear_enabled", false);
         
         DebugLogger.i(TAG, "Standby Mode Active: UI Dismissed, Caches Reset.");
     }
@@ -2806,7 +2806,7 @@ public class ClusterHudManager
             mIsFloatingEnabled = ConfigManager.getInstance().getBoolean("floating_traffic_light_enabled", false);
             // [FIX] Load Simulated Gear State
             // [FIX] Default to TRUE so users can see M1-M8 without manual config
-            mSimulatedGearEnabled = ConfigManager.getInstance().getBoolean("simulated_gear_enabled", true);
+            mSimulatedGearEnabled = ConfigManager.getInstance().getBoolean("simulated_gear_enabled", false);
             // [NEW] Load Green Background State
             mIsHudGreenBgExposed = ConfigManager.getInstance().getBoolean("hud_green_bg_enabled", false);
             DebugLogger.i(TAG, "Self-Init: Loaded State -> Cluster=" + mIsClusterEnabled + ", HUD=" + mIsHudEnabled

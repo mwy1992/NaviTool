@@ -542,7 +542,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Speed comparison display receivers (for status page)
 
-        if (mHomeStatusController != null) mHomeStatusController.updateAutoModeStatus(0);
+        if (mGeneralSettingsController != null) mGeneralSettingsController.updateAutoModeStatus(0);
 
         // --- Auto-Initialize Cluster ---
         // Ensure Cluster Service starts even if tab is not visited
