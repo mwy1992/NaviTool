@@ -49,7 +49,7 @@ dependencies {
     compileOnly(files("libs/ecarx.adaptapi.jar"))
     
     // 将 launcher.jar 设为 compileOnly (只编译不打包)
-    compileOnly(files("libs/launcher.jar"))
+    //compileOnly(files("libs/launcher.jar"))
     
     implementation 'com.github.tananaev:adblib:1.3'
 }
