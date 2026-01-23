@@ -271,8 +271,9 @@ public class AudiRsThemeController extends BaseThemeController {
 
         boolean shouldFlash = false;
         if (mCountdownText != null) {
+            // [FIX] Only show countdown if status is valid AND time > 0
             int time = info.redCountdown;
-            if (time > 0) {
+            if (time > 0 && mappedStatus != 0) {
                 mCountdownText.setText(String.valueOf(time));
                 mCountdownText.setVisibility(View.VISIBLE);
                 if (time <= 3 && (mappedStatus == TrafficLightView.STATUS_RED
@@ -292,17 +293,23 @@ public class AudiRsThemeController extends BaseThemeController {
         }
 
         // Arrow Rotation
+        // Arrow Rotation
         if (mDirectionArrow != null) {
-            mDirectionArrow.setVisibility(View.VISIBLE);
-            mDirectionArrow.setImageResource(R.drawable.ic_direction_arrow);
-            float rotation = 0;
-            switch (info.direction) {
-                case 1: rotation = -90f; break; // Left
-                case 2: rotation = 90f; break; // Right
-                case 3: rotation = 180f; break; // U-Turn
-                default: rotation = 0f; break; // Straight
+            if (mappedStatus != 0) {
+                mDirectionArrow.setVisibility(View.VISIBLE);
+                mDirectionArrow.setImageResource(R.drawable.ic_direction_arrow);
+                float rotation = 0;
+                switch (info.direction) {
+                    case 1: rotation = -90f; break; // Left
+                    case 2: rotation = 90f; break; // Right
+                    case 3: rotation = 180f; break; // U-Turn
+                    default: rotation = 0f; break; // Straight
+                }
+                mDirectionArrow.setRotation(rotation);
+            } else {
+                // [FIX] Hide arrow if status is 0 (No Light/Reset) prevents "White Arrow" glitch
+                mDirectionArrow.setVisibility(View.GONE);
             }
-            mDirectionArrow.setRotation(rotation);
         }
     }
 
@@ -388,9 +395,13 @@ public class AudiRsThemeController extends BaseThemeController {
         }
 
         if (mNaviEta != null) {
-            String eta = NaviInfoManager.parseEta(info.etaText);
+            // [FIX] Use calculated ETA for standard "HH:mm" format
+            String eta = NaviInfoManager.calculateEta(info.routeRemainTime);
             String displayEta = eta.isEmpty() ? "" : "ETA " + eta;
             mNaviEta.setText(displayEta);
+            DebugLogger.d(TAG, "updateGuideInfo: ETA Set -> " + displayEta + " (Vis: " + mNaviEta.getVisibility() + ")");
+        } else {
+             DebugLogger.e(TAG, "updateGuideInfo: mNaviEta is NULL");
         }
     }
     

@@ -10,6 +10,8 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
 
+import android.app.ActivityManager;
+import java.util.List;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -65,6 +67,7 @@ public class AmapMonitorManager {
             filter.addAction(AMAP_BROADCAST_ACTION);
             mContext.registerReceiver(mAmapReceiver, filter);
             isRegistered = true;
+            startProcessMonitor(); // Start Polling
             DebugLogger.i(TAG, "Starting Amap Broadcast Monitor...");
             // logToFile("Monitor Started: Listening for " + AMAP_BROADCAST_ACTION);
         } catch (Exception e) {
@@ -79,9 +82,78 @@ public class AmapMonitorManager {
         try {
             mContext.unregisterReceiver(mAmapReceiver);
             isRegistered = false;
+            stopProcessMonitor(); // Stop Polling
             DebugLogger.i(TAG, "Stopped Amap Broadcast Monitor.");
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to unregister receiver", e);
+        }
+    }
+
+    // --- Process Monitor ---
+    private static final String AMAP_PKG = "com.autonavi.amapauto";
+    // private static final String AMAP_PKG_MOBILE = "com.autonavi.minimap"; // Removed per user request
+    private Handler mMonitorHandler;
+    private boolean mIsAmapAlive = true; // Assume alive initially to avoid startup clear (let broadcasts handle it)
+    // Actually, if we start assuming alive, and it's dead, we detect it in 10s and clear. Perfect.
+
+    private final Runnable mMonitorRunnable = new Runnable() {
+        @Override
+        public void run() {
+            checkAmapProcess();
+            if (mMonitorHandler != null) {
+                mMonitorHandler.postDelayed(this, 10000); // 10s interval
+            }
+        }
+    };
+
+    private void startProcessMonitor() {
+        if (mMonitorHandler == null) {
+            mMonitorHandler = new Handler(android.os.Looper.getMainLooper());
+        }
+        mMonitorHandler.removeCallbacks(mMonitorRunnable);
+        mMonitorHandler.postDelayed(mMonitorRunnable, 10000); // Start check 10s later
+    }
+
+    private void stopProcessMonitor() {
+        if (mMonitorHandler != null) {
+            mMonitorHandler.removeCallbacks(mMonitorRunnable);
+            mMonitorHandler = null;
+        }
+    }
+
+    private void checkAmapProcess() {
+        try {
+            ActivityManager am = (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
+            if (am == null) return;
+
+            List<ActivityManager.RunningAppProcessInfo> processes = am.getRunningAppProcesses();
+            if (processes == null || processes.isEmpty()) {
+                // API restricted or error, do not assume death
+                return;
+            }
+
+            boolean isRunning = false;
+            for (ActivityManager.RunningAppProcessInfo info : processes) {
+                if (info.processName.equals(AMAP_PKG)) {
+                    isRunning = true;
+                    break;
+                }
+            }
+
+            if (!isRunning) {
+                if (mIsAmapAlive) {
+                    DebugLogger.w(TAG, "Monitor: Amap process died. Force Stop Navi.");
+                    mIsAmapAlive = false;
+                    // Trigger STOP event
+                    if (mListener != null) {
+                        mListener.onNaviStatusUpdate(2); // State 2 = Stop
+                    }
+                }
+            } else {
+                mIsAmapAlive = true;
+            }
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error checking process", e);
         }
     }
 
@@ -113,7 +185,21 @@ public class AmapMonitorManager {
 
     public void setListener(OnBroadcastListener listener) {
         this.mListener = listener;
+        // [STICKY] Push cached data immediately on attach
+        // This ensures UI shows data even if no new broadcast arrives immediately
+        if (mListener != null && mCachedGuideInfo != null) {
+            DebugLogger.i(TAG, "setListener: Pushing cached GuideInfo");
+            mListener.onGuideInfoUpdate(mCachedGuideInfo);
+        }
     }
+
+    // [CACHE] For Broadcast Deduplication
+    private int mLastRouteRemainDis = -1;
+    private int mLastRouteRemainTime = -1;
+    private String mLastNextRoadName = "";
+    private int mLastIcon = -1;
+    // [STICKY] Cache latest GuideInfo for new listeners
+    private cn.navitool.managers.NaviInfoManager.GuideInfo mCachedGuideInfo = null;
 
     private void parseAndLogBroadcast(Intent intent) {
         Bundle extras = intent.getExtras();
@@ -124,6 +210,13 @@ public class AmapMonitorManager {
         int keyType = -1;
         if (extras.containsKey("KEY_TYPE")) {
             keyType = extras.getInt("KEY_TYPE", -1);
+        }
+        
+        // [OPTIMIZATION] Filter out heavy/useless broadcasts IMMEDIATELY
+        if (keyType == 13011 || keyType == 12205) {
+            // 13011 = TMC Traffic Bar (Heavy JSON)
+            // 12205 = Geolocation (High frequency)
+            return; 
         }
 
         // [OPTIMIZATION] Handle Traffic Light FIRST with minimal processing
@@ -153,6 +246,21 @@ public class AmapMonitorManager {
             int routeRemainDis = getInt(extras, "ROUTE_REMAIN_DIS");
             int routeRemainTime = getInt(extras, "ROUTE_REMAIN_TIME");
             int segRemainDis = getInt(extras, "SEG_REMAIN_DIS");
+            
+            // [OPTIMIZATION] Deduplication
+            if (routeRemainDis == mLastRouteRemainDis && 
+                routeRemainTime == mLastRouteRemainTime && 
+                icon == mLastIcon &&
+                (nextRoadName == null ? mLastNextRoadName == null : nextRoadName.equals(mLastNextRoadName))) {
+                // Exact duplicate of critical info, SKIP processing
+                return;
+            }
+            
+            // Update Cache
+            mLastRouteRemainDis = routeRemainDis;
+            mLastRouteRemainTime = routeRemainTime;
+            mLastIcon = icon;
+            mLastNextRoadName = nextRoadName;
 
             if (mListener != null) {
                 cn.navitool.managers.NaviInfoManager.GuideInfo info = new cn.navitool.managers.NaviInfoManager.GuideInfo();
@@ -163,6 +271,9 @@ public class AmapMonitorManager {
                 info.routeRemainTime = routeRemainTime;
                 info.segRemainDis = segRemainDis;
                 info.etaText = extras.getString("ETA_TEXT"); // Parse ETA Text
+
+                // [STICKY] Update Cache
+                mCachedGuideInfo = info;
 
                 mListener.onGuideInfoUpdate(info);
             }

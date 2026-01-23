@@ -68,6 +68,7 @@ public class PresentationManager extends android.app.Dialog {
     private cn.navitool.view.TrafficLightView mHudTrafficLightView; // Floating HUD Style
 
     private NaviInfoManager.TrafficLightInfo mLatestTrafficLightInfo = null; // Track latest data
+    private NaviInfoManager.GuideInfo mLatestGuideInfo = null; // [FIX] Track latest Guide info for restoration
     
     // Generic Component Lists (For backward compatibility with existing generic logic if needed)
     private List<View> mRealHudComponents = new ArrayList<>();
@@ -445,7 +446,12 @@ public class PresentationManager extends android.app.Dialog {
                 if (mAudiRsLayout != null) {
                     final View target = mAudiRsLayout;
                     target.post(() -> {
-                        if (mThemeController != null) mThemeController.bindViews(target);
+                        if (mThemeController != null) {
+                            mThemeController.bindViews(target);
+                            // [FIX] Restore latest data to the new controller
+                            if (mLatestGuideInfo != null) mThemeController.updateGuideInfo(mLatestGuideInfo);
+                            if (mLatestTrafficLightInfo != null) mThemeController.updateTrafficLight(mLatestTrafficLightInfo);
+                        }
                     });
                 }
 
@@ -494,6 +500,7 @@ public class PresentationManager extends android.app.Dialog {
     // --- Unified Update Methods (No more instanceof checks) ---
 
     public void updateTrafficLight(TrafficLightInfo info) {
+        mLatestTrafficLightInfo = info; // [FIX] Cache for theme restoration
         updateFloatingTrafficLightLogic(info);
         if (mThemeController != null) mThemeController.updateTrafficLight(info);
         
@@ -502,6 +509,7 @@ public class PresentationManager extends android.app.Dialog {
     }
 
     public void updateGuideInfo(NaviInfoManager.GuideInfo info) {
+        mLatestGuideInfo = info; // [FIX] Cache for theme restoration
         if (mThemeController != null) mThemeController.updateGuideInfo(info);
         updateGuideInfoGeneric(mRealHudComponents, info);
     }
@@ -799,7 +807,8 @@ public class PresentationManager extends android.app.Dialog {
         if (info == null) return;
         
         // [FIX] Update Cache
-        mCachedNaviArrivalTime = NaviInfoManager.parseEta(info.etaText);
+        // Use standard HH:mm format
+        mCachedNaviArrivalTime = NaviInfoManager.calculateEta(info.routeRemainTime);
         if (info.routeRemainDis < 0) {
             mCachedNaviDistance = ""; // or specific placeholder
         } else if (info.routeRemainDis >= 1000) {

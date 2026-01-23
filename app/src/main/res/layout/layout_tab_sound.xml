@@ -147,15 +147,25 @@
                 android:orientation="horizontal"
                 android:baselineAligned="false">
                 
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingEnd="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingEnd="6dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundStart" />
                 </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="3dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorDriver" />
                 </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="6dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorDriverClose" />
                 </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:baselineAligned="false">
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginEnd="6dp" android:layout_marginVertical="8dp"/>
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginHorizontal="3dp" android:layout_marginVertical="8dp"/>
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginStart="6dp" android:layout_marginVertical="8dp"/>
             </LinearLayout>
 
             <!-- Row 2 -->
@@ -165,15 +175,25 @@
                 android:orientation="horizontal"
                 android:baselineAligned="false">
                 
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingEnd="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingEnd="6dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundGearD" />
                 </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="3dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorPassenger" />
                 </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="6dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorPassengerClose" />
                 </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:baselineAligned="false">
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginEnd="6dp" android:layout_marginVertical="8dp"/>
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginHorizontal="3dp" android:layout_marginVertical="8dp"/>
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginStart="6dp" android:layout_marginVertical="8dp"/>
             </LinearLayout>
 
             <!-- Row 3 -->
@@ -183,15 +203,25 @@
                 android:orientation="horizontal"
                 android:baselineAligned="false">
                 
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingEnd="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingEnd="6dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundGearN" />
                 </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="3dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorPassengerEmpty" />
                 </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="6dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorPassengerEmptyClose" />
                 </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:baselineAligned="false">
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginEnd="6dp" android:layout_marginVertical="8dp"/>
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginHorizontal="3dp" android:layout_marginVertical="8dp"/>
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginStart="6dp" android:layout_marginVertical="8dp"/>
             </LinearLayout>
 
             <!-- Row 4 -->
@@ -201,15 +231,25 @@
                 android:orientation="horizontal"
                 android:baselineAligned="false">
 
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingEnd="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingEnd="6dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundGearR" />
                 </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="3dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorRearLeft" />
                 </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="6dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorRearLeftClose" />
                 </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:baselineAligned="false">
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginEnd="6dp" android:layout_marginVertical="8dp"/>
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginHorizontal="3dp" android:layout_marginVertical="8dp"/>
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginStart="6dp" android:layout_marginVertical="8dp"/>
             </LinearLayout>
 
             <!-- Row 5 -->
@@ -219,15 +259,25 @@
                 android:orientation="horizontal"
                 android:baselineAligned="false">
 
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingEnd="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingEnd="6dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundGearP" />
                 </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="3dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorRearRight" />
                 </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="6dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorRearRightClose" />
                 </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:baselineAligned="false">
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginEnd="6dp" android:layout_marginVertical="8dp"/>
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginHorizontal="3dp" android:layout_marginVertical="8dp"/>
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginStart="6dp" android:layout_marginVertical="8dp"/>
             </LinearLayout>
 
             <!-- Row 6 -->
@@ -239,14 +289,24 @@
 
                 <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
                 
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="3dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorHood" />
                 </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="6dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorHoodClose" />
                 </LinearLayout>
             </LinearLayout>
             
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:baselineAligned="false">
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginEnd="6dp" android:layout_marginVertical="8dp"/>
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginHorizontal="3dp" android:layout_marginVertical="8dp"/>
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginStart="6dp" android:layout_marginVertical="8dp"/>
+            </LinearLayout>
+
             <!-- Row 7 -->
             <LinearLayout
                 android:layout_width="match_parent"
@@ -256,10 +316,10 @@
 
                 <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
 
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="3dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorTrunk" />
                 </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="2dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="6dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorTrunkClose" />
                 </LinearLayout>
             </LinearLayout>

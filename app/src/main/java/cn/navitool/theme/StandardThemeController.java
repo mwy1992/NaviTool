@@ -105,12 +105,17 @@ public class StandardThemeController extends BaseThemeController {
         }
         
         // Initial Reset
-        updateSpeed(0);
-        updateRpm(0);
-        // BaseThemeController handles gear update if set, but we might want to ensure default P
-        // BaseThemeController handles gear update if set, but we might want to ensure default P
+        // [FIX] Do NOT set text to "0" or "P" by default (User Request).
+        // Using explicit rotation init instead of updateXXX(0) which sets text.
+        if (mPointerLeft != null) mPointerLeft.setRotation(SPEED_START_ANGLE);
+        if (mPointerRight != null) mPointerRight.setRotation(RPM_START_ANGLE);
+
+        // updateSpeed(0);
+        // updateRpm(0);
+        
+        // [FIX] Restore Gear Sync: Fetch latest gear from Manager so we don't show stale "P"
         String currentGear = cn.navitool.managers.ClusterHudManager.getInstance(rootView.getContext()).getCurrentDisplayGear();
-        setGear(currentGear); 
+        setGear(currentGear);
 
         // Init Animators
         // Init Animators

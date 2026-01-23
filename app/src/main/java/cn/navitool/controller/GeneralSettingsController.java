@@ -340,49 +340,5 @@ public class GeneralSettingsController {
             }
         });
     }
-    public void updateAutoModeStatus(int mode) {
-        TextView tvAutoModeStatus = mLayoutGeneral.findViewById(R.id.tvAutoModeStatus);
-        ImageView imgAutoModeIcon = mLayoutGeneral.findViewById(R.id.imgAutoModeIcon);
 
-        if (tvAutoModeStatus == null)
-            return;
-
-        String modeStr;
-        int iconRes;
-        switch (mode) {
-            case 0x20150103:
-                modeStr = mActivity.getString(R.string.mode_auto);
-                iconRes = R.drawable.ic_daymode_auto;
-                break;
-            case 0x20150101:
-                modeStr = mActivity.getString(R.string.mode_day);
-                iconRes = R.drawable.ic_daymode_light;
-                break;
-            case 0x20150102:
-                modeStr = mActivity.getString(R.string.mode_night);
-                iconRes = R.drawable.ic_daymode_dark;
-                break;
-            case 0x20150104:
-                modeStr = mActivity.getString(R.string.mode_custom);
-                iconRes = R.drawable.ic_daymode_auto;
-                break;
-            case 0x20150105:
-                modeStr = mActivity.getString(R.string.mode_sunrise_sunset);
-                iconRes = R.drawable.ic_daymode_time;
-                break;
-            default:
-                modeStr = mActivity.getString(R.string.mode_unknown);
-                iconRes = R.drawable.ic_close;
-                break;
-        }
-        tvAutoModeStatus.setText(mActivity.getString(R.string.status_auto_mode, modeStr));
-        if (imgAutoModeIcon != null) {
-            imgAutoModeIcon.setImageResource(iconRes);
-            if (iconRes == R.drawable.ic_close) {
-                 imgAutoModeIcon.setColorFilter(android.graphics.Color.parseColor("#F44336"));
-            } else {
-                 imgAutoModeIcon.clearColorFilter();
-            }
-        }
-    }
 }

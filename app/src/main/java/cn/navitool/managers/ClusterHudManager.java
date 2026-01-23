@@ -73,12 +73,9 @@ public class ClusterHudManager
     private boolean mCachedIsPlaying = false;
 
     // Bug 2 Fix: Independent timeout for navigation info
-    private static final long NAVI_INFO_TIMEOUT_MS = 5000;
-    private final Runnable mNaviInfoTimeoutRunnable = () -> {
-        if (mPresentationManager != null) {
-            mPresentationManager.resetNaviInfo();
-        }
-    };
+    // [FIX] Removed Timeout Logic to prevent hiding static data
+    // private static final long NAVI_INFO_TIMEOUT_MS = 5000;
+    // private final Runnable mNaviInfoTimeoutRunnable ... removed
     // [FIX] Initialize to -999 (No Data) instead of 0 (P) or -1 (M)
     // to prevent any default gear display before real data arrives.
     private int mCachedGear = -999; 
@@ -94,8 +91,9 @@ public class ClusterHudManager
     private boolean mSimulatedGearEnabled = false;
     // private float mCachedRpm = 0f; // Moved up
 
-    private List<HudComponentData> mCachedHudComponents;
-    private List<HudComponentData> mCachedClusterComponents;
+    // [OPTIMIZATION] Use LinkedHashMap for O(1) Lookup + Ordered Iteration (Z-Order)
+    private java.util.LinkedHashMap<String, HudComponentData> mCachedHudComponents;
+    private java.util.LinkedHashMap<String, HudComponentData> mCachedClusterComponents;
     private Object mDimMenuInteraction; // IDimMenuInteraction via Reflection
     private Integer mPendingNaviMode = null; // [FIX] Pending NaviMode for Race Condition
     
@@ -111,9 +109,9 @@ public class ClusterHudManager
     private static final int FUNC_RIGHT_TRUN_SIGNAL = 553980416;
     private static final int FUNC_AUTOHOLD_STATUS = 33661;
     
-    // [Refactor] Sensor Constants Removed - Logic moved to VehicleSensorManager
-    
+    // [OPTIMIZATION] Shared Handler to reduce allocation
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
+    public Handler getSharedHandler() { return mMainHandler; }
 
     // [FIX] Traffic Light Timeout - Auto-clear traffic light UI only
     // Note: Navigation state is now managed solely by onNaviStatusUpdate(state==2)
@@ -125,14 +123,16 @@ public class ClusterHudManager
             if (mPresentationManager != null) {
                 mPresentationManager.resetTrafficLights();
             }
-            // [REMOVED] No longer changes navigation state here
-            // Navigation state is controlled by onNaviStatusUpdate(state==2)
         }
     };
+    
+
+    
+    // [FIX] Navi Info Timeout - Logic moved/removed, clearing duplicates
+    // private static final long NAVI_INFO_TIMEOUT_MS = 3000;
+    // private final Runnable mNaviInfoTimeoutRunnable ... removed (redundant)
 
     // [New] Allow MainActivity to inject a "Better" Context (Activity Context)
-    // This allows the manager to upgrade from a Service Context to an Activity
-    // Context
     public void updateContext(Context context) {
         this.mContext = context;
         DebugLogger.i(TAG, "ClusterHudManager Context updated to: " + context.getClass().getName());
@@ -146,8 +146,8 @@ public class ClusterHudManager
         MemoryMonitor.logMemory("ClusterHudManager.Init-Start");
 
         // [HUD FIX] 初始化缓存列表，避免 "Cache not ready" 错误
-        this.mCachedHudComponents = new ArrayList<>();
-        this.mCachedClusterComponents = new ArrayList<>();
+        this.mCachedHudComponents = new java.util.LinkedHashMap<>();
+        this.mCachedClusterComponents = new java.util.LinkedHashMap<>();
 
         // [Self-Init] Load all saved configurations immediately
         // [Self-Init] Load all saved configurations immediately
@@ -275,9 +275,10 @@ public class ClusterHudManager
 
     public List<HudComponentData> getLayoutData(String type) {
         if ("cluster".equals(type)) {
-            return mCachedClusterComponents;
+            // [OPTIMIZATION] Convert Map values to List
+            return new ArrayList<>(mCachedClusterComponents.values());
         } else if ("hud".equals(type)) {
-            return mCachedHudComponents;
+            return new ArrayList<>(mCachedHudComponents.values());
         }
         return null;
     }
@@ -506,7 +507,7 @@ public class ClusterHudManager
     public android.graphics.Bitmap getTurnSignalBitmap(boolean left, boolean right) {
         float scale = 1.0f;
         if (mCachedHudComponents != null) {
-            for (HudComponentData data : mCachedHudComponents) {
+            for (HudComponentData data : mCachedHudComponents.values()) {
                 if ("turn_signal".equals(data.type)) {
                     scale = data.scale;
                     break;
@@ -1031,7 +1032,7 @@ public class ClusterHudManager
         if (mListener != null && mCachedHudComponents != null) {
             // Immediately sync current state to the new listener (fixes Resume Sync issue)
             synchronized (this) {
-                for (HudComponentData data : mCachedHudComponents) {
+                for (HudComponentData data : mCachedHudComponents.values()) {
                     new Handler(Looper.getMainLooper()).post(() -> {
                         if (mListener != null) {
                             mListener.onHudDataChanged(data.type, data.text, data.image);
@@ -1098,54 +1099,43 @@ public class ClusterHudManager
             return;
         }
 
-        boolean changed = false;
+        HudComponentData data = null;
+        boolean found = false;
 
         synchronized (this) {
-            if (mCachedHudComponents == null && mCachedClusterComponents == null)
-                return;
-
+            // [OPTIMIZATION] O(1) Lookup
             if (mCachedHudComponents != null) {
-                for (HudComponentData data : mCachedHudComponents) {
-                    if (type.equals(data.type)) {
-                        if (newText != null && !newText.equals(data.text)) {
-                            data.text = newText;
-                            changed = true;
-                        }
-                        if (newImage != null) {
-                            data.image = newImage;
-                            changed = true;
-                        }
-                    }
+                HudComponentData hudData = mCachedHudComponents.get(type);
+                if (hudData != null) {
+                    if (newText != null) hudData.text = newText;
+                    if (newImage != null) hudData.image = newImage;
+                    found = true;
                 }
             }
 
             if (mCachedClusterComponents != null) {
-                for (HudComponentData data : mCachedClusterComponents) {
-                    if (type.equals(data.type)) {
-                        if (newText != null && !newText.equals(data.text)) {
-                            data.text = newText;
-                            changed = true;
-                        }
-                        if (newImage != null) {
-                            data.image = newImage;
-                            changed = true;
-                        }
-                    }
+                HudComponentData clusterData = mCachedClusterComponents.get(type);
+                if (clusterData != null) {
+                    if (newText != null) clusterData.text = newText;
+                    if (newImage != null) clusterData.image = newImage;
+                    found = true;
                 }
             }
         }
 
-        if (changed) {
-            new Handler(Looper.getMainLooper()).post(() -> {
+        if (found) {
+            final String fText = newText;
+            final android.graphics.Bitmap fImage = newImage;
+             mMainHandler.post(() -> {
                 // Efficient Update: directly update view property instead of full rebuild
                 if (mPresentationManager != null) {
-                    mPresentationManager.updateComponent(type, newText, newImage);
+                    mPresentationManager.updateComponent(type, fText, fImage);
                 } else {
                     // Fallback if presentation isn't ready
                 }
 
                 if (mListener != null) {
-                    mListener.onHudDataChanged(type, newText, newImage);
+                    mListener.onHudDataChanged(type, fText, fImage);
                 }
             });
         }
@@ -1238,6 +1228,19 @@ public class ClusterHudManager
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to request re-broadcast", e);
         }
+
+        // [OPTIMIZATION] Retry sync after 2 seconds to catch Service/Player startup lag
+        mMainHandler.postDelayed(() -> {
+            try {
+                android.content.Intent requestIntent = new android.content.Intent(
+                        "cn.navitool.ACTION_REQUEST_MEDIA_REBROADCAST");
+                requestIntent.setPackage(mContext.getPackageName());
+                mContext.sendBroadcast(requestIntent);
+                DebugLogger.i(TAG, "Sent Retry Media Sync Request (2s delay)");
+            } catch (Exception e) {
+                // Ignore
+            }
+        }, 2000);
     }
 
     // Broadcast Receiver
@@ -1681,7 +1684,10 @@ public class ClusterHudManager
                 }
 
                 if (!syncList.isEmpty()) {
-                    mCachedHudComponents = syncList;
+                    mCachedHudComponents.clear();
+                    for (HudComponentData data : syncList) {
+                        mCachedHudComponents.put(data.type, data);
+                    }
                     DebugLogger.i(TAG, "forceActivate: Loaded " + syncList.size() + " HUD components from config");
                 }
             } else {
@@ -1887,6 +1893,7 @@ public class ClusterHudManager
 
                 // Instantiate as Presentation (Requires Display - handled by Context now)
                 mPresentationManager = new PresentationManager(themeContext);
+                mCurrentAppliedTheme = -1; // [FIX] Reset state so theme is re-applied to new instance
                 DebugLogger.d(TAG, "showPresentationManager: [Step 4] Presentation Object Created (Type: APPLICATION_OVERLAY)");
 
                 // Logging for verification
@@ -1900,12 +1907,12 @@ public class ClusterHudManager
                         mPresentationManager.enableClusterDashboard();
                         DebugLogger.d(TAG, "Restored Dashboard Mode on show");
                     } else if (mCachedClusterComponents != null) {
-                        mPresentationManager.syncClusterLayout(mCachedClusterComponents);
+                        mPresentationManager.syncClusterLayout(new java.util.ArrayList<>(mCachedClusterComponents.values()));
                         DebugLogger.d(TAG, "Applied cached Cluster components on show");
                     }
 
                     if (mCachedHudComponents != null) {
-                        mPresentationManager.syncHudLayout(mCachedHudComponents);
+                        mPresentationManager.syncHudLayout(new java.util.ArrayList<>(mCachedHudComponents.values()));
                         DebugLogger.d(TAG, "Applied cached HUD components on show");
                     }
 
@@ -1913,10 +1920,10 @@ public class ClusterHudManager
                     mPresentationManager.setClusterTheme(mPendingTheme);
                     DebugLogger.d(TAG, "Applied pending theme on show: " + mPendingTheme);
 
-                    // [FIX Cold Boot] Apply cached gear value
+                    // [FIX Cold Boot] Apply cached gear value (Use String with Simulation Logic)
                     if (mCachedGear != -1) {
-                        mPresentationManager.updateGear(mCachedGear);
-                        DebugLogger.d(TAG, "Applied cached gear on show: " + mCachedGear);
+                        mPresentationManager.updateGear(getCurrentDisplayGear());
+                        DebugLogger.d(TAG, "Applied cached gear on show: " + getCurrentDisplayGear() + " (Raw: " + mCachedGear + ")");
                     }
 
                     // [FIX Cold Boot] Apply cached sensor values
@@ -2034,117 +2041,71 @@ public class ClusterHudManager
         if (components == null)
             return;
         synchronized (this) {
-            // Merge Fix: Preserve existing images if new data has null image
-            // This fixes the "Placeholder on Drag" bug where Sync sends no image data.
-            if (mCachedHudComponents != null) {
-                for (HudComponentData newData : components) {
-                    // Force Internal Consistency for Dynamic Components
-                    if ("volume".equals(newData.type)) {
-                        newData.image = getVolumeBitmap(mCurrentVolume);
-                        newData.text = String.valueOf(mCurrentVolume);
-                    } else if ("turn_signal".equals(newData.type)) {
-                        newData.image = getTurnSignalBitmap(mLeftTurnOn, mRightTurnOn);
-                        newData.text = "L:" + mLeftTurnOn + ",R:" + mRightTurnOn;
-                    } else if ("auto_hold".equals(newData.type)) {
-                        newData.image = getAutoHoldBitmap(mIsAutoHoldOn);
-                    } else if ("gear".equals(newData.type)) {
-                        // [FIX] Backfill current gear (Sync Logic - Existing Data)
-                        newData.text = getGearString(mCachedGear);
-                    } else if ("song_2line".equals(newData.type)) {
-                        // [FIX] Backfill Music Title/Artist
-                        if (mCachedSongTitle != null) {
-                            String display = mCachedSongTitle;
-                            if (mCachedSongArtist != null && !mCachedSongArtist.isEmpty()) {
-                                display = mCachedSongTitle + "\n" + mCachedSongArtist;
-                            }
-                            newData.text = display;
+            // [OPTIMIZATION] Efficient Map Sync (O(N) instead of O(N^2))
+            
+            for (HudComponentData newData : components) {
+                // Force Internal Consistency for Dynamic Components
+                if ("volume".equals(newData.type)) {
+                    newData.image = getVolumeBitmap(mCurrentVolume);
+                    newData.text = String.valueOf(mCurrentVolume);
+                } else if ("turn_signal".equals(newData.type)) {
+                    newData.image = getTurnSignalBitmap(mLeftTurnOn, mRightTurnOn);
+                    newData.text = "L:" + mLeftTurnOn + ",R:" + mRightTurnOn;
+                } else if ("auto_hold".equals(newData.type)) {
+                    newData.image = getAutoHoldBitmap(mIsAutoHoldOn);
+                } else if ("gear".equals(newData.type)) {
+                    // [FIX] Backfill current gear (Sync Logic - Existing Data)
+                    newData.text = getGearString(mCachedGear);
+                } else if ("song_2line".equals(newData.type)) {
+                    // [FIX] Backfill Music Title/Artist
+                    if (mCachedSongTitle != null) {
+                        String display = mCachedSongTitle;
+                        if (mCachedSongArtist != null && !mCachedSongArtist.isEmpty()) {
+                            display = mCachedSongTitle + "\n" + mCachedSongArtist;
                         }
-                    } else if ("song_1line".equals(newData.type)) {
-                        // [FIX] Backfill Music Title Only
-                        if (mCachedSongTitle != null) {
-                            newData.text = mCachedSongTitle;
-                        }
-                    } else if ("song_cover".equals(newData.type)) {
-                        // [FIX] Backfill Cover Art
-                        if (mCachedCoverArt != null) {
-                            newData.image = mCachedCoverArt;
-                        }
-                    } else if ("fuel".equals(newData.type)) {
-                        if (mCachedFuelText != null) newData.text = mCachedFuelText;
-                    } else if ("range".equals(newData.type)) {
-                        if (mCachedRangeText != null) newData.text = mCachedRangeText;
-                    } else if ("temp_out".equals(newData.type)) {
-                        if (mCachedTempOutText != null) newData.text = mCachedTempOutText;
-                    } else if ("temp_in".equals(newData.type)) {
-                        if (mCachedTempInText != null) newData.text = mCachedTempInText;
-                    } else if ("fuel_range".equals(newData.type)) {
-                        newData.text = String.format("⛽ %.0fL|%.0fKM", mCachedFuelLiters, mCachedRangeKm);
-                    } else if ("hud_rpm".equals(newData.type)) {
-                        // [FIX] Backfill RPM with cached value
-                        newData.text = String.format(Locale.getDefault(), "%.0fRPM", mCachedRpm);
-                    } else {
-                        // Standard Merge
-                        for (HudComponentData oldData : mCachedHudComponents) {
-                            if (oldData.type.equals(newData.type)) {
-                                if (newData.image == null && oldData.image != null) {
-                                    newData.image = oldData.image;
-                                    DebugLogger.d(TAG, "Restored image for " + newData.type + " during sync");
-                                }
-                                break;
-                            }
-                        }
+                        newData.text = display;
                     }
+                } else if ("song_1line".equals(newData.type)) {
+                    // [FIX] Backfill Music Title Only
+                    if (mCachedSongTitle != null) {
+                        newData.text = mCachedSongTitle;
+                    }
+                } else if ("song_cover".equals(newData.type)) {
+                    // [FIX] Backfill Cover Art
+                    if (mCachedCoverArt != null) {
+                        newData.image = mCachedCoverArt;
+                    }
+                } else if ("fuel".equals(newData.type)) {
+                    if (mCachedFuelText != null) newData.text = mCachedFuelText;
+                } else if ("range".equals(newData.type)) {
+                    if (mCachedRangeText != null) newData.text = mCachedRangeText;
+                } else if ("temp_out".equals(newData.type)) {
+                    if (mCachedTempOutText != null) newData.text = mCachedTempOutText;
+                } else if ("temp_in".equals(newData.type)) {
+                    if (mCachedTempInText != null) newData.text = mCachedTempInText;
+                } else if ("fuel_range".equals(newData.type)) {
+                    newData.text = String.format("⛽ %.0fL|%.0fKM", mCachedFuelLiters, mCachedRangeKm);
+                } else if ("hud_rpm".equals(newData.type)) {
+                    // [FIX] Backfill RPM with cached value
+                    newData.text = String.format(Locale.getDefault(), "%.0fRPM", mCachedRpm);
                 }
-            } else {
-                // First Sync: Still force consistency
-                for (HudComponentData newData : components) {
-                    if ("volume".equals(newData.type)) {
-                        newData.image = getVolumeBitmap(mCurrentVolume);
-                        newData.text = String.valueOf(mCurrentVolume);
-                    } else if ("turn_signal".equals(newData.type)) {
-                        newData.image = getTurnSignalBitmap(mLeftTurnOn, mRightTurnOn);
-                        newData.text = "L:" + mLeftTurnOn + ",R:" + mRightTurnOn;
-                    } else if ("auto_hold".equals(newData.type)) {
-                        newData.image = getAutoHoldBitmap(mIsAutoHoldOn);
-                    } else if ("gear".equals(newData.type)) {
-                        // [FIX] Backfill current gear to prevent overwrite by default "D"
-                        // This ensures that when opening the HUD Editor, the current real (or simulated) gear
-                        // is displayed instead of the default placeholder.
-                        newData.text = getGearString(mCachedGear);
-                    } else if ("song_2line".equals(newData.type)) {
-                        // [FIX] Backfill Music Title/Artist (First Sync)
-                        if (mCachedSongTitle != null) {
-                            String display = mCachedSongTitle;
-                            if (mCachedSongArtist != null && !mCachedSongArtist.isEmpty()) {
-                                display = mCachedSongTitle + "\n" + mCachedSongArtist;
-                            }
-                            newData.text = display;
-                        }
-                    } else if ("song_1line".equals(newData.type)) {
-                        // [FIX] Backfill Music Title Only
-                        if (mCachedSongTitle != null) {
-                            newData.text = mCachedSongTitle;
-                        }
-                    } else if ("song_cover".equals(newData.type)) {
-                        // [FIX] Backfill Cover Art
-                        if (mCachedCoverArt != null) {
-                            newData.image = mCachedCoverArt;
-                        }
-                    } else if ("fuel".equals(newData.type)) {
-                        if (mCachedFuelText != null) newData.text = mCachedFuelText;
-                    } else if ("range".equals(newData.type)) {
-                        if (mCachedRangeText != null) newData.text = mCachedRangeText;
-                    } else if ("temp_out".equals(newData.type)) {
-                        if (mCachedTempOutText != null) newData.text = mCachedTempOutText;
-                    } else if ("temp_in".equals(newData.type)) {
-                        if (mCachedTempInText != null) newData.text = mCachedTempInText;
-                    } else if ("fuel_range".equals(newData.type)) {
-                        newData.text = String.format("⛽ %.0fL|%.0fKM", mCachedFuelLiters, mCachedRangeKm);
+
+                // Preserve Image Logic (O(1) Lookup)
+                if (newData.image == null) {
+                    HudComponentData oldData = mCachedHudComponents.get(newData.type);
+                    if (oldData != null && oldData.image != null) {
+                        newData.image = oldData.image;
+                        DebugLogger.d(TAG, "Restored image for " + newData.type + " during sync");
                     }
                 }
             }
 
-            mCachedHudComponents = new ArrayList<>(components);
+            // Rebuild Map
+            mCachedHudComponents.clear();
+            for (HudComponentData data : components) {
+                mCachedHudComponents.put(data.type, data);
+            }
+
             applyMediaPersistence(); // Apply saved media state over defaults
 
             // Logic Fix: Apply Pending Media (from Startup Race Condition)
@@ -2186,16 +2147,16 @@ public class ClusterHudManager
             }
         }
         if (mPresentationManager != null) {
-            mPresentationManager.syncHudLayout(mCachedHudComponents);
+            // [Fix] Convert Map values to List
+            mPresentationManager.syncHudLayout(new ArrayList<>(mCachedHudComponents.values()));
             // Force update turn_signal with current real sensor state (hiding placeholder)
             updateTurnSignal();
         }
 
         // Notify Listener (MainActivity Preview) of the full sync (Logic Fix for
         // Preview Persistence)
-        // [BUG 5 FIX] 批量更新，避免为每个组件创建新 Handler 导致卡顿
         if (mListener != null) {
-            final java.util.List<HudComponentData> snapshot = new java.util.ArrayList<>(mCachedHudComponents);
+            final java.util.List<HudComponentData> snapshot = new java.util.ArrayList<>(mCachedHudComponents.values());
             mBlinkHandler.post(() -> {
                 if (mListener != null) {
                     for (HudComponentData data : snapshot) {
@@ -2212,7 +2173,7 @@ public class ClusterHudManager
         if (mListener != null && mCachedHudComponents != null) {
             DebugLogger.d(TAG,
                     "forceNotifyListener: Pushing " + mCachedHudComponents.size() + " components to listener");
-            final java.util.List<HudComponentData> snapshot = new java.util.ArrayList<>(mCachedHudComponents);
+            final java.util.List<HudComponentData> snapshot = new java.util.ArrayList<>(mCachedHudComponents.values());
             mMainHandler.post(() -> {
                 if (mListener != null) {
                     for (HudComponentData data : snapshot) {
@@ -2228,17 +2189,22 @@ public class ClusterHudManager
             return;
         synchronized (this) {
             mIsDashboardMode = false; // Switch to List Mode
-            mCachedClusterComponents = new ArrayList<>(components);
+            mCachedClusterComponents.clear(); // [FIX] Clear map
+            for (HudComponentData data : components) {
+                mCachedClusterComponents.put(data.type, data);
+            }
         }
         if (mPresentationManager != null) {
-            mPresentationManager.syncClusterLayout(mCachedClusterComponents);
+            // [Fix] Convert values to List
+            mPresentationManager.syncClusterLayout(new ArrayList<>(mCachedClusterComponents.values()));
             updateTurnSignal(); // Force update
         }
     }
 
     public List<HudComponentData> getCachedHudComponents() {
         synchronized (this) {
-            return mCachedHudComponents != null ? new ArrayList<>(mCachedHudComponents) : null;
+             // [Optimization] Return list from map values
+            return mCachedHudComponents != null ? new ArrayList<>(mCachedHudComponents.values()) : null;
         }
     }
 
@@ -2256,9 +2222,9 @@ public class ClusterHudManager
     }
 
     public void onGuideInfoUpdate(NaviInfoManager.GuideInfo info) {
-        // DebugLogger.d(TAG, "onGuideInfoUpdate: " + info.toString());
-        mMainHandler.removeCallbacks(mNaviInfoTimeoutRunnable);
-        mMainHandler.postDelayed(mNaviInfoTimeoutRunnable, NAVI_INFO_TIMEOUT_MS);
+        // [FIX] Removed Timeout Logic: Static data (e.g. at red light) was causing UI to hide
+        // because AmapMonitorManager deduplicates identical updates.
+        // Hiding should only happen on explicit navigation end.
         if (mPresentationManager != null) {
             mPresentationManager.updateGuideInfo(info);
         }
@@ -2741,7 +2707,10 @@ public class ClusterHudManager
             }
             
             if (!components.isEmpty()) {
-                mCachedHudComponents = new java.util.ArrayList<>(components);
+                mCachedHudComponents.clear();
+                for (HudComponentData data : components) {
+                     mCachedHudComponents.put(data.type, data);
+                }
                 DebugLogger.i(TAG, "loadHudLayoutFromDisk: Loaded " + components.size() + " components from disk");
             }
         } catch (org.json.JSONException e) {

@@ -153,14 +153,23 @@ public class VehicleSensorManager {
     // --- 单例获取 ---
     public static synchronized VehicleSensorManager getInstance(Context context) {
         if (sInstance == null) {
-            sInstance = new VehicleSensorManager(context.getApplicationContext());
+            sInstance = new VehicleSensorManager(context);
         }
         return sInstance;
     }
 
+    private synchronized SharedPreferences getPrefs() {
+        if (mPrefs == null) {
+            // Lazy load on main thread if not yet ready (fallback), though usually init() handles it
+            mPrefs = mContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        }
+        return mPrefs;
+    }
+
     private VehicleSensorManager(Context context) {
         mContext = context;
-        mPrefs = mContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        // [OPTIMIZATION] Move SharedPreferences init to background thread in init()
+        // mPrefs = mContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
     }
 
     // --- 初始化 ---
@@ -169,6 +178,12 @@ public class VehicleSensorManager {
             DebugLogger.d(TAG, "Already initialized");
             return;
         }
+
+        // [OPTIMIZATION] Async Init implementation
+        new Thread(() -> {
+            mPrefs = mContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+            DebugLogger.i(TAG, "SharedPreferences initialized asynchronously");
+        }).start();
 
         CarServiceManager.getInstance(mContext).registerListener(() -> {
             mSensor = CarServiceManager.getInstance(mContext).getSensor();
@@ -297,11 +312,12 @@ public class VehicleSensorManager {
      * Check if we need to reset trip data (e.g. after long parking > 4 hours)
      */
     private void checkTripReset() {
-        long lastOffTime = mPrefs.getLong(KEY_LAST_IGNITION_OFF, 0);
+        SharedPreferences prefs = getPrefs();
+        long lastOffTime = prefs.getLong(KEY_LAST_IGNITION_OFF, 0);
         long now = System.currentTimeMillis();
         
-        mStartOdo = mPrefs.getFloat(KEY_START_ODO, -1f);
-        mStartTime = mPrefs.getLong(KEY_START_TIME, 0);
+        mStartOdo = prefs.getFloat(KEY_START_ODO, -1f);
+        mStartTime = prefs.getLong(KEY_START_TIME, 0);
         
         boolean needReset = false;
         
@@ -315,7 +331,7 @@ public class VehicleSensorManager {
             DebugLogger.i(TAG, "Trip Data Reset Triggered (Soft Trip)");
             mStartOdo = -1f; 
             mStartTime = now;
-            mPrefs.edit()
+            prefs.edit()
                 .putFloat(KEY_START_ODO, -1f)
                 .putLong(KEY_START_TIME, now)
                 .apply();
@@ -334,7 +350,7 @@ public class VehicleSensorManager {
                     mIgnition = value;
                     DebugLogger.action(TAG, "点火状态变化: " + value);
                     if (value == ISensorEvent.IGNITION_STATE_OFF || value == ISensorEvent.IGNITION_STATE_ACC) {
-                         mPrefs.edit().putLong(KEY_LAST_IGNITION_OFF, System.currentTimeMillis()).apply();
+                         getPrefs().edit().putLong(KEY_LAST_IGNITION_OFF, System.currentTimeMillis()).apply();
                     } else if (value == ISensorEvent.IGNITION_STATE_DRIVING || value == ISensorEvent.IGNITION_STATE_ON) {
                          checkTripReset();
                     }
@@ -358,8 +374,10 @@ public class VehicleSensorManager {
             case SENSOR_TYPE_SEAT_OCCUPIED:
                 // 2110210 = Occupied, 2110209 = Empty
                 boolean occupied = (value == 2110210);
-                mSeatOccupied = occupied;
-                notifySeatOccupiedChanged(occupied);
+                if (mSeatOccupied != occupied) {
+                    mSeatOccupied = occupied;
+                    notifySeatOccupiedChanged(occupied);
+                }
                 break;
         }
     }
@@ -383,13 +401,13 @@ public class VehicleSensorManager {
                 break;
             case SENSOR_TYPE_DIM_CAR_SPEED:
                 float dimSpeedKmh = value * 3.6f;
-                if (Math.abs(mSpeed - dimSpeedKmh) > 0.5f) {
+                if (Math.abs(mSpeed - dimSpeedKmh) > 0.01f) {
                     mSpeed = dimSpeedKmh;
                     notifySpeedChanged(dimSpeedKmh);
                 }
                 break;
             case SENSOR_TYPE_RPM:
-                if (Math.abs(mRpm - value) > 10) {
+                if (Math.abs(mRpm - value) > 1.0f) { // RPM can fluctuate slightly, 1.0 is safe
                     mRpm = value;
                     notifyRpmChanged(value);
                 }
@@ -401,59 +419,84 @@ public class VehicleSensorManager {
                 } else {
                      fuelL = value;
                 }
-                mFuel = fuelL;
-                notifyFuelChanged(mFuel, mFuelPercent);
+                if (Math.abs(mFuel - fuelL) > 0.1f) {
+                    mFuel = fuelL;
+                    notifyFuelChanged(mFuel, mFuelPercent);
+                }
                 break;
             case SENSOR_TYPE_FUEL_PERCENT:
-                mFuelPercent = value;
-                notifyFuelChanged(mFuel, mFuelPercent);
+                if (Math.abs(mFuelPercent - value) > 0.5f) {
+                    mFuelPercent = value;
+                    notifyFuelChanged(mFuel, mFuelPercent);
+                }
                 break;
             case SENSOR_TYPE_FUEL_CONSUMPTION_INS:
-                mFuelIns = value;
-                notifyFuelConsumptionChanged(mFuelIns, mFuelAvg);
+                if (Math.abs(mFuelIns - value) > 0.1f) {
+                    mFuelIns = value;
+                    notifyFuelConsumptionChanged(mFuelIns, mFuelAvg);
+                }
                 break;
             case SENSOR_TYPE_FUEL_CONSUMPTION_AVG:
-                mFuelAvg = value;
-                notifyFuelConsumptionChanged(mFuelIns, mFuelAvg);
+                if (Math.abs(mFuelAvg - value) > 0.1f) {
+                    mFuelAvg = value;
+                    notifyFuelConsumptionChanged(mFuelIns, mFuelAvg);
+                }
                 break;
             case SENSOR_TYPE_TEMP_INDOOR:
-                mTempIndoor = value;
-                notifyTemperatureChanged(mTempIndoor, mTempOutdoor);
+                if (Math.abs(mTempIndoor - value) > 0.5f) {
+                    mTempIndoor = value;
+                    notifyTemperatureChanged(mTempIndoor, mTempOutdoor);
+                }
                 break;
             case SENSOR_TYPE_TEMP_OUTDOOR:
-                mTempOutdoor = value;
-                notifyTemperatureChanged(mTempIndoor, mTempOutdoor);
+                if (Math.abs(mTempOutdoor - value) > 0.5f) {
+                    mTempOutdoor = value;
+                    notifyTemperatureChanged(mTempIndoor, mTempOutdoor);
+                }
                 break;
             case SENSOR_TYPE_RANGE:
-                mRange = value;
-                notifyRangeChanged(value);
+                if (Math.abs(mRange - value) > 1.0f) {
+                    mRange = value;
+                    notifyRangeChanged(value);
+                }
                 break;
             case SENSOR_TYPE_ODOMETER:
-                mOdometer = value;
-                notifyOdometerChanged(value);
-                updateSoftTripDistance(value);
+                if (Math.abs(mOdometer - value) > 0.1f) {
+                    mOdometer = value;
+                    notifyOdometerChanged(value);
+                    updateSoftTripDistance(value);
+                }
                 break;
             case SENSOR_TYPE_LIGHT:
-                mLight = value;
-                notifyLightChanged(value);
+                 if (Math.abs(mLight - value) > 1.0f) {
+                    mLight = value;
+                    notifyLightChanged(value);
+                 }
                 break;
 
-            // TPMS Logic
-            case SENSOR_TYPE_TIRE_PRESSURE_FL: mTirePressure[0] = value; notifyTireDataChanged(0); break;
-            case SENSOR_TYPE_TIRE_PRESSURE_FR: mTirePressure[1] = value; notifyTireDataChanged(1); break;
-            case SENSOR_TYPE_TIRE_PRESSURE_RL: mTirePressure[2] = value; notifyTireDataChanged(2); break;
-            case SENSOR_TYPE_TIRE_PRESSURE_RR: mTirePressure[3] = value; notifyTireDataChanged(3); break;
-            case SENSOR_TYPE_TIRE_TEMP_FL: mTireTemp[0] = value; notifyTireDataChanged(0); break;
-            case SENSOR_TYPE_TIRE_TEMP_FR: mTireTemp[1] = value; notifyTireDataChanged(1); break;
-            case SENSOR_TYPE_TIRE_TEMP_RL: mTireTemp[2] = value; notifyTireDataChanged(2); break;
-            case SENSOR_TYPE_TIRE_TEMP_RR: mTireTemp[3] = value; notifyTireDataChanged(3); break;
+            // TPMS Logic - Use 0.1PSI / 1C threshold
+            case SENSOR_TYPE_TIRE_PRESSURE_FL: if(Math.abs(mTirePressure[0]-value)>0.1f){mTirePressure[0]=value; notifyTireDataChanged(0);} break;
+            case SENSOR_TYPE_TIRE_PRESSURE_FR: if(Math.abs(mTirePressure[1]-value)>0.1f){mTirePressure[1]=value; notifyTireDataChanged(1);} break;
+            case SENSOR_TYPE_TIRE_PRESSURE_RL: if(Math.abs(mTirePressure[2]-value)>0.1f){mTirePressure[2]=value; notifyTireDataChanged(2);} break;
+            case SENSOR_TYPE_TIRE_PRESSURE_RR: if(Math.abs(mTirePressure[3]-value)>0.1f){mTirePressure[3]=value; notifyTireDataChanged(3);} break;
+            case SENSOR_TYPE_TIRE_TEMP_FL: if(Math.abs(mTireTemp[0]-value)>1.0f){mTireTemp[0]=value; notifyTireDataChanged(0);} break;
+            case SENSOR_TYPE_TIRE_TEMP_FR: if(Math.abs(mTireTemp[1]-value)>1.0f){mTireTemp[1]=value; notifyTireDataChanged(1);} break;
+            case SENSOR_TYPE_TIRE_TEMP_RL: if(Math.abs(mTireTemp[2]-value)>1.0f){mTireTemp[2]=value; notifyTireDataChanged(2);} break;
+            case SENSOR_TYPE_TIRE_TEMP_RR: if(Math.abs(mTireTemp[3]-value)>1.0f){mTireTemp[3]=value; notifyTireDataChanged(3);} break;
         }
     }
 
     public void refreshAllValues() {
         if (mSensor == null) return;
         try {
-            mSpeed = mSensor.getSensorLatestValue(SENSOR_TYPE_SPEED) * 3.6f;
+            // [OPTIMIZATION] Apply same thresholds to refresh logic to keep state consistent?
+            // Actually refreshAllValues forces an update regardless of cache, usually for UI init.
+            // But we should update internal state.
+
+            float newSpeed = mSensor.getSensorLatestValue(SENSOR_TYPE_SPEED) * 3.6f;
+            // Force update on refresh
+            mSpeed = newSpeed; 
+            
             mRpm = mSensor.getSensorLatestValue(SENSOR_TYPE_RPM);
             
             float rawFuel = mSensor.getSensorLatestValue(SENSOR_TYPE_FUEL);
@@ -501,10 +544,12 @@ public class VehicleSensorManager {
     private void updateSoftTripDistance(float currentOdo) {
         if (currentOdo <= 0) return;
         
+        SharedPreferences prefs = getPrefs(); // Safe getter logic
+        
         if (mStartOdo < 0) {
             mStartOdo = currentOdo;
             mStartTime = System.currentTimeMillis();
-            mPrefs.edit()
+            prefs.edit()
                 .putFloat(KEY_START_ODO, mStartOdo)
                 .putLong(KEY_START_TIME, mStartTime)
                 .apply();

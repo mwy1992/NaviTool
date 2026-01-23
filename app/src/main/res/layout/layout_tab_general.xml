@@ -4,7 +4,7 @@
     android:id="@+id/layoutContentGeneral"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="4dp">
+    android:padding="12dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -27,9 +27,7 @@
                 android:layout_marginEnd="12dp"
                 android:minHeight="60dp"
                 android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:background="@drawable/bg_item_underline"
-                android:paddingHorizontal="12dp">
+                android:orientation="horizontal">
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -54,9 +52,7 @@
                 android:layout_marginStart="12dp"
                 android:minHeight="60dp"
                 android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:background="@drawable/bg_item_underline"
-                android:paddingHorizontal="12dp">
+                android:orientation="horizontal">
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -96,6 +92,15 @@
             </LinearLayout>
         </LinearLayout>
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:baselineAligned="false">
+            <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginEnd="12dp" android:layout_marginVertical="8dp"/>
+            <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginStart="12dp" android:layout_marginVertical="8dp"/>
+        </LinearLayout>
+
         <!-- Row 2 -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -113,9 +118,7 @@
                 android:layout_marginEnd="12dp"
                 android:minHeight="60dp"
                 android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:background="@drawable/bg_item_underline"
-                android:paddingHorizontal="12dp">
+                android:orientation="horizontal">
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -139,9 +142,7 @@
                 android:layout_marginStart="12dp"
                 android:minHeight="60dp"
                 android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:background="@drawable/bg_item_underline"
-                android:paddingHorizontal="12dp">
+                android:orientation="horizontal">
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -156,6 +157,15 @@
                     android:layout_height="wrap_content"
                     android:minWidth="120dp"/>
             </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:baselineAligned="false">
+            <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginEnd="12dp" android:layout_marginVertical="8dp"/>
+            <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginStart="12dp" android:layout_marginVertical="8dp"/>
         </LinearLayout>
 
         <!-- Row 3 -->
@@ -175,9 +185,7 @@
                 android:layout_marginEnd="12dp"
                 android:minHeight="60dp"
                 android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:background="@drawable/bg_item_underline"
-                android:paddingHorizontal="12dp">
+                android:orientation="horizontal">
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
@@ -208,9 +216,7 @@
                 android:layout_marginStart="12dp"
                 android:minHeight="60dp"
                 android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:background="@drawable/bg_item_underline"
-                android:paddingHorizontal="12dp">
+                android:orientation="horizontal">
                 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -252,6 +258,15 @@
                     android:layout_height="wrap_content"/>
             </LinearLayout>
         </LinearLayout>
+        
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:baselineAligned="false">
+            <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginEnd="12dp" android:layout_marginVertical="8dp"/>
+            <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" android:background="?android:attr/listDivider" android:layout_marginStart="12dp" android:layout_marginVertical="8dp"/>
+        </LinearLayout>
 
         <!-- Row 4 -->
         <LinearLayout
@@ -270,9 +285,7 @@
                 android:layout_marginEnd="12dp"
                 android:minHeight="60dp"
                 android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:background="@drawable/bg_item_underline"
-                android:paddingHorizontal="12dp">
+                android:orientation="horizontal">
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"

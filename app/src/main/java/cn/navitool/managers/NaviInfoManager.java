@@ -111,6 +111,8 @@ public class NaviInfoManager {
     public void bindNaviInfoViews(TextView distanceView, TextView etaView) {
         mDistanceView = distanceView;
         mEtaView = etaView;
+        // [FIX] Immediately retrieve data from internal cache if available
+        updateNaviViews();
     }
 
     /**
@@ -134,6 +136,9 @@ public class NaviInfoManager {
     /**
      * 更新导航数值 (Internal helper for views)
      */
+    /**
+     * 更新导航数值 (Internal helper for views)
+     */
     private void updateNaviViews() {
         if (mDistanceView != null) {
             String distText = formatDistance(mRouteRemainDis);
@@ -141,7 +146,9 @@ public class NaviInfoManager {
             mDistanceView.setVisibility(distText.isEmpty() ? View.GONE : View.VISIBLE);
         }
         if (mEtaView != null) {
-            String eta = parseEta(mEtaText);
+            // [OPTIMIZATION] Use Calculated ETA instead of parsing text
+            // String eta = parseEta(mEtaText); 
+            String eta = parseEta(mRouteRemainTime);
             String displayEta = eta.isEmpty() ? "" : "ETA " + eta;
             mEtaView.setText(displayEta);
             mEtaView.setVisibility(displayEta.isEmpty() ? View.GONE : View.VISIBLE);
@@ -169,23 +176,26 @@ public class NaviInfoManager {
     }
 
     /**
-     * Parse "预计00:12到达" to "00:12"
+     * Parse ETA using Time Calculation (Static Helper)
+     * Optimized: System Time + Remaining Seconds
      */
-    public static String parseEta(String rawText) {
-        if (rawText == null || rawText.isEmpty())
-            return "";
-
-        // Expected format: "预计HH:mm到达"
-        // Regex: Extract \d{2}:\d{2}
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile("(\\d{2}:\\d{2})");
-        java.util.regex.Matcher m = p.matcher(rawText);
-        if (m.find()) {
-            return m.group(1);
-        }
-
-        // Fallback: Return raw text if not matching or simpler logic needed
-        return rawText.replace("预计", "").replace("到达", "").trim();
+    public static String calculateEta(int remainingSeconds) {
+        if (remainingSeconds < 0) return "";
+        
+        long arrivalTime = System.currentTimeMillis() + (remainingSeconds * 1000L);
+        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault());
+        return sdf.format(new java.util.Date(arrivalTime));
     }
+
+    // Instance wrapper for compatibility if needed, or update call sites
+    public String parseEta(int remainingSeconds) {
+        return calculateEta(remainingSeconds);
+    }
+
+    /**
+     * Legacy Parse (Deprecated, kept for compatibility if needed or removed)
+     * public static String parseEta(String rawText) { ... }
+     */
 
     /**
      * 更新红绿灯状态
@@ -286,6 +296,14 @@ public class NaviInfoManager {
     // =================================================================================================
     // Inner Models (Consolidated from cn.navitool.models)
     // =================================================================================================
+
+    // Compatibility Method for Legacy Calls (e.g. from ThemeControllers)
+    public static String parseEta(String etaText) {
+        if (etaText == null || etaText.isEmpty()) {
+            return "";
+        }
+        return etaText; // Return raw text for compatibility
+    }
 
     /**
      * 红绿灯信息实体类

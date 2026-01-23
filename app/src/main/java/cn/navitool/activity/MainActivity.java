@@ -542,7 +542,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Speed comparison display receivers (for status page)
 
-        if (mGeneralSettingsController != null) mGeneralSettingsController.updateAutoModeStatus(0);
+        if (mHomeStatusController != null) mHomeStatusController.updateAutoModeStatus(0);
 
         // --- Auto-Initialize Cluster ---
         // Ensure Cluster Service starts even if tab is not visited
@@ -679,8 +679,8 @@ public class MainActivity extends AppCompatActivity {
         public void onReceive(Context context, Intent intent) {
             if ("cn.navitool.ACTION_DAY_NIGHT_STATUS".equals(intent.getAction())) {
                 int mode = intent.getIntExtra("mode", 0);
-                if (mGeneralSettingsController != null) {
-                    mGeneralSettingsController.updateAutoModeStatus(mode);
+                if (mHomeStatusController != null) {
+                    mHomeStatusController.updateAutoModeStatus(mode);
                 }
             }
         }

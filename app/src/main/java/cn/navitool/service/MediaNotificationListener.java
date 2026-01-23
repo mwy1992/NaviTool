@@ -218,7 +218,7 @@ public class MediaNotificationListener extends NotificationListenerService {
                 if (mWorkHandler != null) {
                     mWorkHandler.post(() -> {
                         if (mCurrentController != null) {
-                            extractMediaInfo(mCurrentController);
+                            extractMediaInfo(mCurrentController, true); // [FIX] Force update on request
                         } else {
                             // Try to refresh active sessions
                             initMediaSessionMonitoring();
@@ -271,6 +271,10 @@ public class MediaNotificationListener extends NotificationListenerService {
     private String mLastPackage = null;
 
     private void extractMediaInfo(MediaController controller) {
+        extractMediaInfo(controller, false);
+    }
+
+    private void extractMediaInfo(MediaController controller, boolean force) {
         if (controller == null)
             return;
 
@@ -343,7 +347,6 @@ public class MediaNotificationListener extends NotificationListenerService {
             // If Notification fallback exists, maybe get title from Notification too?
             // Notification.EXTRA_TITLE
             // For now, assume Metadata provides at least Title.
-            // For now, assume Metadata provides at least Title.
 
             // Fix for NetEase: Check if we are Playing but lack Title.
             boolean isPlayingCheck = false;
@@ -355,7 +358,7 @@ public class MediaNotificationListener extends NotificationListenerService {
                 if (mWorkHandler != null) {
                     mWorkHandler.postDelayed(() -> {
                         if (mCurrentController != null)
-                            extractMediaInfo(mCurrentController);
+                            extractMediaInfo(mCurrentController, force);
                     }, 1000);
                 }
             }
@@ -382,7 +385,9 @@ public class MediaNotificationListener extends NotificationListenerService {
         }
 
         boolean isArtChanged = false;
-        if (isPackageChanged) {
+        if (force) {
+            isArtChanged = true; // [FIX] Force update requested
+        } else if (isPackageChanged) {
             isArtChanged = true;
         } else {
             if (albumArt == null && mLastBitmap == null)
@@ -420,7 +425,7 @@ public class MediaNotificationListener extends NotificationListenerService {
         }
         intent.setPackage(getPackageName());
         sendBroadcast(intent);
-        DebugLogger.i(TAG, "Broadcast Update: " + title + " (Has Art: " + (albumArt != null) + ")");
+        DebugLogger.i(TAG, "Broadcast Update: " + title + " (Has Art: " + (albumArt != null) + ", Forced: " + force + ")");
 
     }
 }
