@@ -73,16 +73,25 @@ import cn.navitool.managers.SimulateGear;
 import cn.navitool.R;
 import cn.navitool.BuildConfig;
 
+import cn.navitool.controller.AutoStartController;
+import cn.navitool.controller.BrightnessSettingsController;
+import cn.navitool.controller.ButtonSettingsController;
+import cn.navitool.controller.ClusterSettingsController;
+import cn.navitool.controller.GeneralSettingsController;
+import cn.navitool.controller.HomeStatusController;
+import cn.navitool.controller.HudSettingsController;
+import cn.navitool.controller.SoundSettingsController;
+
 public class MainActivity extends AppCompatActivity {
 
-    private cn.navitool.activity.controller.AutoStartController mAutoStartController;
-    private cn.navitool.activity.controller.GeneralSettingsController mGeneralSettingsController;
-    private cn.navitool.activity.controller.SoundSettingsController mSoundSettingsController;
-    private cn.navitool.activity.controller.ClusterSettingsController mClusterSettingsController;
-    private cn.navitool.activity.controller.HudSettingsController mHudSettingsController;
-    private cn.navitool.activity.controller.BrightnessSettingsController mBrightnessSettingsController;
-    private cn.navitool.activity.controller.HomeStatusController mHomeStatusController;
-    private cn.navitool.activity.controller.ButtonSettingsController mButtonSettingsController;
+    private AutoStartController mAutoStartController;
+    private GeneralSettingsController mGeneralSettingsController;
+    private SoundSettingsController mSoundSettingsController;
+    private ClusterSettingsController mClusterSettingsController;
+    private HudSettingsController mHudSettingsController;
+    private BrightnessSettingsController mBrightnessSettingsController;
+    private HomeStatusController mHomeStatusController;
+    private ButtonSettingsController mButtonSettingsController;
 
     private static final int PERMISSION_REQUEST_CODE = 100;
     private boolean mIsPositioningActive = false; // Track traffic light positioning state
@@ -434,7 +443,7 @@ public class MainActivity extends AppCompatActivity {
         if (mLayoutGeneral == null) {
             View v = tryInflate(mLayoutGeneral, R.id.stubGeneral, R.id.layoutContentGeneral);
             mLayoutGeneral = v;
-            mGeneralSettingsController = new cn.navitool.activity.controller.GeneralSettingsController(this, mLayoutGeneral, mOverlayPermissionLauncher);
+            mGeneralSettingsController = new cn.navitool.controller.GeneralSettingsController(this, mLayoutGeneral, mOverlayPermissionLauncher);
             mGeneralSettingsController.setupGeneralSettings();
             // setupForceAutoDayNight(); 
             // setupForceAutoDayNight relies on toggle logic, kept in MainActivity for now or move?
@@ -457,7 +466,7 @@ public class MainActivity extends AppCompatActivity {
         if (mLayoutButtons == null) {
             View v = tryInflate(mLayoutButtons, R.id.stubButtons, R.id.layoutContentButtons);
             mLayoutButtons = v;
-            mButtonSettingsController = new cn.navitool.activity.controller.ButtonSettingsController(this, mLayoutButtons);
+            mButtonSettingsController = new cn.navitool.controller.ButtonSettingsController(this, mLayoutButtons);
             mButtonSettingsController.setupButtons();
 
             mIsButtonsInit = true;
@@ -470,7 +479,7 @@ public class MainActivity extends AppCompatActivity {
         if (mLayoutAutoStart == null) {
             View v = tryInflate(mLayoutAutoStart, R.id.stubAutoStart, R.id.layoutContentAutoStart);
             mLayoutAutoStart = v;
-            mAutoStartController = new cn.navitool.activity.controller.AutoStartController(this);
+            mAutoStartController = new cn.navitool.controller.AutoStartController(this);
             mAutoStartController.setupAutoStartApps();
             mIsAutoStartInit = true;
         }
@@ -480,7 +489,7 @@ public class MainActivity extends AppCompatActivity {
         if (mLayoutBrightness == null) {
             View v = tryInflate(mLayoutBrightness, R.id.stubBrightness, R.id.layoutContentBrightness);
             mLayoutBrightness = v;
-            mBrightnessSettingsController = new cn.navitool.activity.controller.BrightnessSettingsController(this, mLayoutBrightness);
+            mBrightnessSettingsController = new cn.navitool.controller.BrightnessSettingsController(this, mLayoutBrightness);
             mBrightnessSettingsController.setupBrightness();
             mIsBrightnessInit = true;
             // Update debug visibility for PSD test buttons (inside Brightness tab)
@@ -492,7 +501,7 @@ public class MainActivity extends AppCompatActivity {
         if (!mIsSoundInit) {
             mLayoutSound = tryInflate(mLayoutSound, R.id.stubSound, R.id.layoutContentSound);
             if (mLayoutSound != null) {
-                mSoundSettingsController = new cn.navitool.activity.controller.SoundSettingsController(this, mLayoutSound);
+                mSoundSettingsController = new cn.navitool.controller.SoundSettingsController(this, mLayoutSound);
                 mSoundSettingsController.setupSoundSwitches();
                 mIsSoundInit = true;
             }
@@ -503,7 +512,7 @@ public class MainActivity extends AppCompatActivity {
         if (mLayoutCluster == null) {
             View v = tryInflate(mLayoutCluster, R.id.stubCluster, R.id.layoutContentCluster);
             mLayoutCluster = v;
-            mClusterSettingsController = new cn.navitool.activity.controller.ClusterSettingsController(this, mLayoutCluster);
+            mClusterSettingsController = new cn.navitool.controller.ClusterSettingsController(this, mLayoutCluster);
             mClusterSettingsController.setupCluster();
             mIsClusterInit = true;
         }
@@ -513,7 +522,7 @@ public class MainActivity extends AppCompatActivity {
         if (mLayoutHud == null) {
             View v = tryInflate(mLayoutHud, R.id.stubHud, R.id.layoutContentHud);
             mLayoutHud = v;
-            mHudSettingsController = new cn.navitool.activity.controller.HudSettingsController(this, mLayoutHud);
+            mHudSettingsController = new cn.navitool.controller.HudSettingsController(this, mLayoutHud);
             mHudSettingsController.setupHud();
             mHudSettingsController.onResume();
             mIsHudInit = true;
@@ -528,7 +537,7 @@ public class MainActivity extends AppCompatActivity {
         setVersionInfo();
 
         // --- ADB Tab (System Info & Permissions & Default Tab) ---
-        mHomeStatusController = new cn.navitool.activity.controller.HomeStatusController(this);
+        mHomeStatusController = new cn.navitool.controller.HomeStatusController(this);
         mHomeStatusController.setupHome();
 
         // Speed comparison display receivers (for status page)

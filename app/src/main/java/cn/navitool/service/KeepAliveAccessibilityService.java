@@ -15,6 +15,9 @@ import android.os.PowerManager;
 import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityEvent;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import androidx.core.content.ContextCompat;
 
 import com.ecarx.xui.adaptapi.car.Car;
@@ -110,23 +113,51 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
         // initCar(); // Removed, using VehicleSensorManager
     }
 
+    private void startForegroundService() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            String channelId = "navitool_service_channel";
+            String channelName = "KeepAlive Service";
+            NotificationChannel channel = new NotificationChannel(channelId, channelName,
+                    android.app.NotificationManager.IMPORTANCE_MIN);
+            channel.setDescription("Background service for vehicle assistant");
+            android.app.NotificationManager manager = getSystemService(android.app.NotificationManager.class);
+            if (manager != null) {
+                manager.createNotificationChannel(channel);
+            }
+
+            android.app.Notification.Builder builder = new android.app.Notification.Builder(this, channelId)
+                    .setContentTitle("NaviTool")
+                    .setContentText("车机助手正在运行")
+                    .setSmallIcon(cn.navitool.R.drawable.ic_launcher) // Use app icon
+                    .setOngoing(true);
+
+            startForeground(1001, builder.build());
+            DebugLogger.i(TAG, "Foreground Service Started (ID: 1001)");
+        }
+    }
+
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
+        
+        // 1. [New] Start Foreground Service (Priority Boost)
+        try {
+            startForegroundService();
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Failed to start foreground service", e);
+        }
+
         DebugLogger.action(TAG, "无障碍服务已连接");
         DebugLogger.i(TAG, "Service Connected");
 
         SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
         prefs.registerOnSharedPreferenceChangeListener(prefsListener);
-
-        // Initialize Managers
+        
         MemoryMonitor.setComponentStatus("KeepAliveService", "Active");
-        cn.navitool.managers.ThemeBrightnessManager.getInstance(this).init();
-        cn.navitool.managers.SoundPromptManager.getInstance(this).init();
+
+        // 2. [Optimized] Immediate Light Initialization (Keys, PSD, ADB)
+        // These are low-overhead and essential for hardware interaction
         cn.navitool.managers.KeyHandlerManager.getInstance(this).init();
-        cn.navitool.managers.VehicleSensorManager.getInstance(this).init();
-        cn.navitool.managers.VehicleSensorManager.getInstance(this).registerListener(this);
-        checkInitialVehicleState();
 
         // Initialize PSD
         boolean mIsPsdAlwaysOnEnabled = ConfigManager.getInstance().getBoolean("psd_always_on_enabled", false);
@@ -143,23 +174,47 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
             AdbShell.getInstance(this).connect();
         }
 
-        DebugLogger.logBootEvent(this);
+        // 3. [Optimized] Immediate UI Display (Load Shedding Step 1)
+        // Ensure UI is visible immediately (T+0s), don't wait for sensors
+        DebugLogger.i(TAG, "[Load Shedding] Immediate UI Display triggered");
+        ClusterHudManager.getInstance(this).ensureUiVisible();
+        // Force Instrument Mode immediately for feedback
+        ClusterHudManager.getInstance(this).applyNaviMode(3);
+
+        // 4. [Load Shedding] Delayed Sensor/Heavy Initialization
+        // Split heavy tasks to avoid system startup congestion
+        
+        // Delay 1.5s: Connect Vehicle Sensors (Critical Data)
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            DebugLogger.i(TAG, "[Load Shedding] T+1.5s: Initializing Vehicle Sensors...");
+            cn.navitool.managers.VehicleSensorManager.getInstance(this).init();
+            cn.navitool.managers.VehicleSensorManager.getInstance(this).registerListener(this);
+            checkInitialVehicleState();
+        }, 1500);
+
+        // Delay 3.0s: Sync Theme, Sound, Map Services (Non-Critical)
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+            DebugLogger.i(TAG, "[Load Shedding] T+3.0s: Initializing Theme/Sound/Maps...");
+            cn.navitool.managers.ThemeBrightnessManager.getInstance(this).init();
+            cn.navitool.managers.SoundPromptManager.getInstance(this).init();
+            
+            DebugLogger.logBootEvent(this);
+            
+             // Start Map Services if conditions met
+            checkAndStartMapServices();
+        }, 3000);
 
         DebugLogger.i(TAG, "Build.VERSION.SDK_INT: " + Build.VERSION.SDK_INT);
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_CONFIGURATION_CHANGED);
         filter.addAction("cn.navitool.ACTION_REQUEST_ONEOS_STATUS");
         filter.addAction("cn.navitool.ACTION_REQUEST_DAY_NIGHT_STATUS");
-        // filter.addAction("cn.navitool.ACTION_SIMULATE_ENGINE_START"); // Now handled
-        // by Manifest Receiver
+        // filter.addAction("cn.navitool.ACTION_SIMULATE_ENGINE_START"); // Now handled by Manifest Receiver
         try {
             registerReceiver(configChangeReceiver, filter);
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to register configChangeReceiver", e);
         }
-
-        // Removed Early Amap Monitor Start (User Request: Gate behind Ignition +
-        // Running)
 
         // Register Simulation Receiver dynamically
         try {
@@ -171,11 +226,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
             DebugLogger.e(TAG, "Failed to register SimulateFunction.IgnitionReceiver", e);
         }
 
-        // [FIX] 备用悬浮球启动：延迟5秒后检查悬浮球是否已启动，如果没有则尝试启动
-        // 这是为了处理点火状态检测延迟或失败的情况
+        // [FIX] 备用悬浮球启动：延迟5秒后检查悬浮球是否已启动
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             if (ConfigManager.getInstance().getBoolean("floating_ball_enabled", false)) {
-                // 使用静态变量检查服务状态，O(1)复杂度，无IPC开销
                 if (!cn.navitool.service.FloatingBallService.isRunning()) {
                     DebugLogger.i(TAG, "[Backup] FloatingBall not running, starting now...");
                     startFloatingBallIfEnabled();

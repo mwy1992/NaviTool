@@ -1015,26 +1015,6 @@ public class PresentationManager extends android.app.Dialog {
                         int mappedStatus = NaviInfoManager.mapStatus(mLatestTrafficLightInfo.status);
                         tlv.updateState(mappedStatus, mLatestTrafficLightInfo.redCountdown, mLatestTrafficLightInfo.direction);
                     }
-                } else if ("navi_arrival_time".equals(data.type) || "navi_distance_remaining".equals(data.type)) {
-                    android.widget.TextView tv = new android.widget.TextView(getContext());
-                    String displayText = "--:--";
-                    if ("navi_arrival_time".equals(data.type) && mCachedNaviArrivalTime != null) {
-                        displayText = mCachedNaviArrivalTime;
-                    } else if ("navi_distance_remaining".equals(data.type) && mCachedNaviDistance != null) {
-                        displayText = mCachedNaviDistance;
-                    } else if (data.text != null) {
-                        displayText = data.text;
-                    }
-                    tv.setText(displayText);
-                    tv.setVisibility(View.VISIBLE);
-                    tv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                    tv.setTextColor(data.color);
-                    tv.setPadding(0, 0, 0, 0);
-                    tv.setIncludeFontPadding(false);
-                    tv.setLineSpacing(0, 1f);
-                    tv.setTypeface(android.graphics.Typeface.DEFAULT);
-                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
-                    view = tv;
                 } else if ("gear".equals(data.type)) {
                     android.widget.TextView tv = new android.widget.TextView(getContext());
                     tv.setText(data.text != null ? data.text : "P");
@@ -1070,34 +1050,53 @@ public class PresentationManager extends android.app.Dialog {
                     view = ll;
                     params.width = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
                 } else if ("guide_line".equals(data.type)) {
-                     // [Feature] Guide Line (Visual Only, No Text)
-                     // Use Container to match Preview logic and center the rotated line correctly
-                     android.widget.FrameLayout guideContainer = new android.widget.FrameLayout(getContext());
-                     params.width = 100;
-                     params.height = 380;
-                     
-                     android.view.View line = new android.view.View(getContext());
-                     line.setBackgroundResource(R.drawable.line_dashed_cyan);
-                     
-                     android.widget.FrameLayout.LayoutParams lineParams = new android.widget.FrameLayout.LayoutParams(380, 4);
-                     lineParams.gravity = android.view.Gravity.CENTER;
-                     line.setLayoutParams(lineParams);
-                     line.setRotation(90);
-                     line.setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null); // Important for dashed effect
-                     
-                     guideContainer.addView(line);
-                     view = guideContainer;
+                     // [Refactor] Guide Line - Direct Draw for 100% Stability
+                     // Avoids rotation/clipping issues with XML shapes
+                     view = new View(getContext()) {
+                         private final android.graphics.Paint mPaint = new android.graphics.Paint(
+                                 android.graphics.Paint.ANTI_ALIAS_FLAG);
+                         {
+                             mPaint.setColor(android.graphics.Color.CYAN);
+                             mPaint.setStyle(android.graphics.Paint.Style.STROKE);
+                             mPaint.setStrokeWidth(4); // Visible Width
+                             // 10px dash, 10px gap for good visibility
+                             mPaint.setPathEffect(new android.graphics.DashPathEffect(new float[] { 10, 10 }, 0));
+                         }
+
+                         @Override
+                         protected void onDraw(android.graphics.Canvas canvas) {
+                             super.onDraw(canvas);
+                             float cx = getWidth() / 2f;
+                             // Draw vertical line from top to bottom
+                             canvas.drawLine(cx, 0, cx, getHeight(), mPaint);
+                         }
+                     };
+
+                     // Explicit Size (0.5x of Preview: 100x380 -> 50x190)
+                     params.width = 50;
+                     params.height = 190;
                 } else {
-                    // Generic
+                    // Generic TextView (including navi_arrival_time, navi_distance_remaining, etc.)
                     android.widget.TextView tv = new android.widget.TextView(getContext());
-                    tv.setText(data.text != null ? data.text : "");
+                    
+                    // Initial text: prefer cache for navi components
+                    String displayText = data.text != null ? data.text : "";
+                    if ("navi_arrival_time".equals(data.type) && mCachedNaviArrivalTime != null) {
+                        displayText = mCachedNaviArrivalTime;
+                    } else if ("navi_distance_remaining".equals(data.type) && mCachedNaviDistance != null) {
+                        displayText = mCachedNaviDistance;
+                    }
+                    
+                    tv.setText(displayText);
                     tv.setTextColor(data.color);
                     tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24f); 
-                    tv.setIncludeFontPadding(false); // [FIX] Match Preview logic
+                    tv.setIncludeFontPadding(false);
                     if (data.typeface != null) {
                         tv.setTypeface(data.typeface);
                     }
                     view = tv;
+                    
+                    // Type-specific adjustments
                     if ("hud_rpm".equals(data.type)) {
                         tv.setGravity(android.view.Gravity.END);
                         params.width = 120;
@@ -1105,6 +1104,10 @@ public class PresentationManager extends android.app.Dialog {
                     } else if ("temp_out".equals(data.type) || "temp_in".equals(data.type)) {
                         tv.setGravity(android.view.Gravity.END);
                         params.width = 90;
+                    } else if ("navi_distance_remaining".equals(data.type)) {
+                        // [FIX] Fixed width for consistent alignment
+                        tv.setGravity(android.view.Gravity.END);
+                        params.width = 120;
                     }
                 }
 
