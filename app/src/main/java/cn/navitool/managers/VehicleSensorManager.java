@@ -532,6 +532,11 @@ public class VehicleSensorManager {
 
             DebugLogger.d(TAG, "Refreshed all sensor values");
             
+            // [FIX] Force notify key status to ensure UI sync on startup/refresh (Solving "Unknown" status)
+            notifyIgnitionChanged(mIgnition);
+            notifyGearChanged(mGear);
+            notifyDayNightChanged(mDayNight);
+            
             if (mOdometer > 0) {
                  updateSoftTripDistance(mOdometer);
             }

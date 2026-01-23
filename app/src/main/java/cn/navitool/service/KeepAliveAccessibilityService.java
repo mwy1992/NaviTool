@@ -150,6 +150,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
         DebugLogger.action(TAG, "无障碍服务已连接");
         DebugLogger.i(TAG, "Service Connected");
 
+        // [FIX] Notify UI that service is ready (Refresh Permission State)
+        sendBroadcast(new Intent("cn.navitool.ACTION_ACCESSIBILITY_CONNECTED"));
+
         SharedPreferences prefs = getSharedPreferences("navitool_prefs", MODE_PRIVATE);
         prefs.registerOnSharedPreferenceChangeListener(prefsListener);
         

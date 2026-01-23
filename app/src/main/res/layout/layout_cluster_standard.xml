@@ -77,6 +77,7 @@
         android:layout_marginStart="316px"
         android:layout_marginTop="298px"
         android:gravity="center"
+        android:text="0"
         android:textColor="#FFFFFF"
         android:textSize="48sp"
         android:textStyle="bold" />

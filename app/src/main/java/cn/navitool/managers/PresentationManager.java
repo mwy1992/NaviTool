@@ -714,11 +714,7 @@ public class PresentationManager extends android.app.Dialog {
     }
     
     public void updateComponent(String type, String text, android.graphics.Bitmap image) {
-        // [Fix] Delegate Gear to Theme Controller (Audi RS)
-        if ("gear".equals(type) && mCurrentTheme == THEME_AUDI_RS && mThemeController instanceof AudiRsThemeController
-                && text != null) {
-            ((AudiRsThemeController) mThemeController).setGear(text);
-        }
+
 
         // Update HUD
         updateComponentGeneric(mRealHudComponents, type, text, image);

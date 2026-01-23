@@ -49,18 +49,42 @@ public class PermissionManager {
     // --- Permission Checks ---
 
     public boolean isAccessibilityServiceEnabled() {
+        // [FIX] Priority 1: Check if service is actually running in our process
+        boolean isInstanceRunning = (KeepAliveAccessibilityService.getInstance() != null);
+        if (isInstanceRunning) {
+             DebugLogger.d(TAG, "checkAccessibility: PASS (Instance Running)");
+             return true;
+        }
+
+        // [FIX] Priority 2: Use API instead of raw Settings string (More robust)
         android.view.accessibility.AccessibilityManager am = (android.view.accessibility.AccessibilityManager) mContext.getSystemService(Context.ACCESSIBILITY_SERVICE);
-        if (am == null) return false;
+        if (am != null) {
+            java.util.List<android.accessibilityservice.AccessibilityServiceInfo> enabledServices = 
+                am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK);
+            if (enabledServices != null) {
+                for (android.accessibilityservice.AccessibilityServiceInfo service : enabledServices) {
+                     String svcId = service.getId();
+                     if (svcId != null && svcId.contains(mContext.getPackageName())) {
+                         DebugLogger.d(TAG, "checkAccessibility: PASS (API Found: " + svcId + ")");
+                         return true;
+                     }
+                }
+            }
+        }
         
-        // This only checks if ANY service is enabled, specifically ours needs ComponentName check logic
-        // But for strict check we usually parse Settings.Secure
-        // Using strict check logic similar to MainActivity's logic or reusing it
-        
+        // Priority 3: Fallback to Settings.Secure checks (Legacy)
         String expectedServiceName = new ComponentName(mContext, KeepAliveAccessibilityService.class).flattenToString();
         String enabledServices = Settings.Secure.getString(mContext.getContentResolver(), Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        
+        DebugLogger.d(TAG, "checkAccessibility: FAIL via Instance & API. Checking Settings String...");
+        DebugLogger.d(TAG, "  Target: " + expectedServiceName);
+        DebugLogger.d(TAG, "  Actual: " + enabledServices);
+
         if (enabledServices == null) return false;
         
-        return enabledServices.contains(expectedServiceName);
+        boolean match = enabledServices.contains(expectedServiceName);
+        DebugLogger.d(TAG, "checkAccessibility: Result=" + match);
+        return match;
     }
 
     public boolean checkOpPermission(String op) {

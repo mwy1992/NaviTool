@@ -364,4 +364,49 @@ public class SimulateGear {
 
         return lastValidGear;
     }
+
+    /**
+     * Maps raw integer gear value (from Sensor or AdaptAPI) to String representation.
+     * Moved from ClusterHudManager to centralize logic.
+     */
+    public static String mapRawGearToChar(int gearValue) {
+        // [FIX] Add -1 mapping for Manual Mode
+        if (gearValue == -1) return "M";
+        if (gearValue == -999) return ""; // No Data
+
+        // Note: Constants are based on ISensorEvent and typical values
+        switch (gearValue) {
+            case 2097680: // ISensorEvent.GEAR_PARK
+            case 15:
+                return "P";
+            case 2097696: // ISensorEvent.GEAR_REVERSE
+            case 11:
+                return "R";
+            case 2097681: // ISensorEvent.GEAR_NEUTRAL
+            case 14:
+                return "N";
+            case 2097682: // ISensorEvent.GEAR_DRIVE
+            case 13:
+                return "D";
+            // Map specific sub-gears if sensor supports them natively
+            case 2097683: // ISensorEvent.GEAR_FIRST
+                return "D1";
+            case 2097684: // ISensorEvent.GEAR_SECOND
+                return "D2";
+            case 2097685: // ISensorEvent.GEAR_THIRD
+                return "D3";
+            case 2097686: // ISensorEvent.GEAR_FOURTH
+                return "D4";
+            case 2097687: // ISensorEvent.GEAR_FIFTH
+                return "D5";
+            case 2097688: // ISensorEvent.GEAR_SIXTH
+                return "D6";
+            case 2097689: // ISensorEvent.GEAR_SEVENTH
+                return "D7";
+            case 2097690: // ISensorEvent.GEAR_EIGHTH
+                return "D8";
+            default:
+                return "D"; // Fallback
+        }
+    }
 }

@@ -92,6 +92,16 @@ public class HomeStatusController {
         }
     };
 
+    private final BroadcastReceiver mPermissionReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if ("cn.navitool.ACTION_ACCESSIBILITY_CONNECTED".equals(intent.getAction())) {
+                DebugLogger.d("HomeStatus", "Received Accessibility Connected Broadcast -> Refreshing UI");
+                checkPermissions();
+            }
+        }
+    };
+
     public HomeStatusController(Activity activity) {
         this.mActivity = activity;
     }
@@ -113,6 +123,10 @@ public class HomeStatusController {
         // Request ADB Status
         AdbShell.getInstance(mActivity).broadcastStatus();
 
+        // [FIX] Register Permission Update Receiver
+        IntentFilter permFilter = new IntentFilter("cn.navitool.ACTION_ACCESSIBILITY_CONNECTED");
+        mActivity.registerReceiver(mPermissionReceiver, permFilter);
+
         // [FIX] Update permission status on resume
         checkPermissions();
     }
@@ -121,6 +135,7 @@ public class HomeStatusController {
         try {
             mActivity.unregisterReceiver(adbStatusReceiver);
             mActivity.unregisterReceiver(mPsdStatusReceiver);
+            mActivity.unregisterReceiver(mPermissionReceiver);
         } catch (IllegalArgumentException e) {
             // Ignore if not registered
         }
@@ -340,6 +355,8 @@ public class HomeStatusController {
             refreshPermissionDialog(mPermissionDialogView);
         }
     }
+
+
 
     public void updateAutoModeStatus(int mode) {
         TextView tvAutoModeStatus = mActivity.findViewById(R.id.tvAutoModeStatus);

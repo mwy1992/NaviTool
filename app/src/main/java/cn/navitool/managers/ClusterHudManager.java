@@ -958,7 +958,7 @@ public class ClusterHudManager
             }
 
             // Pass current raw logic result as "CurrentSensorGear"
-            String baseGear = mapRawGearToChar(gearValue);
+            String baseGear = SimulateGear.mapRawGearToChar(gearValue);
             
             // Force "D" as base if we are in raw "D" mode (13) to allow D1-D8 calculation
             // If raw is -1 (M), baseGear is "M", SimulateGear handles "M" -> "M1" etc.
@@ -969,47 +969,7 @@ public class ClusterHudManager
             // Call calculation [FIX] Use Peek mode to avoid polluting smoothing history
             return SimulateGear.getInstance().calculateGearPeek(mCachedSpeed, mCachedRpm, baseGear);
         } else {
-            return mapRawGearToChar(gearValue);
-        }
-    }
-
-    private String mapRawGearToChar(int gearValue) {
-        // [FIX] Add -1 mapping for Manual Mode
-        if (gearValue == -1) return "M";
-        if (gearValue == -999) return ""; // No Data
-
-        switch (gearValue) {
-            case ISensorEvent.GEAR_PARK:
-            case 15:
-                return "P";
-            case ISensorEvent.GEAR_REVERSE:
-            case 11:
-                return "R";
-            case ISensorEvent.GEAR_NEUTRAL:
-            case 14:
-                return "N";
-            case ISensorEvent.GEAR_DRIVE:
-            case 13:
-                return "D";
-            // Map specific sub-gears if sensor supports them natively
-            case ISensorEvent.GEAR_FIRST:
-                return "D1";
-            case ISensorEvent.GEAR_SECOND:
-                return "D2";
-            case ISensorEvent.GEAR_THIRD:
-                return "D3";
-            case ISensorEvent.GEAR_FOURTH:
-                return "D4";
-            case ISensorEvent.GEAR_FIFTH:
-                return "D5";
-            case ISensorEvent.GEAR_SIXTH:
-                return "D6";
-            case ISensorEvent.GEAR_SEVENTH:
-                return "D7";
-            case ISensorEvent.GEAR_EIGHTH:
-                return "D8";
-            default:
-                return "D"; // Fallback
+            return SimulateGear.mapRawGearToChar(gearValue);
         }
     }
     
@@ -2311,7 +2271,7 @@ public class ClusterHudManager
         } else {
 
             // [Fix] Restore real gear immediately when simulation is disabled
-            String realGear = mapRawGearToChar(mCachedGear);
+            String realGear = SimulateGear.mapRawGearToChar(mCachedGear);
             
             // [Fix] Force reset LastSimulatedGear to ensure next toggle works
             mLastSimulatedGear = ""; 
@@ -2376,15 +2336,15 @@ public class ClusterHudManager
             calculateAndPushSimulatedGear(gearChanged);
         } else {
              // Real Gear Update
-             String gearStr = mapRawGearToChar(gearValue);
+             String gearStr = SimulateGear.mapRawGearToChar(gearValue);
              updateComponentText("gear", gearStr);
              
              // [FIX] Ensure Theme Controllers (Standard/Audi) also get the update!
-             // Previously this was missing, so StandardThemeController never updated after init.
+             // Now passing STRING to support D1-D8/M1-M8 on all themes consistently.
              if (mPresentationManager != null) {
                  mMainHandler.post(() -> {
                      if (mPresentationManager != null) {
-                         mPresentationManager.updateGear(gearValue);
+                         mPresentationManager.updateGear(gearStr);
                      }
                  });
              }
@@ -2420,7 +2380,7 @@ public class ClusterHudManager
 
     private void calculateAndPushSimulatedGear(boolean forceImmediate) {
         // [FIX] 即使是 -1 也传递给转换函数，因为 -1 代表 M 档，不应替换为 P
-        String baseGear = mapRawGearToChar(mCachedGear);
+        String baseGear = SimulateGear.mapRawGearToChar(mCachedGear);
 
         String calculated = SimulateGear.getInstance().calculateGear(
                 mCachedSpeed,
