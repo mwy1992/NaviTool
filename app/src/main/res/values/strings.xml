@@ -58,6 +58,7 @@
     <string name="switch_sound_gear_n">N挡音效</string>
     <string name="switch_sound_gear_r">R挡音效</string>
     <string name="switch_sound_gear_p">P挡音效</string>
+    <string name="switch_sound_gear_m">M挡音效</string>
     <string name="switch_sound_door_passenger">副驾门开启(有人)</string>
     <string name="switch_sound_door_passenger_close">副驾门关闭(有人)</string>
     <string name="switch_sound_door_passenger_empty">副驾门开启(无人)</string>

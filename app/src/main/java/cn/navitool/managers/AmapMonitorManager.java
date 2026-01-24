@@ -197,6 +197,7 @@ public class AmapMonitorManager {
     private int mLastRouteRemainDis = -1;
     private int mLastRouteRemainTime = -1;
     private String mLastNextRoadName = "";
+    private String mLastEtaText = ""; // [FIX] Added missing field
     private int mLastIcon = -1;
     // [STICKY] Cache latest GuideInfo for new listeners
     private cn.navitool.managers.NaviInfoManager.GuideInfo mCachedGuideInfo = null;
@@ -248,19 +249,28 @@ public class AmapMonitorManager {
             int segRemainDis = getInt(extras, "SEG_REMAIN_DIS");
             
             // [OPTIMIZATION] Deduplication
+            // [FIX] Removed strict return. Previous logic suppressed updates for ETA/SegDis changes
+            // and potentially caused state desync. We now allow all updates to flow to the UI.
             if (routeRemainDis == mLastRouteRemainDis && 
                 routeRemainTime == mLastRouteRemainTime && 
                 icon == mLastIcon &&
-                (nextRoadName == null ? mLastNextRoadName == null : nextRoadName.equals(mLastNextRoadName))) {
-                // Exact duplicate of critical info, SKIP processing
-                return;
+                (nextRoadName == null ? mLastNextRoadName == null : nextRoadName.equals(mLastNextRoadName)) &&
+                (extras.getString("ETA_TEXT", "").equals(mLastEtaText != null ? mLastEtaText : ""))) {
+                
+                // If strictly identical (including ETA), we can skip LOGGING, 
+                // but we should probably still notify listener to be safe, 
+                // OR we can trust that if everything is identical, UI doesn't need update.
+                // However, user reports "Logic not executing", so we FORCE UPDATE.
+                // return; // <--- REMOVED
             }
             
             // Update Cache
             mLastRouteRemainDis = routeRemainDis;
             mLastRouteRemainTime = routeRemainTime;
             mLastIcon = icon;
+
             mLastNextRoadName = nextRoadName;
+            mLastEtaText = extras.getString("ETA_TEXT", ""); // [FIX] Update ETA Cache
 
             if (mListener != null) {
                 cn.navitool.managers.NaviInfoManager.GuideInfo info = new cn.navitool.managers.NaviInfoManager.GuideInfo();
@@ -283,23 +293,36 @@ public class AmapMonitorManager {
         } else if (keyType == 10019) {
             // [NEW] Navigation State Update (Start/Stop)
             int state = getInt(extras, "EXTRA_STATE");
+            
+            // [FIX] 导航结束时清理所有缓存 (Changed from 2 to 40)
+            if (state == 40) {
+                mLastRouteRemainDis = -1;
+                mLastRouteRemainTime = -1;
+                mLastNextRoadName = "";
+                mLastIcon = -1;
+                mCachedGuideInfo = null;
+                DebugLogger.i(TAG, "Navigation ended (state=2), cache cleared");
+            }
+            
             if (mListener != null) {
                 mListener.onNaviStatusUpdate(state);
             }
             System.out.println("Captured NaviStatus (Broadcast): State=" + state);
         }
 
-        // [DEBUG] Print other broadcast KEY_TYPEs to console (only for non-60073)
-        if (keyType != 60073) {
+        // [DEBUG] Log ALL broadcasts (Reserved for deep debugging, disabled for release)
+        /*
+        if (keyType != 60073) { 
             StringBuilder consoleLog = new StringBuilder();
-            consoleLog.append("[AMAP_BROADCAST] KEY_TYPE=").append(keyType).append(" | ");
+            consoleLog.append("[AMAP_RAW] KEY_TYPE=").append(keyType).append(" | ");
             Set<String> allKeys = extras.keySet();
             for (String key : allKeys) {
                 Object value = extras.get(key);
                 consoleLog.append(key).append("=").append(value).append(", ");
             }
-            System.out.println(consoleLog.toString());
+            DebugLogger.e(TAG, consoleLog.toString());
         }
+        */
 
         // File logging is async (via mLogHandler), so it won't block
         StringBuilder logBuilder = new StringBuilder();

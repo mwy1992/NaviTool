@@ -176,10 +176,14 @@ public class MainActivity extends AppCompatActivity {
         // Initialize Views (assuming initUI is replaced by these based on the
         // instruction's snippet)
         initUI(); // Original call, keeping it as the instruction didn't explicitly remove it.
+        
+        // [FIX] Initialize ThemeBrightnessManager to start monitoring
+        ThemeBrightnessManager.getInstance(this).init();
         // setupListeners(); // Not in original code, but in instruction's snippet.
         // updateUIState(); // Not in original code, but in instruction's snippet.
         // requestPermissions(); // Not in original code, but in instruction's snippet.
 
+        registerReceivers(); // [FIX] Ensure receivers are registered
         initNavigation(); // Click listeners
 
         if (mHomeStatusController != null) mHomeStatusController.checkPermissions();
@@ -293,10 +297,15 @@ public class MainActivity extends AppCompatActivity {
             mHomeStatusController.onPause();
         }
         // Unregister HUD Listener to prevent leak/updates when backgrounded
-        // Unregister HUD Listener to prevent leak/updates when backgrounded
         if (mHudSettingsController != null) {
             mHudSettingsController.onPause();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        unregisterReceivers();
     }
 
     private void registerReceivers() {
@@ -540,9 +549,8 @@ public class MainActivity extends AppCompatActivity {
         mHomeStatusController = new cn.navitool.controller.HomeStatusController(this);
         mHomeStatusController.setupHome();
 
-        // Speed comparison display receivers (for status page)
-
-        if (mHomeStatusController != null) mHomeStatusController.updateAutoModeStatus(0);
+        // [FIX] Request real theme mode status instead of forcing to 0 (which shows "Unknown")
+        ThemeBrightnessManager.getInstance(this).broadcastStatus();
 
         // --- Auto-Initialize Cluster ---
         // Ensure Cluster Service starts even if tab is not visited

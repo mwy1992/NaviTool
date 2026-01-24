@@ -34,7 +34,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/sound_prompt_desc"
-                    android:textSize="12sp"
+                    android:textSize="14sp"
                     android:textColor="#FF0000"
                     android:layout_marginTop="2dp"/>
             </LinearLayout>
@@ -53,7 +53,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/sound_playback_mode_title"
-                    android:textSize="14sp"
+                    android:textSize="16sp"
                     android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary"
                     android:layout_marginEnd="8dp"/>
@@ -85,7 +85,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/sound_channel_title"
-                    android:textSize="14sp"
+                    android:textSize="16sp"
                     android:textStyle="bold"
                     android:textColor="?android:attr/textColorPrimary"
                     android:layout_marginEnd="8dp"/>
@@ -287,7 +287,9 @@
                 android:orientation="horizontal"
                 android:baselineAligned="false">
 
-                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingEnd="6dp">
+                    <include layout="@layout/item_sound_config" android:id="@+id/cardSoundGearM" />
+                </LinearLayout>
                 
                 <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingHorizontal="3dp">
                     <include layout="@layout/item_sound_config" android:id="@+id/cardSoundDoorHood" />

@@ -60,11 +60,13 @@ public class ClusterHudManager
     private android.media.AudioManager mAudioManager;
     private VolumeReceiver mVolumeReceiver;
 
-    // Cached values for combined fuel_range component
     private float mCachedFuelLiters = 0f;
     private float mCachedRangeKm = 0f;
     private float mCachedSpeed = 0f;
     private float mCachedRpm = 0f;
+    // [FIX] Add missing cache fields for Cluster Init
+    private float mCachedOdometer = 0f;
+    private float mCachedFuelIns = 0f;
     
     // [FIX] Music Cache for Consistency (Backfill)
     private String mCachedSongTitle = null;
@@ -197,63 +199,18 @@ public class ClusterHudManager
         cn.navitool.managers.AmapMonitorManager.getInstance(mContext)
                 .setListener(new cn.navitool.managers.AmapMonitorManager.OnBroadcastListener() {
                     @Override
-                    public void onTrafficLightUpdate(
-                            NaviInfoManager.TrafficLightInfo info) {
-                        DebugLogger.d(TAG, "onTrafficLightUpdate: " + (info == null ? "null" : info.toString()));
-                        // [FIX] Reset timeout timer on each traffic light update
-                        mMainHandler.removeCallbacks(mTrafficLightTimeoutRunnable);
-                        mMainHandler.postDelayed(mTrafficLightTimeoutRunnable, TRAFFIC_LIGHT_TIMEOUT_MS);
-
-                        // [FIX] Forward to NaviInfoManager for Main Screen/Floating Logic
-                        NaviInfoManager.getInstance(mContext).updateTrafficLight(info);
-
-                        if (mPresentationManager != null) {
-                            mPresentationManager.updateTrafficLight(info);
-                        }
+                    public void onTrafficLightUpdate(NaviInfoManager.TrafficLightInfo info) {
+                        ClusterHudManager.this.onTrafficLightUpdate(info);
                     }
 
                     @Override
-                    public void onGuideInfoUpdate(
-                            NaviInfoManager.GuideInfo info) {
-                        // [SIMPLIFIED] No timeout logic - data is cleared by
-                        // onNaviStatusUpdate(state==2)
-                        // Call the new public method
+                    public void onGuideInfoUpdate(NaviInfoManager.GuideInfo info) {
                         ClusterHudManager.this.onGuideInfoUpdate(info);
                     }
 
                     @Override
                     public void onNaviStatusUpdate(int state) {
-                        DebugLogger.d(TAG, "Navi Status Update: " + state);
-
-                        // [FIX] Determine Navigation State for Theme Background
-                        // 1: Navigating, 8: Emulator, 9: Start Guide
-                        // 2: Stop, 39: Route Init (Planning)
-                        boolean isNavigating = (state == 1 || state == 8 || state == 9);
-                        boolean isStop = (state == 2);
-
-                        mMainHandler.post(() -> {
-                            if (mPresentationManager != null) {
-                                // Apply Navigation State
-                                if (isNavigating) {
-                                    mPresentationManager.setNavigating(true);
-                                } else if (isStop) {
-                                    mPresentationManager.setNavigating(false);
-                                }
-                                // Note: Other states (3, 39, etc.) retain current state to avoid flicker
-
-                                // [UNIFIED] Only reset on Navigation Stop (state==2)
-                                // Other states (9=StartGuide, 39=RoutePlanning, 8=Emulator) should NOT clear
-                                // data
-                                if (state == 2) {
-                                    mPresentationManager.resetTrafficLights();
-                                    mPresentationManager.resetNaviInfo();
-                                    // [FIX] Restore Instrument Mode (3) asynchronously to avoid blocking UI thread
-                                    new Thread(() -> {
-                                        applyNaviMode(3, "NAVI-END");
-                                    }).start();
-                                }
-                            }
-                        });
+                        ClusterHudManager.this.onNaviStatusUpdate(state);
                     }
                 });
 
@@ -872,6 +829,7 @@ public class ClusterHudManager
 
     @Override
     public void onOdometerChanged(float odometer) {
+         mCachedOdometer = odometer; // [FIX] Cache Odometer
          if (mPresentationManager != null) {
             mMainHandler.post(() -> {
                 if (mPresentationManager != null) {
@@ -883,6 +841,7 @@ public class ClusterHudManager
 
     @Override
     public void onFuelConsumptionChanged(float instant, float average) {
+         mCachedFuelIns = instant; // [FIX] Cache Instant Fuel
          if (mPresentationManager != null) {
             mMainHandler.post(() -> {
                 if (mPresentationManager != null) {
@@ -1888,11 +1847,20 @@ public class ClusterHudManager
 
                     // [FIX Cold Boot] Apply cached sensor values
                     if (mPresentationManager != null) {
+                        // Sync Text Components (HUD)
                         mPresentationManager.updateComponent("fuel", mCachedFuelText, null);
                         mPresentationManager.updateComponent("temp_out", mCachedTempOutText, null);
                         mPresentationManager.updateComponent("temp_in", mCachedTempInText, null);
                         mPresentationManager.updateComponent("range", mCachedRangeText, null);
                         mPresentationManager.updateComponent("fuel_range", mCachedFuelText + "|" + mCachedRangeText, null);
+                        
+                        // [FIX] Sync Numeric Values (Cluster Theme)
+                        // This ensures the Audi/Standard cluster gets data immediately, not just on next change.
+                        mPresentationManager.updateFuelRemain(mCachedFuelLiters);
+                        mPresentationManager.updateOdometer(mCachedOdometer);
+                        mPresentationManager.updateSpeed(mCachedSpeed);
+                        mPresentationManager.updateRpm(mCachedRpm);
+                        mPresentationManager.updateInstantFuel(mCachedFuelIns); 
                     }
                     
                     // [FIX] Apply Visibility inside OnShowListener to ensure Views are inflated and ready
@@ -2181,14 +2149,7 @@ public class ClusterHudManager
         updateMediaPlayingState(true); // Force show for testing
     }
 
-    public void onGuideInfoUpdate(NaviInfoManager.GuideInfo info) {
-        // [FIX] Removed Timeout Logic: Static data (e.g. at red light) was causing UI to hide
-        // because AmapMonitorManager deduplicates identical updates.
-        // Hiding should only happen on explicit navigation end.
-        if (mPresentationManager != null) {
-            mPresentationManager.updateGuideInfo(info);
-        }
-    }
+
     public void clearHudComponents() {
         DebugLogger.i(TAG, "Clearing HUD/Cluster components cache");
         if (mPresentationManager != null) {
@@ -2589,7 +2550,22 @@ public class ClusterHudManager
         // [FIX] Read current gear immediately to replace default
         int gear = manager.getGear();
         updateGear(gear);
-
+        
+        // [FIX] Odometer Init
+        float odometer = manager.getOdometer();
+        if (mPresentationManager != null) {
+             final float finalOdo = odometer;
+             mMainHandler.post(() -> {
+                 if (mPresentationManager != null) {
+                     mPresentationManager.updateOdometer(finalOdo);
+                 }
+             });
+        }
+        // Also update Trip info if needed?
+        // [User Request] Soft Trip Logic Removed
+        /* if (odometer > 0) {
+             updateSoftTripDistance(odometer);
+        } */
     }
 
     /**
@@ -2809,4 +2785,136 @@ public class ClusterHudManager
             });
         }
     }
+
+    // --- Simplified Navigation Logic ---
+
+    // [SIMPLIFIED] Direct Pass-through
+    public void onTrafficLightUpdate(final NaviInfoManager.TrafficLightInfo info) {
+        mMainHandler.post(() -> {
+            if (mPresentationManager != null) {
+                // [FIX] Do NOT force navigating state on data. Rely on onNaviStatusUpdate.
+                mPresentationManager.updateTrafficLight(info);
+            }
+            // Also update Main Screen Manager
+            NaviInfoManager.getInstance(mContext).updateTrafficLight(info);
+        });
+    }
+
+    // [SIMPLIFIED] Direct Pass-through
+    // [SIMPLIFIED] Direct Pass-through & Auto-Start
+    public void onGuideInfoUpdate(final NaviInfoManager.GuideInfo info) {
+        mMainHandler.post(() -> {
+            // [FIX] Auto-Start Logic: If we receive valid data, we are navigating.
+            // We NO LONGER block updates based on !isNavigating().
+            // Instead, we FORCE it to true if data comes in.
+            if (mPresentationManager != null && !mPresentationManager.isNavigating()) {
+                 DebugLogger.e(TAG, "[NAVI_CYCLE] Auto-Starting Navigation (Data Received)");
+                 mPresentationManager.setNavigating(true);
+            }
+
+            // [FIX] Explicitly update generic components (text/cache)
+            // This ensures HUD components like navi_next_road, navi_current_road update correctly,
+            // and mCachedHudComponents is kept in sync.
+            if (info != null) {
+                updateComponentText("navi_current_road", info.currentRoadName);
+                updateComponentText("navi_next_road", info.nextRoadName);
+                
+                // Distance and Time need formatting
+                String distanceText = info.routeRemainDis >= 1000 ? 
+                        String.format(Locale.US, "%.1fKM", info.routeRemainDis / 1000f) : 
+                        info.routeRemainDis + "M";
+                updateComponentText("navi_distance_remaining", distanceText);
+                
+                String etaText = NaviInfoManager.calculateEta(info.routeRemainTime);
+                updateComponentText("navi_arrival_time", etaText);
+            }
+
+            if (mPresentationManager != null) {
+                mPresentationManager.updateGuideInfo(info);
+            }
+            NaviInfoManager.getInstance(mContext).updateGuideInfo(info);
+        });
+    }
+
+
+    public void onNaviStatusUpdate(final int state) {
+        mMainHandler.post(() -> {
+            try {
+                DebugLogger.e(TAG, "[NAVI_CYCLE] onNaviStatusUpdate: State=" + state); // [LOG] High Priority
+                
+                // State 1=Navi, 8=Emulator, 9=StartGuide
+                if (state == 1 || state == 8 || state == 9) {
+                    if (mPresentationManager != null) {
+                        DebugLogger.e(TAG, "[NAVI_CYCLE] Starting Navigation (setNavigating=true)"); // [LOG]
+                        mPresentationManager.setNavigating(true);
+                    }
+                } 
+                // State 2 = Stopped (User says NO), 40 = End (Confirmed?)
+                // [FIX] State 40 is a KEEP-ALIVE heartbeat (every ~10s). IGNORE IT.
+                // [FIX] Log analysis shows State 35, 308 appear at END sequence.
+                // We use 35 and 308 as explicit hard-stop triggers.
+                else if (state == 35 || state == 308) {
+                     DebugLogger.e(TAG, "[NAVI_CYCLE] STOP DETECTED (State " + state + ") -> calling resetAllNavigationUI"); // [LOG]
+                     resetAllNavigationUI();
+                }
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Error in onNaviStatusUpdate state=" + state, e);
+            }
+        });
+    }
+
+    /**
+     * Centralized Reset for ALL Navigation UI
+     */
+    private void resetAllNavigationUI() {
+        DebugLogger.e(TAG, "[NAVI_CYCLE] resetAllNavigationUI: EXECUTE START"); // [LOG]
+        try {
+            if (mPresentationManager != null) {
+                // 1. Force state to false
+                DebugLogger.e(TAG, "[NAVI_CYCLE] 1. setNavigating(false)");
+                mPresentationManager.setNavigating(false);
+
+                // 2. Clear Traffic Lights
+                DebugLogger.e(TAG, "[NAVI_CYCLE] 2. resetTrafficLights");
+                mPresentationManager.resetTrafficLights();
+
+                // 3. Clear Guide Info (Strings/HUD)
+                DebugLogger.e(TAG, "[NAVI_CYCLE] 3. resetNaviInfo");
+                mPresentationManager.resetNaviInfo();
+            }
+
+            // 4. Force Remove Window (Redundant safety)
+            DebugLogger.e(TAG, "[NAVI_CYCLE] 4. forceRemoveFloatingWindow (Backup)");
+            // The original code called mPresentationManager.forceRemoveFloatingWindow();
+            // Assuming forceRemoveFloatingWindow() is a method of the current class or accessible.
+            // If it's a method of mPresentationManager, it should be mPresentationManager.forceRemoveFloatingWindow();
+            // Based on the original code, it was mPresentationManager.forceRemoveFloatingWindow();
+            // Reverting to that for correctness.
+            if (mPresentationManager != null) {
+                mPresentationManager.forceRemoveFloatingWindow();
+            }
+
+
+            DebugLogger.e(TAG, "[NAVI_CYCLE] resetAllNavigationUI: EXECUTE END (Success)");
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "[NAVI_CYCLE] CRITICAL ERROR in resetAllNavigationUI", e);
+        }
+
+        // 2. Reset Data Manager (State)
+        try {
+            NaviInfoManager.getInstance(mContext).reset();
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error resetting NaviInfoManager", e);
+        }
+        
+        // 3. Restore Instrument Mode (3) asynchronously
+        new Thread(() -> {
+            try {
+                applyNaviMode(3, "NAVI-END");
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Error applying navi mode", e);
+            }
+        }).start();
+    }
+
 }

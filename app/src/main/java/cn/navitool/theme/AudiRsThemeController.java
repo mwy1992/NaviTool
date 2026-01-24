@@ -57,6 +57,9 @@ public class AudiRsThemeController extends BaseThemeController {
 
     // Traffic Light & Navi - New Layout
     private View mNaviTrafficContainer;
+    // [FIX] Added missing declaration for Navigation Info Row
+    private View mNaviInfoRow;
+    
     private ImageView mDirectionArrow;
     private TextView mCountdownText;
     private ImageView mLightRed;
@@ -164,6 +167,8 @@ public class AudiRsThemeController extends BaseThemeController {
 
         // Traffic Light & Navi
         mNaviTrafficContainer = rootView.findViewById(R.id.audiRsNaviTrafficContainer);
+        mNaviInfoRow = rootView.findViewById(R.id.audiRsNaviInfoRow); // [FIX] Binidng added
+        
         mDirectionArrow = rootView.findViewById(R.id.audiRsDirectionArrow);
         mCountdownText = rootView.findViewById(R.id.audiRsCountdown);
         if (mCountdownText != null) {
@@ -186,6 +191,9 @@ public class AudiRsThemeController extends BaseThemeController {
         if (mNaviTrafficContainer != null) {
             mNaviTrafficContainer.setVisibility(View.GONE);
         }
+        if (mNaviInfoRow != null) {
+            mNaviInfoRow.setVisibility(View.GONE);
+        }
 
         // TPMS
         bindTpmsViews(rootView);
@@ -200,16 +208,10 @@ public class AudiRsThemeController extends BaseThemeController {
 
         // Initial sync
         String currentGear = cn.navitool.managers.ClusterHudManager.getInstance(rootView.getContext()).getCurrentDisplayGear();
+        DebugLogger.d(TAG, "AudiRS Init Gear: " + currentGear);
         setGear(currentGear);
         
         updateDayMode();
-        
-        // Init Animator
-        // Init Animator
-        /*if (mSpeedText != null) {
-            mSpeedTextAnimator = new SmoothTextAnimator(mSpeedText);
-            mSpeedTextAnimator.setInitialValue(0);
-        }*/
     }
     
     private void bindTpmsViews(View rootView) {
@@ -245,6 +247,7 @@ public class AudiRsThemeController extends BaseThemeController {
         mFlashBar = null;
         mBackground = null;
         mNaviTrafficContainer = null;
+        mNaviInfoRow = null; // [FIX] Clear reference
         stopTrafficLightFlash();
         stopRpmFlash();
     }
@@ -258,22 +261,36 @@ public class AudiRsThemeController extends BaseThemeController {
     @Override
     public void updateTrafficLight(TrafficLightInfo info) {
         if (info == null) {
-            if (mNaviTrafficContainer != null)
-                mNaviTrafficContainer.setVisibility(View.GONE);
+            // Treat as reset/no signal
+            resetTrafficLights();
+            if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
             return;
         }
 
-        if (mNaviTrafficContainer != null)
-            mNaviTrafficContainer.setVisibility(View.VISIBLE);
-
         mCurrentRawStatus = info.status;
         int mappedStatus = NaviInfoManager.mapStatus(info.status);
+        
+        // [FIX] Valid status check: Prevent showing garbage or cleared data (0) as visible elements
+        boolean isValidStatus = (mappedStatus == TrafficLightView.STATUS_RED || 
+                               mappedStatus == TrafficLightView.STATUS_YELLOW || 
+                               mappedStatus == TrafficLightView.STATUS_GREEN);
+
+        // Only explicitly show container if we have valid data. 
+        // If status is 0 and no countdown, usually we want to hide it or keep it hidden.
+        if (mNaviTrafficContainer != null) {
+             if (isValidStatus || info.redCountdown > 0) {
+                 mNaviTrafficContainer.setVisibility(View.VISIBLE);
+             } else {
+                 mNaviTrafficContainer.setVisibility(View.GONE);
+                 return; // Nothing to draw
+             }
+        }
 
         boolean shouldFlash = false;
         if (mCountdownText != null) {
             // [FIX] Only show countdown if status is valid AND time > 0
             int time = info.redCountdown;
-            if (time > 0 && mappedStatus != 0) {
+            if (time > 0 && isValidStatus) {
                 mCountdownText.setText(String.valueOf(time));
                 mCountdownText.setVisibility(View.VISIBLE);
                 if (time <= 3 && (mappedStatus == TrafficLightView.STATUS_RED
@@ -293,9 +310,8 @@ public class AudiRsThemeController extends BaseThemeController {
         }
 
         // Arrow Rotation
-        // Arrow Rotation
         if (mDirectionArrow != null) {
-            if (mappedStatus != 0) {
+            if (isValidStatus) {
                 mDirectionArrow.setVisibility(View.VISIBLE);
                 mDirectionArrow.setImageResource(R.drawable.ic_direction_arrow);
                 float rotation = 0;
@@ -307,7 +323,7 @@ public class AudiRsThemeController extends BaseThemeController {
                 }
                 mDirectionArrow.setRotation(rotation);
             } else {
-                // [FIX] Hide arrow if status is 0 (No Light/Reset) prevents "White Arrow" glitch
+                // [FIX] Hide arrow if status is 0 or Unknown
                 mDirectionArrow.setVisibility(View.GONE);
             }
         }
@@ -357,6 +373,20 @@ public class AudiRsThemeController extends BaseThemeController {
     public void resetTrafficLights() {
         stopTrafficLightFlash();
         updateTrafficLightImages(0, 0f); // Reset to inactive
+        
+        // [FIX] Explicitly hide views
+        if (mLightRed != null) mLightRed.setVisibility(View.GONE);
+        if (mLightYellow != null) mLightYellow.setVisibility(View.GONE);
+        if (mLightGreen != null) mLightGreen.setVisibility(View.GONE);
+        if (mCountdownText != null) { 
+            mCountdownText.setText(""); 
+            mCountdownText.setVisibility(View.GONE); 
+        }
+        if (mDirectionArrow != null) { 
+            mDirectionArrow.setImageDrawable(null); 
+            mDirectionArrow.setVisibility(View.GONE); 
+        }
+        if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
     }
 
     @Override
@@ -372,21 +402,32 @@ public class AudiRsThemeController extends BaseThemeController {
         if (mNaviEta != null) mNaviEta.setText("");
         
         if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
+        if (mNaviInfoRow != null) mNaviInfoRow.setVisibility(View.GONE);
     }
 
     @Override
     public void updateGuideInfo(GuideInfo info) {
+        if (info == null) {
+            if (mNaviInfoRow != null) mNaviInfoRow.setVisibility(View.GONE);
+            return;
+        }
+
         if (info == null) return;
         
-        if (mNaviTrafficContainer != null && mNaviTrafficContainer.getVisibility() != View.VISIBLE) {
-            mNaviTrafficContainer.setVisibility(View.VISIBLE);
+        // [FIX] If distance is negative (Navi End), hide the row and return immediately
+        // This solves the persistence issue where empty/reset calls kept showing it.
+        if (info.routeRemainDis < 0) {
+            if (mNaviInfoRow != null) mNaviInfoRow.setVisibility(View.GONE);
+            return;
+        }
+        
+        if (mNaviInfoRow != null && mNaviInfoRow.getVisibility() != View.VISIBLE) {
+            mNaviInfoRow.setVisibility(View.VISIBLE);
         }
 
         if (mNaviDistance != null) {
             String distText = "";
-            if (info.routeRemainDis < 0) {
-                 distText = "";
-            } else if (info.routeRemainDis >= 1000) {
+            if (info.routeRemainDis >= 1000) {
                  distText = String.format(java.util.Locale.US, "%.1fKM", info.routeRemainDis / 1000f);
             } else {
                  distText = info.routeRemainDis + "M";
@@ -399,9 +440,6 @@ public class AudiRsThemeController extends BaseThemeController {
             String eta = NaviInfoManager.calculateEta(info.routeRemainTime);
             String displayEta = eta.isEmpty() ? "" : "ETA " + eta;
             mNaviEta.setText(displayEta);
-            DebugLogger.d(TAG, "updateGuideInfo: ETA Set -> " + displayEta + " (Vis: " + mNaviEta.getVisibility() + ")");
-        } else {
-             DebugLogger.e(TAG, "updateGuideInfo: mNaviEta is NULL");
         }
     }
     
@@ -473,12 +511,9 @@ public class AudiRsThemeController extends BaseThemeController {
 
     private void updateDayMode() {
         if (mBackground != null) {
-            int resId;
-            if (mIsNavigating) {
-                resId = mIsDayMode ? R.drawable.audi_rs_bg_day : R.drawable.audi_rs_bg_night;
-            } else {
-                resId = mIsDayMode ? R.drawable.audi_rs_bg_day_idle : R.drawable.audi_rs_bg_night_idle;
-            }
+            // [Modified] Logic simplified: Only depend on system Day/Night mode
+            // No longer distinguishing "Navigating" vs "Idle" background variants
+            int resId = mIsDayMode ? R.drawable.audi_rs_bg_day : R.drawable.audi_rs_bg_night;
             mBackground.setImageResource(resId);
         }
     }

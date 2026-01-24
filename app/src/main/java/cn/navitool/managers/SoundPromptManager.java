@@ -85,6 +85,8 @@ public class SoundPromptManager {
             key = "sound_gear_n";
         } else if (gear == GEAR_PARK || gear == TRSM_GEAR_PARK) {
             key = "sound_gear_p";
+        } else if (gear == -1) { // -1 represents Manual Gear Mode in some contexts
+            key = "sound_gear_m";
         }
 
         if (key != null) {

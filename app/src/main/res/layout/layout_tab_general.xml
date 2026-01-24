@@ -56,6 +56,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_weight="1"
                     android:text="@string/sunshade_auto_open"
                     android:textSize="18sp"
                     android:textStyle="bold"
@@ -64,7 +65,7 @@
                     android:id="@+id/sbSunshadePosition"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
+                    android:layout_weight="100"
                     android:layout_marginHorizontal="8dp"
                     android:max="100"
                     android:min="0"

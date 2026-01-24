@@ -211,48 +211,39 @@
                 android:visibility="gone"/>
         </LinearLayout>
 
-        <!-- Row 3: Distance & ETA -->
-        <LinearLayout
-            android:id="@+id/audiRsNaviInfoRow"
+    </LinearLayout>
+
+    <!-- Navigation Info Row (Separated for stability) -->
+    <LinearLayout
+        android:id="@+id/audiRsNaviInfoRow"
+        android:layout_width="250dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="0dp"
+        android:layout_marginTop="230dp"
+        android:orientation="horizontal"
+        android:gravity="center_horizontal|bottom"
+        android:baselineAligned="true">
+        
+        <TextView
+            android:id="@+id/audiRsNaviDistance"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_horizontal|bottom"
-            android:baselineAligned="true">
-
-            <TextView
-                android:id="@+id/audiRsNaviDistance"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:maxWidth="70dp"
-                android:gravity="bottom|end"
-                android:paddingEnd="2dp"
-                android:textColor="#FFFFFF"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:autoSizeTextType="uniform"
-                android:autoSizeMinTextSize="9sp"
-                android:autoSizeMaxTextSize="18sp"
-                android:autoSizeStepGranularity="1sp"
-                android:maxLines="1" />
-
-            <TextView
-                android:id="@+id/audiRsNaviEta"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:maxWidth="70dp"
-                android:gravity="bottom|start"
-                android:paddingStart="2dp"
-                android:textColor="#FFFFFF"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                android:autoSizeTextType="uniform"
-                android:autoSizeMinTextSize="9sp"
-                android:autoSizeMaxTextSize="18sp"
-                android:autoSizeStepGranularity="1sp"
-                android:maxLines="1" />
-        </LinearLayout>
-
+            android:gravity="bottom|end"
+            android:paddingEnd="2dp"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:maxLines="1" />
+            
+        <TextView
+            android:id="@+id/audiRsNaviEta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="bottom|start"
+            android:paddingStart="2dp"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:maxLines="1" />
     </LinearLayout>
 
     <!-- TPMS Layout: Front Left (Top Inner) -->

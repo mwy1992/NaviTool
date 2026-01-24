@@ -376,37 +376,46 @@ public class SimulateGear {
 
         // Note: Constants are based on ISensorEvent and typical values
         switch (gearValue) {
-            case 2097680: // ISensorEvent.GEAR_PARK
-            case 15:
+            // P (Park)
+            case 2097712: // SoundPromptManager.GEAR_PARK
+            case 15:      // Legacy TRSM_GEAR_PARK
                 return "P";
-            case 2097696: // ISensorEvent.GEAR_REVERSE
-            case 11:
+
+            // R (Reverse)
+            case 2097728: // SoundPromptManager.GEAR_REVERSE
+            case 11:      // Legacy TRSM_GEAR_RVS
                 return "R";
-            case 2097681: // ISensorEvent.GEAR_NEUTRAL
-            case 14:
+
+            // N (Neutral)
+            case 2097680: // SoundPromptManager.GEAR_NEUTRAL
+            case 14:      // Legacy TRSM_GEAR_NEUT
                 return "N";
-            case 2097682: // ISensorEvent.GEAR_DRIVE
-            case 13:
+
+            // D (Drive)
+            case 2097696: // SoundPromptManager.GEAR_DRIVE
+            case 13:      // Legacy TRSM_GEAR_DRIVE
                 return "D";
-            // Map specific sub-gears if sensor supports them natively
-            case 2097683: // ISensorEvent.GEAR_FIRST
-                return "D1";
-            case 2097684: // ISensorEvent.GEAR_SECOND
-                return "D2";
-            case 2097685: // ISensorEvent.GEAR_THIRD
-                return "D3";
-            case 2097686: // ISensorEvent.GEAR_FOURTH
-                return "D4";
-            case 2097687: // ISensorEvent.GEAR_FIFTH
-                return "D5";
-            case 2097688: // ISensorEvent.GEAR_SIXTH
-                return "D6";
-            case 2097689: // ISensorEvent.GEAR_SEVENTH
-                return "D7";
-            case 2097690: // ISensorEvent.GEAR_EIGHTH
-                return "D8";
+
+            // Sub-gears (Typically 1-8 for 8AT/DCT)
+            // [REMOVED] These ID mappings (2097683-2097690) are theoretically defined in AdaptAPI 
+            // but effectively unused because the vehicle only sends basic D/M/R/P/N events.
+            // Detailed D1-D8/M1-M8/R gears are calculated via calculateGearByRatio().
+            /* 
+            case 2097683: return "D1";
+            case 2097684: return "D2";
+            case 2097685: return "D3";
+            case 2097686: return "D4";
+            case 2097687: return "D5";
+            case 2097688: return "D6";
+            case 2097689: return "D7";
+            case 2097690: return "D8";
+            */
+            
             default:
-                return "D"; // Fallback
+                // [CHANGED] Return empty string for unknown values instead of confusing "D".
+                // This allows the UI to handle "No Data" gracefully or show a warning,
+                // rather than falsely indicating Drive mode.
+                return ""; 
         }
     }
 }

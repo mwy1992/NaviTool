@@ -116,6 +116,7 @@ public class SoundSettingsController {
         setupSoundItem(R.id.cardSoundGearN, R.string.switch_sound_gear_n, "sound_gear_n");
         setupSoundItem(R.id.cardSoundGearR, R.string.switch_sound_gear_r, "sound_gear_r");
         setupSoundItem(R.id.cardSoundGearP, R.string.switch_sound_gear_p, "sound_gear_p");
+        setupSoundItem(R.id.cardSoundGearM, R.string.switch_sound_gear_m, "sound_gear_m");
         
         setupSoundItem(R.id.cardSoundDoorDriver, R.string.switch_sound_door_driver, "sound_door_driver");
         setupSoundItem(R.id.cardSoundDoorDriverClose, R.string.switch_sound_door_driver_close, "sound_door_driver_close");
@@ -246,14 +247,28 @@ public class SoundSettingsController {
             return;
         }
 
+        // [FIX] Sort files alphabetically
+        java.util.Arrays.sort(files, java.util.Comparator.comparing(File::getName, String.CASE_INSENSITIVE_ORDER));
+
         String[] fileNames = new String[files.length];
         for (int i = 0; i < files.length; i++) {
             fileNames[i] = files[i].getName();
         }
 
+        // [FIX] Use Custom Adapter to increase text size
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(mActivity, android.R.layout.simple_list_item_1, fileNames) {
+            @Override
+            public View getView(int position, View convertView, android.view.ViewGroup parent) {
+                TextView view = (TextView) super.getView(position, convertView, parent);
+                view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 24); // Increase to 24sp
+                view.setPadding(view.getPaddingLeft(), 40, view.getPaddingRight(), 40); // [FIX] Increase Spacing
+                return view;
+            }
+        };
+
         new android.app.AlertDialog.Builder(mActivity)
                 .setTitle(R.string.dialog_title_select_sound)
-                .setItems(fileNames, (dialog, which) -> {
+                .setAdapter(adapter, (dialog, which) -> {
                     String selectedFile = fileNames[which];
                     ConfigManager.getInstance().setString(fileKey, selectedFile);
                     if (tvFile != null) {
@@ -280,6 +295,8 @@ public class SoundSettingsController {
                 finalName = "gear_r.mp3";
             else if (keyPrefix.equals("sound_gear_p"))
                 finalName = "gear_p.mp3";
+            else if (keyPrefix.equals("sound_gear_m"))
+                finalName = "gear_m.mp3";
             else if (keyPrefix.equals("sound_door_passenger"))
                 finalName = "door_passenger.mp3";
         }
@@ -310,6 +327,7 @@ public class SoundSettingsController {
             R.id.cardSoundGearN,
             R.id.cardSoundGearR,
             R.id.cardSoundGearP,
+            R.id.cardSoundGearM,
             R.id.cardSoundDoorDriver,
             R.id.cardSoundDoorDriverClose,
             R.id.cardSoundDoorPassenger,

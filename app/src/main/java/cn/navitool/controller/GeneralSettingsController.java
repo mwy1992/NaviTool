@@ -220,18 +220,26 @@ public class GeneralSettingsController {
 
         // Auto Open Switch
         SwitchMaterial swAutoOpen = mLayoutGeneral.findViewById(R.id.swSunshadeAutoOpen);
+        com.google.android.material.button.MaterialButton btnNight = mLayoutGeneral
+                .findViewById(R.id.btnSunshadeNightOnly);
+        SeekBar sbPos = mLayoutGeneral.findViewById(R.id.sbSunshadePosition);
+
+        // [FIX] Initial Visibility State
+        boolean isAutoOpen = SunshadeManager.getInstance(mActivity).isAutoOpenEnabled();
+        updateSunshadeUiVisibility(isAutoOpen, btnNight, sbPos);
+
         if (swAutoOpen != null) {
-            swAutoOpen.setChecked(SunshadeManager.getInstance(mActivity).isAutoOpenEnabled());
+            swAutoOpen.setChecked(isAutoOpen);
             swAutoOpen.setOnCheckedChangeListener((v, isChecked) -> {
                 SunshadeManager.getInstance(mActivity).setAutoOpenEnabled(isChecked);
-                if (isChecked)
+                updateSunshadeUiVisibility(isChecked, btnNight, sbPos);
+                if (isChecked) {
                     DebugLogger.toast(mActivity, mActivity.getString(R.string.toast_sunshade_auto_enabled));
+                }
             });
         }
 
         // Night Mode Only Button
-        com.google.android.material.button.MaterialButton btnNight = mLayoutGeneral
-                .findViewById(R.id.btnSunshadeNightOnly);
         if (btnNight != null) {
             boolean isNightOnly = SunshadeManager.getInstance(mActivity).isNightModeOnly();
             updateSunshadeNightIcon(btnNight, isNightOnly);
@@ -243,7 +251,6 @@ public class GeneralSettingsController {
         }
 
         // Target Position Slider
-        SeekBar sbPos = mLayoutGeneral.findViewById(R.id.sbSunshadePosition);
         if (sbPos != null) {
             sbPos.setProgress(SunshadeManager.getInstance(mActivity).getTargetPosition());
             sbPos.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -263,6 +270,18 @@ public class GeneralSettingsController {
                 }
             });
         }
+    }
+
+    private void updateSunshadeUiVisibility(boolean isEnabled, View btn, View slider) {
+        int visibility = isEnabled ? View.VISIBLE : View.GONE;
+        if (btn != null) btn.setVisibility(visibility);
+        if (slider != null) slider.setVisibility(visibility);
+        
+        // [FIX] Layout Adjustment: If hidden, ensure Text takes space or Switch aligns right?
+        // Current XML: TextView (no weight), SeekBar (weight=1), Button, Switch.
+        // If SeekBar GONE, weight is lost.
+        // Ideally we should set weight on TextView if hidden, but that's complex.
+        // For now GONE simply collapses them together.
     }
 
     private void updateSunshadeNightIcon(com.google.android.material.button.MaterialButton btn, boolean isNightOnly) {

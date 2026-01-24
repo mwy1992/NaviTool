@@ -115,12 +115,8 @@ public class PresentationManager extends android.app.Dialog {
             getWindow().setBackgroundDrawable(
                     new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
 
-            // [FIX] Z-Order Correction: Use TYPE_APPLICATION_OVERLAY
-            if (android.os.Build.VERSION.SDK_INT >= 26) {
-                getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
-            } else {
-                getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ALERT);
-            }
+            // [FIX] Z-Order Correction: Force TYPE_APPLICATION_OVERLAY for top-most layer
+            getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
 
             // Critical Flags for Overlay
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
@@ -287,7 +283,13 @@ public class PresentationManager extends android.app.Dialog {
 
     private Runnable mTempShowRunnable = () -> { mIsTempShowing = false; updateFloatingTrafficLightVisibility(); };
     private boolean mIsTempShowing = false;
+
     private boolean mIsFloatingViewAdded = false;
+
+    // [FIX] Public getter to check navigation state
+    public boolean isNavigating() {
+        return mIsNavigating;
+    }
 
     private void forceShowFloatingTrafficLightTemporary() {
         if (mFloatingTrafficLightContainer == null) initializeFloatingTrafficLight();
@@ -305,7 +307,9 @@ public class PresentationManager extends android.app.Dialog {
 
     private void updateFloatingTrafficLightVisibility() {
         if (mFloatingTrafficLightContainer == null || mFloatingWindowManager == null) return;
-        boolean shouldShow = mIsTempShowing || (mIsFloatingEnabled && mLatestTrafficLightInfo != null);
+        boolean hasValidInfo = mLatestTrafficLightInfo != null && mLatestTrafficLightInfo.status != 0;
+        // [FIX] Ensure we are actually navigating before showing floating window
+        boolean shouldShow = mIsTempShowing || (mIsFloatingEnabled && hasValidInfo && mIsNavigating);
         try {
             if (shouldShow) {
                 if (!mIsFloatingViewAdded) {
@@ -316,9 +320,18 @@ public class PresentationManager extends android.app.Dialog {
                     mFloatingTrafficLightContainer.setVisibility(View.VISIBLE);
                 }
             } else {
-                if (mIsFloatingViewAdded) {
-                    mFloatingWindowManager.removeView(mFloatingTrafficLightContainer);
-                    mIsFloatingViewAdded = false;
+                // [FIX] Force GONE even if remove fails or state is desynced
+                if (mFloatingTrafficLightContainer != null) {
+                     mFloatingTrafficLightContainer.setVisibility(View.GONE);
+                     // [FIX] Force Remove if attached (Don't trust mIsFloatingViewAdded)
+                     if (mFloatingTrafficLightContainer.getParent() != null || mIsFloatingViewAdded) {
+                         try {
+                             mFloatingWindowManager.removeView(mFloatingTrafficLightContainer);
+                         } catch (Exception e) {
+                             // Ignore "not attached" errors if we were wrong
+                         }
+                         mIsFloatingViewAdded = false;
+                     }
                 }
             }
         } catch (Exception e) {
@@ -326,19 +339,53 @@ public class PresentationManager extends android.app.Dialog {
         }
     }
     
-    // --- Logic Update for Traffic Light Data ---
+    /**
+     * [FIX] 暴力移除悬浮窗，不进行任何条件判断
+     * 直接调用 WindowManager.removeView，捕获异常即可。
+     * 用于导航结束时的强制清理。
+     */
+    public void forceRemoveFloatingWindow() {
+        if (mFloatingWindowManager != null && mFloatingTrafficLightContainer != null) {
+            try {
+                mFloatingTrafficLightContainer.setVisibility(View.GONE);
+                mFloatingWindowManager.removeView(mFloatingTrafficLightContainer);
+            } catch (Exception e) {
+                // Ignore "not attached" or other errors
+            } finally {
+                mIsFloatingViewAdded = false;
+            }
+        }
+    }
     private void updateFloatingTrafficLightLogic(NaviInfoManager.TrafficLightInfo info) {
         mLatestTrafficLightInfo = info;
         if (mFloatingTrafficLightContainer == null) initializeFloatingTrafficLight();
         if (mFloatingTrafficLightContainer == null) return;
 
         if (!mIsFloatingEnabled && !mIsTempShowing) {
+            // [FIX] 即使悬浮窗未启用，也要确保隐藏 HUD 红绿灯组件
+            if (mContainerDashboard != null) mContainerDashboard.setVisibility(View.GONE);
+            if (mHudTrafficLightView != null) mHudTrafficLightView.setVisibility(View.GONE);
             updateFloatingTrafficLightVisibility();
             return;
         }
         if (info == null && !mIsTempShowing) {
+            // [FIX] 导航结束时也隐藏 HUD 红绿灯组件
+            if (mContainerDashboard != null) mContainerDashboard.setVisibility(View.GONE);
+            if (mHudTrafficLightView != null) mHudTrafficLightView.setVisibility(View.GONE);
             updateFloatingTrafficLightVisibility();
             return;
+        }
+
+        // [FIX] Strict Validity Check: If status is 0 (Invalid) AND no countdown, HIDE
+        int mappedStatus = NaviInfoManager.mapStatus(info.status);
+        int time = info.redCountdown;
+        
+        if (mappedStatus == 0 && time <= 0) {
+            // Treat as empty/hidden
+             if (mContainerDashboard != null) mContainerDashboard.setVisibility(View.GONE);
+             if (mHudTrafficLightView != null) mHudTrafficLightView.setVisibility(View.GONE);
+             updateFloatingTrafficLightVisibility();
+             return;
         }
 
         updateFloatingTrafficLightVisibility();
@@ -346,9 +393,6 @@ public class PresentationManager extends android.app.Dialog {
         
         if (mContainerDashboard != null) mContainerDashboard.setVisibility(!mIsHudStyle ? View.VISIBLE : View.GONE);
         if (mHudTrafficLightView != null) mHudTrafficLightView.setVisibility(mIsHudStyle ? View.VISIBLE : View.GONE);
-
-        int mappedStatus = NaviInfoManager.mapStatus(info.status);
-        int time = info.redCountdown;
 
         if (mIsHudStyle && mHudTrafficLightView != null) {
             mHudTrafficLightView.updateState(mappedStatus, time, info.direction);
@@ -499,7 +543,21 @@ public class PresentationManager extends android.app.Dialog {
 
     // --- Unified Update Methods (No more instanceof checks) ---
 
-    public void updateTrafficLight(TrafficLightInfo info) {
+    // [NEW] Traffic Light Watchdog (3s)
+    private final Runnable mTrafficLightTimeoutRunnable = () -> {
+        DebugLogger.e(TAG, "[Watchdog] Traffic Light Timeout (No data for 3s) -> Hiding");
+        resetTrafficLights();
+        mLatestTrafficLightInfo = null; // Clear cache immediately
+    };
+    
+    public void updateTrafficLight(NaviInfoManager.TrafficLightInfo info) {
+        // [FIX] Strict State Check: If not navigating, IGNORE all data.
+        if (!mIsNavigating) return;
+
+        // [New] Reset Watchdog
+        mMainHandler.removeCallbacks(mTrafficLightTimeoutRunnable);
+        mMainHandler.postDelayed(mTrafficLightTimeoutRunnable, 3000); // 3s Timeout
+
         mLatestTrafficLightInfo = info; // [FIX] Cache for theme restoration
         updateFloatingTrafficLightLogic(info);
         if (mThemeController != null) mThemeController.updateTrafficLight(info);
@@ -509,13 +567,23 @@ public class PresentationManager extends android.app.Dialog {
     }
 
     public void updateGuideInfo(NaviInfoManager.GuideInfo info) {
+        // [FIX] Strict State Check: If not navigating, IGNORE all data.
+        // This prevents "Zombie" UI elements from reappearing after navigation ends.
+        if (!mIsNavigating) return;
+
         mLatestGuideInfo = info; // [FIX] Cache for theme restoration
         if (mThemeController != null) mThemeController.updateGuideInfo(info);
         updateGuideInfoGeneric(mRealHudComponents, info);
     }
 
+    private boolean mIsNavigating = false; // [FIX] Track nav state internally
+
     public void setNavigating(boolean isNavigating) {
+        mIsNavigating = isNavigating;
         if (mThemeController != null) mThemeController.setNavigating(isNavigating);
+        
+        // [FIX] Update floating window visibility immediately when state changes
+        updateFloatingTrafficLightVisibility();
     }
 
     public void updateSpeed(float speed) {
@@ -572,12 +640,77 @@ public class PresentationManager extends android.app.Dialog {
     }
 
     public void resetNaviInfo() {
-        if (mThemeController != null) mThemeController.resetNaviInfo();
+        try {
+            if (mThemeController != null) mThemeController.resetNaviInfo();
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error resetting theme navi info", e);
+        }
+        
+        // [FIX] Explicitly clear internal guide info cache
+        mLatestGuideInfo = null;
+        mCachedNaviArrivalTime = null;
+        mCachedNaviDistance = null;
+
+        // [FIX] Hide Generic Views (HUD/Cluster text like distance, eta, road names)
+        hideGenericNavigationComponents(mRealClusterComponents);
+        hideGenericNavigationComponents(mRealHudComponents);
     }
     
     public void resetTrafficLights() {
-        if (mThemeController != null) mThemeController.resetTrafficLights();
+        try {
+            if (mThemeController != null) mThemeController.resetTrafficLights();
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error resetting theme traffic lights", e);
+        }
+        
+        // [FIX] 导航结束时，直接强制隐藏 HUD 红绿灯组件
+        if (mHudTrafficLightView != null) mHudTrafficLightView.setVisibility(View.GONE);
+        if (mContainerDashboard != null) mContainerDashboard.setVisibility(View.GONE);
+        
+        // [FIX] Use Force Remove Logic
+        forceRemoveFloatingWindow();
+        
+        // [FIX] Explicitly clear internal cache
+        mLatestTrafficLightInfo = null;
+
         updateFloatingTrafficLightLogic(null); // Also clear floating logic
+
+        // [FIX] Hide Generic Traffic Light Views
+        hideGenericTrafficLightComponents(mRealClusterComponents);
+        hideGenericTrafficLightComponents(mRealHudComponents);
+    }
+
+    private void hideGenericNavigationComponents(List<View> viewList) {
+        if (viewList == null) return;
+        for (View v : viewList) {
+            Object tag = v.getTag();
+            if (tag instanceof ClusterHudManager.HudComponentData) {
+                ClusterHudManager.HudComponentData data = (ClusterHudManager.HudComponentData) tag;
+                // Check for Navi Types
+                if ("navi_arrival_time".equals(data.type) || 
+                    "navi_distance_remaining".equals(data.type) ||
+                    "navi_current_road".equals(data.type) ||
+                    "navi_next_road".equals(data.type)) {
+                    v.setVisibility(View.GONE);
+                    if (v instanceof android.widget.TextView) {
+                        ((android.widget.TextView) v).setText(""); // Clear text too
+                    }
+                }
+            }
+        }
+    }
+
+    private void hideGenericTrafficLightComponents(List<View> viewList) {
+        if (viewList == null) return;
+        for (View v : viewList) {
+            Object tag = v.getTag();
+            if (tag instanceof ClusterHudManager.HudComponentData) {
+                ClusterHudManager.HudComponentData data = (ClusterHudManager.HudComponentData) tag;
+                if ("traffic_light".equals(data.type)) {
+                    v.setVisibility(View.GONE);
+                }
+            }
+        }
     }
     
     // Legacy support for ClusterHudManager
@@ -740,6 +873,12 @@ public class PresentationManager extends android.app.Dialog {
                     mCachedNaviDistance = text;
                 }
 
+                // [FIX] Ensure Visible if this is a navi component and we are navigating
+                boolean isNaviComponent = type.startsWith("navi_");
+                if (isNaviComponent && mIsNavigating) {
+                    v.setVisibility(View.VISIBLE);
+                }
+
                 if (v instanceof android.widget.TextView && text != null) {
                     android.widget.TextView tv = (android.widget.TextView) v;
                     tv.setText(text);
@@ -789,7 +928,8 @@ public class PresentationManager extends android.app.Dialog {
                          if (info == null) {
                              tlv.setVisibility(View.GONE);
                          } else {
-                             tlv.setVisibility(View.VISIBLE);
+                             // [FIX] Ensure Visible if Navigating
+                             if (mIsNavigating) tlv.setVisibility(View.VISIBLE);
                              int mappedStatus = NaviInfoManager.mapStatus(info.status);
                              tlv.updateState(mappedStatus, info.redCountdown, info.direction);
                          }
@@ -820,8 +960,15 @@ public class PresentationManager extends android.app.Dialog {
                 cn.navitool.managers.ClusterHudManager.HudComponentData data = (cn.navitool.managers.ClusterHudManager.HudComponentData) tag;
                 if ("navi_arrival_time".equals(data.type) && mCachedNaviArrivalTime != null) {
                     ((TextView) view).setText(mCachedNaviArrivalTime);
+                    // [FIX] Ensure Visible if Navigating
+                    if (mIsNavigating) view.setVisibility(View.VISIBLE);
                 } else if ("navi_distance_remaining".equals(data.type) && mCachedNaviDistance != null) {
                     ((TextView) view).setText(mCachedNaviDistance);
+                    // [FIX] Ensure Visible if Navigating
+                    if (mIsNavigating) view.setVisibility(View.VISIBLE);
+                } else if ("navi_current_road".equals(data.type) || "navi_next_road".equals(data.type)) {
+                    // [FIX] Also ensure road names are visible
+                    if (mIsNavigating) view.setVisibility(View.VISIBLE);
                 }
             }
         }
@@ -1016,6 +1163,9 @@ public class PresentationManager extends android.app.Dialog {
                     params.width = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
                     params.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
                     view = tlv;
+                    // [FIX] Default to GONE if not navigating
+                    tlv.setVisibility(mIsNavigating ? View.VISIBLE : View.GONE);
+
                     if (mLatestTrafficLightInfo != null) {
                         int mappedStatus = NaviInfoManager.mapStatus(mLatestTrafficLightInfo.status);
                         tlv.updateState(mappedStatus, mLatestTrafficLightInfo.redCountdown, mLatestTrafficLightInfo.direction);
@@ -1031,7 +1181,8 @@ public class PresentationManager extends android.app.Dialog {
                 } else if ("fuel_range".equals(data.type) || "fuel".equals(data.type)) {
                     android.widget.LinearLayout ll = new android.widget.LinearLayout(getContext());
                     ll.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-                    ll.setGravity(android.view.Gravity.CENTER_VERTICAL); 
+                    // [FIX] Use Right Alignment (Gravity.END) to prevent visual shifting when digits change
+                    ll.setGravity(android.view.Gravity.CENTER_VERTICAL | android.view.Gravity.END); 
 
                     // 1. Emoji View (18px)
                     android.widget.TextView tvEmoji = new android.widget.TextView(getContext());
@@ -1050,10 +1201,15 @@ public class PresentationManager extends android.app.Dialog {
                     tvValue.setTextColor(data.color);
                     tvValue.setBackgroundColor(android.graphics.Color.TRANSPARENT);
                     tvValue.setIncludeFontPadding(false);
+                    // [FIX] Force Single Line to prevent wrapping in narrow width
+                    tvValue.setSingleLine(true);
+                    tvValue.setEllipsize(android.text.TextUtils.TruncateAt.END);
                     ll.addView(tvValue);
                     
                     view = ll;
-                    params.width = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
+                    // [FIX] Set Fixed Width (220px) - Calculated based on "100L|9999KM" max length (~180px) + padding
+                    // 350px was too wide per user feedback.
+                    params.width = 175; 
                 } else if ("guide_line".equals(data.type)) {
                      // [Refactor] Guide Line - Direct Draw for 100% Stability
                      // Avoids rotation/clipping issues with XML shapes
@@ -1100,6 +1256,13 @@ public class PresentationManager extends android.app.Dialog {
                         tv.setTypeface(data.typeface);
                     }
                     view = tv;
+
+                    // [FIX] Default NAVI components to GONE if not navigating
+                    if (data.type != null && data.type.startsWith("navi_")) {
+                        boolean visible = mIsNavigating;
+                        tv.setVisibility(visible ? View.VISIBLE : View.GONE);
+                        DebugLogger.e(TAG, "[HUD_INIT] Created " + data.type + ", mIsNavigating=" + mIsNavigating + " -> Visibility=" + (visible ? "VISIBLE" : "GONE"));
+                    }
                     
                     // Type-specific adjustments
                     if ("hud_rpm".equals(data.type)) {
@@ -1229,7 +1392,15 @@ public class PresentationManager extends android.app.Dialog {
                 } else if (isVolume) {
                     view.setVisibility(mIsVolumeVisible ? View.VISIBLE : View.GONE);
                 } else {
-                    view.setVisibility(View.VISIBLE);
+                    // [FIX] Do NOT blindly set VISIBLE. Check Nav state for Nav components.
+                    boolean isNavComponent = (data.type != null && (data.type.startsWith("navi_") || "traffic_light".equals(data.type)));
+                    if (isNavComponent) {
+                         boolean shouldShow = mIsNavigating;
+                         view.setVisibility(shouldShow ? View.VISIBLE : View.GONE);
+                         DebugLogger.e(TAG, "[HUD_SYNC] Comp=" + data.type + " Override -> " + (shouldShow ? "VISIBLE" : "GONE"));
+                    } else {
+                         view.setVisibility(View.VISIBLE);
+                    }
                 }
 
                 viewList.add(view);

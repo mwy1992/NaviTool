@@ -63,9 +63,7 @@ public class ThemeBrightnessManager {
             if (!mIsMonitoring)
                 return;
             checkAndForceAutoDayNight();
-            mHandler.postDelayed(this, 1000); // Polling
-                                              // interval
-                                              // 1s
+            mHandler.postDelayed(this, 1000); // Polling interval 1s
         }
     };
 
@@ -586,6 +584,21 @@ public class ThemeBrightnessManager {
     // [NEW] Public method for MainActivity to request current status after
     // registering receiver
     public void broadcastStatus() {
+        // [FIX] If mLastThemeMode is not initialized, try to get real value first
+        if (mLastThemeMode == -1) {
+            ICarFunction carFunc = CarServiceManager.getInstance(mContext).getCarFunction();
+            if (carFunc != null) {
+                try {
+                    int mode = carFunc.getFunctionValue(FUNC_DAYMODE_SETTING, ZONE_ALL);
+                    if (mode != -1) {
+                        mLastThemeMode = mode;
+                        DebugLogger.d(TAG, "broadcastStatus: Fetched real theme mode: " + mode);
+                    }
+                } catch (Exception e) {
+                    DebugLogger.e(TAG, "broadcastStatus: Failed to get theme mode", e);
+                }
+            }
+        }
         broadcastSensorValues(mLastDayNightSensorValue, mLastAvmValue, mLastBrightnessDayValue,
                 mLastBrightnessNightValue);
     }

@@ -527,7 +527,8 @@ public class HudSettingsController {
         } else if ("fuel_range".equals(type) || "fuel".equals(type)) {
             LinearLayout ll = new LinearLayout(mActivity);
             ll.setOrientation(LinearLayout.HORIZONTAL);
-            ll.setGravity(Gravity.CENTER_VERTICAL);
+            // [FIX] Match Real HUD Alignment (Right + Center Vertical)
+            ll.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
             ll.setBackgroundColor(Color.TRANSPARENT);
 
             // 1. Emoji View "⛽" (Preview Size 36px)
@@ -542,17 +543,23 @@ public class HudSettingsController {
             // 2. Value View (Preview Size 48px)
             TextView tvValue = new TextView(mActivity);
             String valText = text != null ? text.replace("⛽", "").trim() : "";
-            tvValue.setText(valText);
+            tvValue.setText(" " + valText); // Add space
+            //tvValue.setText(" 62L|8888KM"); // <-- 硬编码一个您想测试的最长值
             tvValue.setTextSize(TypedValue.COMPLEX_UNIT_PX, 48f); // 2x 24px
             tvValue.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
             tvValue.setBackgroundColor(Color.TRANSPARENT);
             tvValue.setIncludeFontPadding(false);
+            // [FIX] Force Single Line
+            tvValue.setSingleLine(true);
+            tvValue.setEllipsize(TextUtils.TruncateAt.END);
 
             ll.addView(tvEmoji);
             ll.addView(tvValue);
 
+            // [FIX] Set Fixed Width (440px = 2x Real HUD 220px)
+            // Ensure preview matches real behavior (Right Alignment + Fixed Width)
             FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    350,
                     FrameLayout.LayoutParams.WRAP_CONTENT);
             view = ll;
             view.setLayoutParams(params);

@@ -1,5 +1,57 @@
 # Change Log
 
+## 2026-01-24
+
+### 导航逻辑重构与稳定性增强 (Navigation Logic Refactor & Stability)
+
+- **数据驱动的导航状态 (Data-Driven Navigation State)**:
+  - **启动优化**: 废弃了不可靠的状态码依赖，改为“数据驱动”模式。只要收到有效导航引导信息 (GuideInfo)，立即强制进入导航状态，彻底解决了导航开始时 UI 不显示的问题。
+  - **结束判定重构**:
+    - **废弃**: 移除了 `State 40` (心跳包) 和 `State 2` (无效停止码) 的判断逻辑，消除了因心跳包导致的导航误关闭。
+    - **启用**: 经日志实测，确定 `State 35` 和 `State 308` 为唯一可靠的**导航结束信号**，以此作为强制重置 UI 的触发器。
+  - **持久化策略**:
+    - **里程/时间**: 实现了**无超时**逻辑。无论停车休息多久，只要未收到明确结束信号，导航信息将永久保留，不再自动消失。
+    - **红绿灯**: 引入了 **3秒看门狗 (Watchdog)** 机制。若红绿灯数据流中断超过 3秒，自动隐藏相关组件，但不影响导航信息的显示。
+
+- **HUD 显示修复 (HUD Display Fixes)**:
+  - **启动闪烁修复 (Startup Flash Fix)**:
+    - **问题**: HUD 导航组件在启动瞬间会短暂显示占位符然后消失。
+    - **修复**: 优化了 `PresentationManager` 的组件初始化与同步逻辑。
+      - **创建时**: 导航组件默认设为 `GONE`。
+      - **同步时**: 增加了双重检查，禁止通用兜底逻辑强制显示导航组件，必须校验当前 `mIsNavigating` 状态。
+
+### 架构与功能补全 (Architecture & Feature Completion)
+
+- **档位模拟重构 (SimulateGear Refactor)**:
+  - **独立模块**: 将原 `ClusterHudManager` 中复杂的模拟档位计算逻辑（通过车速/转速推算档位）剥离为独立的 `SimulateGear` 类。
+  - **多变速箱支持**: 完整实现了 **8AT** 和 **7DCT** 两种变速箱逻辑的模拟计算，支持基于齿比 (`CalculateByRatio`) 和速度区间 (`CalculateBySpeedRpm`) 的双重校验算法。
+  - **雪地模式**: 增加了雪地模式 (`DRIVE_MODE_SNOW`) 的特殊处理逻辑（强制 2 档起步）。
+
+- **权限管理增强 (Permission Manager)**:
+  - **全量检测**: 扩展了 `PermissionManager`，新增了对 `SYSTEM_ALERT_WINDOW` (悬浮窗)、`WRITE_SETTINGS` (系统设置)、`PACKAGE_USAGE_STATS` (应用使用情况) 的一键检测与申请流程。
+
+- **主页状态控制 (HomeStatusController)**:
+  - **新组件**: 新增 `HomeStatusController`，用于统一管理主页左下角状态栏信息的显示与隐藏，解耦了主页 UI 逻辑。
+
+### 自定义提示音系统重构 (Sound System Overhaul)
+
+- **设置页 UI 重绘**:
+  - **网格化布局**: `layout_tab_sound.xml` 全面重构为 7 行 Grid 布局，极大优化了屏幕空间利用率，支持多达 20+ 种触发场景（开门/关门/档位等）的独立配置。
+  - **头部控制区**: 新增了总开关 (Master Switch)、播放模式 (混音/直通) 和 声道选择 (媒体/导航) 的顶部常驻控制栏。
+  - **文件选择器优化**:
+    - **排序**: 文件列表现支持按字母顺序 (A-Z) 排序，便于查找。
+    - **视觉**: 增大了列表项的字体大小 (24sp) 和点击热区，适配车载屏幕触控。
+    - **容错**: 增加了对空目录、权限缺失等异常状态的详细弹窗提示。
+
+- **通用设置优化 (General Settings)**:
+  - **布局重构**: `layout_tab_general.xml` 同步采用了双列 Grid 布局，视觉更整洁。
+  - **功能增强**: 集成了变速箱类型切换按钮 (8AT/7DCT) 和遮阳帘自动控制选项。
+  - **致谢**: 档位模拟模块增加了“感谢群友大胖提供代码”的致谢标示。
+
+- **媒体通知增强 (Media Notification)**:
+  - **封面回退机制**: `MediaNotificationListener` 新增了封面获取的兜底逻辑。当 `MediaMetadata` 中无法获取专辑封面时，自动尝试从通知栏的 `LargeIcon` 提取图片，显著提高了网易云音乐等第三方 App 的封面显示成功率。
+  - **延迟重试**: 针对部分 App 播放状态更新早于 Metadata 导致的标题丢失问题，增加了 1s 的延迟重试机制。
+
 ## 2026-01-23
 
 ### HUD 显示一致性与导航信息修复 (HUD Consistency & Navi Info Fixes)

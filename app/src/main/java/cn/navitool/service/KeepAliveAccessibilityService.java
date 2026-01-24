@@ -569,8 +569,10 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
     // Sound Prompt States
     private int mLastIgnition = -1;
     private int mLastGear = -1;
-    private boolean mEngineStarted = false; // Bug 7: 只有发动机启动后才播放声音
-    private boolean mInitialGearSkipped = false; // Bug 7: 忽略启动时的第一次P档事件
+    private boolean mEngineStarted = false; // 只有发动机启动后才播放音效
+    
+    // [FIX] Bug 2: 门状态缓存，只有状态变化且发动机启动后才播放音效
+    private java.util.Map<Integer, Integer> mLastDoorStatus = new java.util.HashMap<>();
 
     // --- Car AdaptAPI Implementation ---
 
@@ -619,20 +621,19 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
     @Override
     public void onGearChanged(int gear) {
         DebugLogger.d(TAG, "Gear Changed (VSM): " + gear);
+        
+        // 先更新UI（总是更新，不受音效限制）
+        ClusterHudManager.getInstance(this).updateGear(gear);
+        
+        // 只有状态变化且发动机启动后才播放音效
         if (mLastGear != gear) {
-            boolean isInitialP = !mInitialGearSkipped &&
-                    (gear == cn.navitool.managers.SoundPromptManager.GEAR_PARK ||
-                            gear == cn.navitool.managers.SoundPromptManager.TRSM_GEAR_PARK);
-            if (isInitialP) {
-                mInitialGearSkipped = true;
-                DebugLogger.d(TAG, "Skipping initial P gear sound");
-            } else if (mEngineStarted) {
+            if (mEngineStarted) {
                 cn.navitool.managers.SoundPromptManager
                         .getInstance(this)
                         .playGearSound(gear);
-                mInitialGearSkipped = true;
+            } else {
+                DebugLogger.d(TAG, "Gear sound skipped: Engine not started yet. Gear=" + gear);
             }
-            ClusterHudManager.getInstance(this).updateGear(gear);
             mLastGear = gear;
         }
     }
@@ -751,6 +752,27 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
         // [KX11-A2 Sync] Support both Open and Close sounds
         // value == 1 (Open), value == 0 (Close)
         
+        // [FIX] Bug 2: 状态变化检测 - 首次记录时不播放音效，只有状态真正变化才播放
+        Integer lastValue = mLastDoorStatus.get(zone);
+        mLastDoorStatus.put(zone, value);
+        
+        if (lastValue == null) {
+            // 首次记录初始状态，不播放音效
+            DebugLogger.d(TAG, "Door initial state recorded: zone=" + zone + ", value=" + value);
+            return;
+        }
+        
+        if (lastValue == value) {
+            // 状态没有变化，不播放
+            return;
+        }
+        
+        // [FIX] Bug 2: 只有发动机启动后才播放门音效（与档位音效逻辑一致）
+        if (!mEngineStarted) {
+            DebugLogger.d(TAG, "Door sound skipped: Engine not started yet. Zone=" + zone);
+            return;
+        }
+        
         cn.navitool.managers.SoundPromptManager soundMgr = cn.navitool.managers.SoundPromptManager.getInstance(this);
 
         if (value == 1) {
@@ -761,9 +783,6 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
                     soundMgr.playDoorDriverSound();
                     break;
                 case ZONE_DOOR_FR: // Passenger
-                    // Open logic: Can check occupancy, but typically 'open' sound is same?
-                    // User said "Passenger also has occupation detection".
-                    // Assuming occupation detection applies to interactions.
                     if (mIsPassengerOccupied) {
                          soundMgr.playDoorPassengerSound();
                     } else {
