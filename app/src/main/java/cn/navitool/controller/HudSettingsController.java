@@ -198,6 +198,15 @@ public class HudSettingsController {
                         ((TextView) child).setText(text);
                     } else if (child instanceof LinearLayout && ("song_2line".equals(type))) {
                         LinearLayout ll = (LinearLayout) child;
+                        
+                        // [FIX] Preview Placeholder Protection
+                        if ((text == null || text.isEmpty()) && ll.getChildCount() > 0 && ll.getChildAt(0) instanceof TextView) {
+                            TextView currentTv = (TextView) ll.getChildAt(0);
+                            if ("歌曲标题".equals(currentTv.getText().toString())) {
+                                continue; // Skip update to preserve preview placeholder
+                            }
+                        }
+
                         String[] parts = (text != null ? text : "").split("\n");
                         String title = parts.length > 0 ? parts[0] : "";
                         String artist = parts.length > 1 ? parts[1] : "";
@@ -620,7 +629,7 @@ public class HudSettingsController {
                     iv.setImageResource(R.drawable.ic_volume);
                 }
 
-                int h = 72;
+                int h = 60;
                 int w = FrameLayout.LayoutParams.WRAP_CONTENT;
                 FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(w, h);
                 iv.setAdjustViewBounds(true);
@@ -718,7 +727,7 @@ public class HudSettingsController {
                 }
                 view.getLayoutParams().width = 200;
                 tv.setGravity(Gravity.CENTER);
-            } else if ("temp_out".equals(type) || "temp_in".equals(type)) {
+            } else if ("temp_out".equals(type) || "temp_in".equals(type) || "fuel".equals(type)) {
                 tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, 48);
                 if (view.getLayoutParams() == null) {
                     view.setLayoutParams(new FrameLayout.LayoutParams(
@@ -852,6 +861,10 @@ public class HudSettingsController {
                         if (isMusicComponent) {
                              offsetTop = 0;
                              offsetBottom = 0;
+                        } else if (tagStr.contains("type_volume")) {
+                             // [Feature] Volume component gets fixed tolerance
+                             offsetTop = 10f;
+                             offsetBottom = 10f;
                         } else if (isGuideLine) {
                             newY = 0; // Force Top to 0
 

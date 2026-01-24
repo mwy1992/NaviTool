@@ -45,6 +45,19 @@ public class SoundPromptManager {
 
     private SoundPromptManager(Context context) {
         this.mContext = context.getApplicationContext();
+        loadSettings();
+    }
+
+    private void loadSettings() {
+        SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
+        // Load Playback Mode
+        mIsDirectPlaybackMode = prefs.getBoolean("sound_playback_mode_direct", false);
+        
+        // Load Ecarx Channel
+        int savedChannel = prefs.getInt("sound_ecarx_channel", ECARX_CHANNEL_NAVI);
+        setEcarxChannel(savedChannel); // This will also set mAudioStreamType correctly via the setter logic
+        
+        DebugLogger.i(TAG, "Loaded Persistence: Channel=" + savedChannel + ", DirectMode=" + mIsDirectPlaybackMode);
     }
 
     public static SoundPromptManager getInstance(Context context) {

@@ -2,6 +2,19 @@
 
 ## 2026-01-24
 
+### Z-Order 层级修复与启动可靠性 (Z-Order Fix & Startup Reliability)
+
+- **显示层级修复 (Z-Order Regression Fix)**:
+  - **问题**: 仪表盘 UI (如 Audi RS 主题) 偶尔被其他系统窗口遮挡，不显示在最顶层。
+  - **原因**: 经 Git 追溯，`PresentationManager` 在 commit `e437c41` (0.4.6bugfix3) 中被修改为继承 `Dialog` 并手动设为 `TYPE_APPLICATION_OVERLAY`，破坏了 Android 原生副屏的层级管理。
+  - **修复**: 回退 `PresentationManager` 继承自 `android.app.Presentation`，恢复使用 `(Context, Display)` 构造函数，利用系统原生机制 (System Managed Z-Order) 彻底解决层级遮挡问题。
+
+- **冷启动可靠性增强 (Cold Boot Reliability)**:
+  - **问题**: 冷启动时偶尔无法自动进入仪表模式 (需手动切换)，因系统服务初始化延迟导致首个 `switchNaviMode(3)` 指令被忽略。
+  - **修复**: 优化了 `ClusterHudManager` 的双重保障机制 (Double Insurance)。
+    - **强制重试**: 在启动 2秒后的重试逻辑中，强制重置去重缓存 (`mLastAppliedNaviMode = -1`)。
+    - **无条件发送**: 即使系统认为当前已处于 Mode 3，也强制再次发送切换指令，确保在 AdaptAPI 服务就绪后指令能被正确执行。
+
 ### 导航逻辑重构与稳定性增强 (Navigation Logic Refactor & Stability)
 
 - **数据驱动的导航状态 (Data-Driven Navigation State)**:

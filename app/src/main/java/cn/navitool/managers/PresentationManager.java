@@ -29,7 +29,7 @@ import cn.navitool.view.TrafficLightView;
 import java.util.ArrayList;
 import java.util.List;
 
-public class PresentationManager extends android.app.Dialog {
+public class PresentationManager extends android.app.Presentation {
     private static final String TAG = "PresentationManager";
     private final android.os.Handler mMainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private View mLayoutCluster;
@@ -56,7 +56,21 @@ public class PresentationManager extends android.app.Dialog {
     private ImageView mFloatingLightRed, mFloatingLightYellow, mFloatingLightGreen;
     private boolean mIsFloatingEnabled = false;
     private boolean mIsPositioningMode = false;
-    private float dX, dY;
+    private TrafficLightView mFloatingTrafficLightView;
+    private boolean mIsFloatingTrafficLightShowing = false;
+    private LinearLayout mFloatingContainer;
+    
+    // Data Cache to prevent flickering
+    private int mLastSpeed = -1;
+    private int mLastGear = -1;
+    // ... other generic fields
+    
+    private boolean mIsMediaPlaying = false;
+    private boolean mIsVolumeVisible = false;
+
+    public PresentationManager(Context outerContext, Display display) {
+        super(outerContext, display);
+    }
     private int mFloatingRawStatus = 0; // Store status for flashing logic
     private boolean mIsFloatingFlashing = false;
     private boolean mFloatingFlashOn = true;
@@ -78,12 +92,9 @@ public class PresentationManager extends android.app.Dialog {
     private String mCachedNaviArrivalTime = null;
     private String mCachedNaviDistance = null;
     
-    private boolean mIsMediaPlaying = false;
-    private boolean mIsVolumeVisible = false;
 
-    public PresentationManager(Context context) {
-        super(context, R.style.Theme_NaviTool);
-    }
+
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -114,15 +125,8 @@ public class PresentationManager extends android.app.Dialog {
         if (getWindow() != null) {
             getWindow().setBackgroundDrawable(
                     new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
-
-            // [FIX] Z-Order Correction: Force TYPE_APPLICATION_OVERLAY for top-most layer
+            // [FIX] Z-Order: Force TYPE_APPLICATION_OVERLAY for Service Context
             getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
-
-            // Critical Flags for Overlay
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                    | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                    | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
         }
 
         // Apply initial debug state
@@ -827,7 +831,20 @@ public class PresentationManager extends android.app.Dialog {
                 if ("media".equals(group)) {
                     if (viewType.equals("song_2line") || viewType.equals("song_cover")
                             || viewType.equals("song_1line")) {
-                        v.setVisibility(visible ? View.VISIBLE : View.GONE);
+                        boolean shouldShow = visible;
+                        
+                        // [FIX] Double-check for placeholder text before forcing GONE
+                        if (!shouldShow && v instanceof android.widget.LinearLayout) {
+                            android.widget.LinearLayout ll = (android.widget.LinearLayout) v;
+                            if (ll.getChildCount() > 0 && ll.getChildAt(0) instanceof android.widget.TextView) {
+                                android.widget.TextView tvTitle = (android.widget.TextView) ll.getChildAt(0);
+                                if ("歌曲标题".equals(tvTitle.getText().toString())) {
+                                    shouldShow = true; // Force Visible for Placeholder
+                                }
+                            }
+                        }
+                        
+                        v.setVisibility(shouldShow ? View.VISIBLE : View.GONE);
                     }
                 } else if ("volume".equals(group)) {
                     if ("volume".equals(viewType)) {
@@ -891,6 +908,16 @@ public class PresentationManager extends android.app.Dialog {
                               ((android.widget.TextView) ll.getChildAt(1)).setText(" " + valText);
                          }
                     } else { // Song Logic
+                        // [FIX] Preserve "歌曲标题" placeholder if new text is empty
+                        // This prevents the component from disappearing immediately after adding in Preview
+                        if ((text == null || text.isEmpty()) && ll.getChildCount() > 0 
+                                && ll.getChildAt(0) instanceof android.widget.TextView) {
+                             android.widget.TextView currentTv = (android.widget.TextView) ll.getChildAt(0);
+                             if ("歌曲标题".equals(currentTv.getText().toString())) {
+                                 return; // Skip update to preserve placeholder
+                             }
+                        }
+
                         String[] parts = (text != null ? text : "").split("\n");
                         String title = parts.length > 0 ? parts[0] : "";
                         String artist = parts.length > 1 ? parts[1] : "";
@@ -1269,7 +1296,7 @@ public class PresentationManager extends android.app.Dialog {
                         tv.setGravity(android.view.Gravity.END);
                         params.width = 120;
                         tv.setSingleLine(true);
-                    } else if ("temp_out".equals(data.type) || "temp_in".equals(data.type)) {
+                    } else if ("temp_out".equals(data.type) || "temp_in".equals(data.type) || "fuel".equals(data.type)) {
                         tv.setGravity(android.view.Gravity.END);
                         params.width = 90;
                     } else if ("navi_distance_remaining".equals(data.type)) {
@@ -1347,6 +1374,11 @@ public class PresentationManager extends android.app.Dialog {
                     // Music components use setIncludeFontPadding(false) so they cannot afford negative margins.
                     toleranceTop = 0f;
                     toleranceBottom = 0f;
+                } else if ("volume".equals(data.type)) {
+                    // [Feature] Volume component gets fixed tolerance
+                    // Reduced to 10f to prevent excessive off-screen dragging for small icons
+                    toleranceTop = 10f;
+                    toleranceBottom = 10f;
                 } else if (view instanceof android.widget.TextView) {
                     float currentSize = ((android.widget.TextView) view).getTextSize();
                     toleranceTop = currentSize * FACTOR_TOP * data.scale;

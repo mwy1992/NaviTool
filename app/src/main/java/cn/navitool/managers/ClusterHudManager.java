@@ -601,7 +601,7 @@ public class ClusterHudManager
             if (drawable == null)
                 return null;
 
-            int iconSize = 32; // Reduced from 48 to 32 as per user request
+            int iconSize = 22; // Reduced from 32 to 24
             int padding = 12;
             android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
             paint.setColor(android.graphics.Color.WHITE);
@@ -1239,15 +1239,15 @@ public class ClusterHudManager
 
                 // [FIX] Double Insurance: Force retry switchNaviMode(3) after 2 seconds
                 // Now uses applyNaviMode which has deduplication logic.
-                // Only triggers if cluster is enabled AND no mode was recently applied.
+                // We reset mLastAppliedNaviMode to force re-application in case the first call was ignored
                 if (mIsClusterEnabled) {
                      mMainHandler.postDelayed(() -> {
                          new Thread(() -> {
                              try {
-                                 if (mDimMenuInteraction != null && mLastAppliedNaviMode != 3) {
+                                 if (mDimMenuInteraction != null) {
+                                     // Cheat the deduplication check to force re-send
+                                     mLastAppliedNaviMode = -1; 
                                      applyNaviMode(3, "DOUBLE-INS");
-                                 } else {
-                                     DebugLogger.d(TAG, "[DOUBLE-INS] Skipped (already mode 3 or API null)");
                                  }
                              } catch (Exception e) {
                                  DebugLogger.e(TAG, "Double Insurance Failed", e);
@@ -1791,29 +1791,11 @@ public class ClusterHudManager
             mRetryCount = 0; // Reset retry counter on success
             DebugLogger.d(TAG, "showPresentationManager: [Step 3] Creating PresentationManager Window");
             try {
-                // [FIX] Z-Order Correction: Manually create Display Context
-                // To allow TYPE_APPLICATION_OVERLAY (2038) on Android 12+, we MUST create
-                // a WindowContext associated with that type.
-                Context displayContext;
-                if (android.os.Build.VERSION.SDK_INT >= 30) {
-                    try {
-                        displayContext = mContext.createWindowContext(targetDisplay,
-                                android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null);
-                    } catch (NoSuchMethodError e) {
-                        DebugLogger.e(TAG, "createWindowContext missing on API 30+, fallback to createDisplayContext");
-                        displayContext = mContext.createDisplayContext(targetDisplay);
-                    }
-                } else {
-                    displayContext = mContext.createDisplayContext(targetDisplay);
-                }
-
-                // Wrap in Theme (Styling)
-                Context themeContext = new android.view.ContextThemeWrapper(displayContext, R.style.Theme_NaviTool);
-
-                // Instantiate as Presentation (Requires Display - handled by Context now)
-                mPresentationManager = new PresentationManager(themeContext);
+                // [FIX] Z-Order Correction: Use standard Presentation constructor
+                // This ensures correct Z-Order handling (system managed)
+                mPresentationManager = new PresentationManager(mContext, targetDisplay);
                 mCurrentAppliedTheme = -1; // [FIX] Reset state so theme is re-applied to new instance
-                DebugLogger.d(TAG, "showPresentationManager: [Step 4] Presentation Object Created (Type: APPLICATION_OVERLAY)");
+                DebugLogger.d(TAG, "showPresentationManager: [Step 4] Presentation Object Created (Standard Presentation)");
 
                 // Logging for verification
                 if (mPresentationManager.getWindow() != null) {
@@ -1986,17 +1968,27 @@ public class ClusterHudManager
                     newData.text = getGearString(mCachedGear);
                 } else if ("song_2line".equals(newData.type)) {
                     // [FIX] Backfill Music Title/Artist
-                    if (mCachedSongTitle != null) {
+                    if (mCachedSongTitle != null && !mCachedSongTitle.isEmpty()) {
                         String display = mCachedSongTitle;
                         if (mCachedSongArtist != null && !mCachedSongArtist.isEmpty()) {
                             display = mCachedSongTitle + "\n" + mCachedSongArtist;
                         }
                         newData.text = display;
+                    } else if ("歌曲标题".equals(newData.text)) {
+                         // Placeholder preservation: do nothing if cache is empty
+                    } else if (mCachedSongTitle != null) {
+                        // Cache is empty string but not null, and current text isn't placeholder
+                        // We can overwrite it (e.g. music stopped)
+                         newData.text = "";
                     }
                 } else if ("song_1line".equals(newData.type)) {
                     // [FIX] Backfill Music Title Only
-                    if (mCachedSongTitle != null) {
+                    if (mCachedSongTitle != null && !mCachedSongTitle.isEmpty()) {
                         newData.text = mCachedSongTitle;
+                    } else if ("歌曲标题".equals(newData.text)) {
+                        // Placeholder preservation
+                    } else if (mCachedSongTitle != null) {
+                         newData.text = "";
                     }
                 } else if ("song_cover".equals(newData.type)) {
                     // [FIX] Backfill Cover Art
