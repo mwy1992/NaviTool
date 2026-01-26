@@ -57,7 +57,7 @@ import cn.navitool.managers.CarServiceManager;
 import cn.navitool.managers.SoundPromptManager;
 import cn.navitool.utils.MemoryMonitor;
 
-import cn.navitool.managers.AmapMonitorManager;
+// [REMOVED] import cn.navitool.managers.AmapMonitorManager;
 import cn.navitool.managers.SunshadeManager;
 import cn.navitool.service.FloatingBallService;
 import cn.navitool.service.MediaNotificationListener;
@@ -157,11 +157,12 @@ public class MainActivity extends AppCompatActivity {
         // [Fix Cold Boot] Call setContentView EARLY to prevent black screen
         setContentView(R.layout.activity_main);
 
-        // [Fix Cold Boot] Initialize Amap Services AFTER UI is set
-        // These calls might be blocking or slow, so we do them after setContentView
-        cn.navitool.managers.AmapMonitorManager.getInstance(this).startMonitoring();
+        // [DEPRECATED] Broadcast Monitor Disabled - Using AIDL via NaviInfoManager
+        // cn.navitool.managers.AmapMonitorManager.getInstance(this).startMonitoring();
+        
+        // Initialize NaviInfoManager AIDL Service (Dual: Geely + Amap)
+        cn.navitool.managers.NaviInfoManager.getInstance(this);
         // AmapAidlManager removed
-        // cn.navitool.managers.AmapAidlManager.getInstance(this).connect();
 
         // Initialize Managers (assuming these are new additions based on the
         // instruction's snippet)

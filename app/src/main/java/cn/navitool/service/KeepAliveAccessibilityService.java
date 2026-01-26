@@ -40,7 +40,7 @@ import cn.navitool.managers.SoundPromptManager;
 import cn.navitool.managers.VehicleSensorManager;
 
 import cn.navitool.managers.BaiduMonitorManager;
-import cn.navitool.managers.AmapMonitorManager;
+// [REMOVED] import cn.navitool.managers.AmapMonitorManager;
 import cn.navitool.managers.SunshadeManager;
 import cn.navitool.managers.CarServiceManager;
 import cn.navitool.utils.MemoryMonitor;
@@ -359,8 +359,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
             DebugLogger.i(TAG, "Conditions Met (Ignition + Amap). Starting Amap Services...");
             mIsAmapServicesStarted = true;
             try {
-                // Start Monitor
-                cn.navitool.managers.AmapMonitorManager.getInstance(this).startMonitoring();
+                // [DEPRECATED] Broadcast Monitor Disabled - Using AIDL via NaviInfoManager
+                // cn.navitool.managers.AmapMonitorManager.getInstance(this).startMonitoring();
             } catch (Exception e) {
                 DebugLogger.e(TAG, "Failed to start Amap Services", e);
             }
@@ -438,12 +438,12 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
 
         // LightVerifier stop logic removed
 
-        // Stop Amap Monitor
-        try {
-            cn.navitool.managers.AmapMonitorManager.getInstance(this).stopMonitoring();
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to stop AmapMonitorManager", e);
-        }
+        // [DEPRECATED] Broadcast Monitor Disabled - Using AIDL via NaviInfoManager
+        // try {
+        //     cn.navitool.managers.AmapMonitorManager.getInstance(this).stopMonitoring();
+        // } catch (Exception e) {
+        //     DebugLogger.e(TAG, "Failed to stop AmapMonitorManager", e);
+        // }
 
         try {
             // TencentMonitorManager removed

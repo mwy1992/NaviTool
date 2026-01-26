@@ -55,16 +55,16 @@ public class AudiRsThemeController extends BaseThemeController {
     private TextView mFuelConsText;
     private TextView mTempInText;
 
-    // Traffic Light & Navi - New Layout
+    // Traffic Light & Navi - New Capsule Layout (3 TrafficLightViews)
     private View mNaviTrafficContainer;
     // [FIX] Added missing declaration for Navigation Info Row
     private View mNaviInfoRow;
     
-    private ImageView mDirectionArrow;
-    private TextView mCountdownText;
-    private ImageView mLightRed;
-    private ImageView mLightYellow;
-    private ImageView mLightGreen;
+    // 3 Capsule TrafficLightViews for multi-direction support
+    private TrafficLightView mTrafficLightLeft;
+    private TrafficLightView mTrafficLightStraight;
+    private TrafficLightView mTrafficLightRight;
+    
     private TextView mNaviDistance;
     private TextView mNaviEta;
 
@@ -100,10 +100,10 @@ public class AudiRsThemeController extends BaseThemeController {
         }
     };
 
-    // Traffic Light Flashing
-    private boolean mIsTrafficLightFlashing = false;
-    private boolean mTrafficLightFlashOn = true; 
-    private int mCurrentRawStatus = 0; 
+    // [DEPRECATED] Flash is now handled by TrafficLightView internally
+    // private boolean mIsTrafficLightFlashing = false;
+    // private boolean mTrafficLightFlashOn = true; 
+    // private int mCurrentRawStatus = 0; 
     
     // Animation Animator
     private SmoothTextAnimator mSpeedTextAnimator;
@@ -132,18 +132,8 @@ public class AudiRsThemeController extends BaseThemeController {
         }
     }; 
 
-    private Runnable mTrafficLightFlashRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (!mIsTrafficLightFlashing)
-                return;
-
-            mTrafficLightFlashOn = !mTrafficLightFlashOn;
-            float alpha = mTrafficLightFlashOn ? 1.0f : 0.3f;
-            updateTrafficLightImages(mCurrentRawStatus, alpha);
-            mHandler.postDelayed(this, 500);
-        }
-    };
+    // [DEPRECATED] Flash runnable removed - TrafficLightView handles internally
+    // private Runnable mTrafficLightFlashRunnable = new Runnable() { ... };
 
     public AudiRsThemeController() {
     }
@@ -165,25 +155,15 @@ public class AudiRsThemeController extends BaseThemeController {
         mLight5 = rootView.findViewById(R.id.audiRsLight5);
         mFlashBar = rootView.findViewById(R.id.audiRsFlashBar);
 
-        // Traffic Light & Navi
+        // Traffic Light & Navi (3 Capsule TrafficLightViews)
         mNaviTrafficContainer = rootView.findViewById(R.id.audiRsNaviTrafficContainer);
-        mNaviInfoRow = rootView.findViewById(R.id.audiRsNaviInfoRow); // [FIX] Binidng added
+        mNaviInfoRow = rootView.findViewById(R.id.audiRsNaviInfoRow);
         
-        mDirectionArrow = rootView.findViewById(R.id.audiRsDirectionArrow);
-        mCountdownText = rootView.findViewById(R.id.audiRsCountdown);
-        if (mCountdownText != null) {
-            try {
-                android.graphics.Typeface ledFont = android.graphics.Typeface.createFromAsset(
-                        rootView.getContext().getAssets(), "fonts/DS-Digital.ttf");
-                mCountdownText.setTypeface(ledFont);
-            } catch (Exception e) {
-                DebugLogger.e(TAG, "Failed to load LED font", e);
-            }
-        }
-
-        mLightRed = rootView.findViewById(R.id.audiRsLightRed);
-        mLightYellow = rootView.findViewById(R.id.audiRsLightYellow);
-        mLightGreen = rootView.findViewById(R.id.audiRsLightGreen);
+        // Bind 3 TrafficLightView capsules
+        mTrafficLightLeft = rootView.findViewById(R.id.audiRsTrafficLightLeft);
+        mTrafficLightStraight = rootView.findViewById(R.id.audiRsTrafficLightStraight);
+        mTrafficLightRight = rootView.findViewById(R.id.audiRsTrafficLightRight);
+        
         mNaviDistance = rootView.findViewById(R.id.audiRsNaviDistance);
         mNaviEta = rootView.findViewById(R.id.audiRsNaviEta);
 
@@ -267,147 +247,75 @@ public class AudiRsThemeController extends BaseThemeController {
     @Override
     public void updateTrafficLight(TrafficLightInfo info) {
         if (info == null) {
-            // Treat as reset/no signal
             resetTrafficLights();
-            if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
             return;
         }
 
-        mCurrentRawStatus = info.status;
         int mappedStatus = NaviInfoManager.mapStatus(info.status);
         
-        // [FIX] Valid status check: Prevent showing garbage or cleared data (0) as visible elements
+        // Valid status check
         boolean isValidStatus = (mappedStatus == TrafficLightView.STATUS_RED || 
                                mappedStatus == TrafficLightView.STATUS_YELLOW || 
                                mappedStatus == TrafficLightView.STATUS_GREEN);
 
-        // Only explicitly show container if we have valid data. 
-        // If status is 0 and no countdown, usually we want to hide it or keep it hidden.
+        if (!isValidStatus && info.redCountdown <= 0) {
+            if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
+            return;
+        }
+
+        // Show container
         if (mNaviTrafficContainer != null) {
-             if (isValidStatus || info.redCountdown > 0) {
-                 mNaviTrafficContainer.setVisibility(View.VISIBLE);
-             } else {
-                 mNaviTrafficContainer.setVisibility(View.GONE);
-                 return; // Nothing to draw
-             }
+            mNaviTrafficContainer.setVisibility(View.VISIBLE);
         }
 
-        boolean shouldFlash = false;
-        if (mCountdownText != null) {
-            // [FIX] Only show countdown if status is valid AND time > 0
-            int time = info.redCountdown;
-            if (time > 0 && isValidStatus) {
-                mCountdownText.setText(String.valueOf(time));
-                mCountdownText.setVisibility(View.VISIBLE);
-                if (time <= 3 && (mappedStatus == TrafficLightView.STATUS_RED
-                        || mappedStatus == TrafficLightView.STATUS_GREEN)) {
-                    shouldFlash = true;
-                }
-            } else {
-                mCountdownText.setVisibility(View.INVISIBLE);
-            }
-        }
-
-        if (shouldFlash) {
-            startTrafficLightFlash();
+        // Determine which TrafficLightView to use based on direction
+        // 1=Left, 2=Right, 3=TurnBack(Left), 4=Straight, 8=Straight, 0=Unknown(Straight)
+        TrafficLightView targetView = null;
+        
+        if (info.direction == 1 || info.direction == 3) {
+            targetView = mTrafficLightLeft;
+        } else if (info.direction == 2) {
+            targetView = mTrafficLightRight;
         } else {
-            stopTrafficLightFlash();
-            updateTrafficLightImages(info.status, 1.0f);
+            // Default to straight (0, 4, 8, or any other)
+            targetView = mTrafficLightStraight;
         }
-
-        // Arrow Rotation
-        if (mDirectionArrow != null) {
-            if (isValidStatus) {
-                mDirectionArrow.setVisibility(View.VISIBLE);
-                mDirectionArrow.setImageResource(R.drawable.ic_direction_arrow);
-                float rotation = 0;
-                switch (info.direction) {
-                    case 1: rotation = -90f; break; // Left
-                    case 2: rotation = 90f; break; // Right
-                    case 3: rotation = 180f; break; // U-Turn
-                    default: rotation = 0f; break; // Straight
-                }
-                mDirectionArrow.setRotation(rotation);
-            } else {
-                // [FIX] Hide arrow if status is 0 or Unknown
-                mDirectionArrow.setVisibility(View.GONE);
-            }
+        
+        if (targetView != null && isValidStatus) {
+            targetView.setVisibility(View.VISIBLE);
+            targetView.updateState(mappedStatus, info.redCountdown, info.direction);
         }
     }
 
-    private void updateTrafficLightImages(int rawStatus, float activeAlpha) {
-        final float ALPHA_DIM = 0.3f;
-        int mappedStatus = NaviInfoManager.mapStatus(rawStatus);
-        float inactiveAlpha = (mappedStatus == 0) ? 0f : ALPHA_DIM;
+    // [DEPRECATED] No longer needed with TrafficLightView capsules
+    // private void updateTrafficLightImages(int rawStatus, float activeAlpha) { }
 
-        if (mLightRed != null) {
-             mLightRed.setVisibility(View.VISIBLE);
-             mLightRed.setAlpha(mappedStatus == TrafficLightView.STATUS_RED ? activeAlpha : inactiveAlpha);
-        }
-        if (mLightYellow != null) {
-             mLightYellow.setVisibility(View.VISIBLE);
-             mLightYellow.setAlpha(mappedStatus == TrafficLightView.STATUS_YELLOW ? activeAlpha : inactiveAlpha);
-        }
-        if (mLightGreen != null) {
-             mLightGreen.setVisibility(View.VISIBLE);
-             mLightGreen.setAlpha(mappedStatus == TrafficLightView.STATUS_GREEN ? activeAlpha : inactiveAlpha);
-        }
-
-        int color = 0xFFFFFFFF; // White
-        if (mappedStatus == TrafficLightView.STATUS_RED) color = 0xFFFF0000;
-        else if (mappedStatus == TrafficLightView.STATUS_YELLOW) color = 0xFFFFFF00;
-        else if (mappedStatus == TrafficLightView.STATUS_GREEN) color = 0xFF00FF00;
-
-        if (mCountdownText != null) mCountdownText.setTextColor(color);
-        if (mDirectionArrow != null) mDirectionArrow.setColorFilter(color);
-    }
-
+    // [DEPRECATED] Flash is now handled by TrafficLightView itself
     private void startTrafficLightFlash() {
-        if (mIsTrafficLightFlashing) return;
-        mIsTrafficLightFlashing = true;
-        mTrafficLightFlashOn = true;
-        mHandler.post(mTrafficLightFlashRunnable);
+        // TrafficLightView handles flash internally
     }
 
     private void stopTrafficLightFlash() {
-        if (!mIsTrafficLightFlashing) return;
-        mIsTrafficLightFlashing = false;
-        mHandler.removeCallbacks(mTrafficLightFlashRunnable);
+        // TrafficLightView handles flash internally
     }
     
     @Override
     public void resetTrafficLights() {
-        stopTrafficLightFlash();
-        updateTrafficLightImages(0, 0f); // Reset to inactive
+        // Hide all 3 TrafficLightViews
+        if (mTrafficLightLeft != null) mTrafficLightLeft.setVisibility(View.GONE);
+        if (mTrafficLightStraight != null) mTrafficLightStraight.setVisibility(View.GONE);
+        if (mTrafficLightRight != null) mTrafficLightRight.setVisibility(View.GONE);
         
-        // [FIX] Explicitly hide views
-        if (mLightRed != null) mLightRed.setVisibility(View.GONE);
-        if (mLightYellow != null) mLightYellow.setVisibility(View.GONE);
-        if (mLightGreen != null) mLightGreen.setVisibility(View.GONE);
-        if (mCountdownText != null) { 
-            mCountdownText.setText(""); 
-            mCountdownText.setVisibility(View.GONE); 
-        }
-        if (mDirectionArrow != null) { 
-            mDirectionArrow.setImageDrawable(null); 
-            mDirectionArrow.setVisibility(View.GONE); 
-        }
         if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
     }
 
     @Override
     public void resetNaviInfo() {
-        stopTrafficLightFlash();
-        if (mLightRed != null) mLightRed.setVisibility(View.GONE);
-        if (mLightYellow != null) mLightYellow.setVisibility(View.GONE);
-        if (mLightGreen != null) mLightGreen.setVisibility(View.GONE);
-        if (mCountdownText != null) { mCountdownText.setText(""); mCountdownText.setVisibility(View.GONE); }
-        if (mDirectionArrow != null) { mDirectionArrow.setImageDrawable(null); mDirectionArrow.setVisibility(View.GONE); }
+        resetTrafficLights();
         
         if (mNaviDistance != null) mNaviDistance.setText("");
         if (mNaviEta != null) mNaviEta.setText("");
         
-        if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
         if (mNaviInfoRow != null) mNaviInfoRow.setVisibility(View.GONE);
     }
 

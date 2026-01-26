@@ -103,30 +103,17 @@ public class GeneralSettingsController {
              boolean isEnabled = ConfigManager.getInstance().getBoolean("floating_traffic_light_enabled", false);
              switchFloatingTraffic.setChecked(isEnabled);
  
-             Button btnPosition = mLayoutGeneral.findViewById(R.id.btnPositionTrafficLight);
-             if (btnPosition != null)
-                 btnPosition.setVisibility(isEnabled ? View.VISIBLE : View.GONE);
+             // [REMOVED] Style toggle button - Now only capsule style is supported
+             // Button btnPosition = mLayoutGeneral.findViewById(R.id.btnPositionTrafficLight);
  
              switchFloatingTraffic.setOnCheckedChangeListener((buttonView, isChecked) -> {
                  ConfigManager.getInstance().setBoolean("floating_traffic_light_enabled", isChecked);
                  if (isChecked) {
                      NaviInfoManager.getInstance(mActivity).showTrafficLightFloating();
-                     if (btnPosition != null)
-                         btnPosition.setVisibility(View.VISIBLE);
                  } else {
                      NaviInfoManager.getInstance(mActivity).hideTrafficLightFloating();
-                     if (btnPosition != null)
-                         btnPosition.setVisibility(View.GONE);
                  }
              });
- 
-             if (btnPosition != null) {
-                 btnPosition.setText(mActivity.getString(R.string.action_switch_style));
-                 btnPosition.setOnClickListener(v -> {
-                     NaviInfoManager.getInstance(mActivity).toggleFloatingStyle();
-                     DebugLogger.toast(mActivity, "样式已切换，3秒后自动隐藏");
-                 });
-             }
          }
     }
     

@@ -25,9 +25,13 @@ public class BootReceiver extends BroadcastReceiver {
             // Log boot event via DebugLogger
             DebugLogger.logBootEvent(context);
 
-            // Start Traffic Light Monitoring (Broadcast)
-            DebugLogger.log(context, TAG, "Starting Amap Broadcast Monitor...");
-            cn.navitool.managers.AmapMonitorManager.getInstance(context).startMonitoring();
+            // [DEPRECATED] Broadcast Monitor Disabled - Using AIDL via NaviInfoManager
+            // DebugLogger.log(context, TAG, "Starting Amap Broadcast Monitor...");
+            // cn.navitool.managers.AmapMonitorManager.getInstance(context).startMonitoring();
+            
+            // Start NaviInfoManager AIDL Service (Dual: Geely + Amap)
+            DebugLogger.log(context, TAG, "Starting NaviInfoManager (AIDL Mode)...");
+            cn.navitool.managers.NaviInfoManager.getInstance(context);
 
             // Start Amap AIDL Connection
             DebugLogger.log(context, TAG, "Connecting to Amap AIDL Service...");

@@ -1,83 +1,47 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 
+    悬浮红绿灯组件 - 胶囊样式 (Capsule Style)
+    支持巡航模式多方向红绿灯：左转、直行、右转
+    
+    [未来计划] 合并为单个长胶囊样式：
+    ┌──────────────────────────────────────┐
+    │  ← 🔴 25   │   ↑ 🟢 15   │   → 🔴 25  │
+    └──────────────────────────────────────┘
+    需要修改 TrafficLightView 支持多灯模式，参考 NaviTest 的实现
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/floatingTrafficLightContainer"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
+    android:orientation="horizontal"
     android:gravity="center"
-    android:padding="8dp"
+    android:padding="4dp"
+    android:background="@drawable/bg_floating_gray_rrect"
     android:clickable="true"
     android:focusable="true">
 
-    <!-- Container: Dashboard Style -->
-    <LinearLayout
-        android:id="@+id/containerDashboard"
+    <!-- 左转红绿灯 -->
+    <cn.navitool.view.TrafficLightView
+        android:id="@+id/floatingTrafficLightLeft"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:gravity="center"
-        android:visibility="visible"
-        android:background="@drawable/bg_floating_gray_rrect">
+        android:visibility="gone"
+        android:layout_marginEnd="4dp"/>
 
-        <!-- Row 1: Arrow & Countdown -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-            
-            <ImageView
-                android:id="@+id/floatingDirectionArrow"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:src="@drawable/ic_turn_signal"/>
-                
-            <TextView
-                android:id="@+id/floatingCountdown"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="99"
-                android:textSize="30sp"
-                android:textColor="#333333"
-                android:textStyle="bold"
-                android:layout_marginStart="4dp"/>
-        </LinearLayout>
-    
-        <!-- Row 2: Traffic Lights -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="4dp">
-            
-            <ImageView
-                android:id="@+id/floatingLightRed"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/audi_rs_light_red"
-                android:layout_marginEnd="4dp"/>
-                
-            <ImageView
-                android:id="@+id/floatingLightYellow"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/audi_rs_light_yellow"
-                android:layout_marginEnd="4dp"/>
-                
-            <ImageView
-                android:id="@+id/floatingLightGreen"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:src="@drawable/audi_rs_light_green"/>
-        </LinearLayout>
-    </LinearLayout>
-
-    <!-- Container: HUD Style (Custom View) -->
+    <!-- 直行红绿灯 -->
     <cn.navitool.view.TrafficLightView
-        android:id="@+id/hudTrafficLightView"
+        android:id="@+id/floatingTrafficLightStraight"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:layout_marginEnd="4dp"/>
+
+    <!-- 右转红绿灯 -->
+    <cn.navitool.view.TrafficLightView
+        android:id="@+id/floatingTrafficLightRight"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:visibility="gone"/>
 
-
 </LinearLayout>
+

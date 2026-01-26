@@ -47,18 +47,15 @@ public class PresentationManager extends android.app.Presentation {
     public static final int THEME_DEFAULT = 1;
     public static final int THEME_AUDI_RS = 2; 
 
-    // Floating Traffic Light
+    // Floating Traffic Light (3 Capsule Style)
     private WindowManager mFloatingWindowManager;
     private WindowManager.LayoutParams mFloatingParams;
     private View mFloatingTrafficLightContainer;
-    private TextView mFloatingCountdown;
-    private ImageView mFloatingArrow;
-    private ImageView mFloatingLightRed, mFloatingLightYellow, mFloatingLightGreen;
+    // 3 Capsule TrafficLightViews for multi-direction support
+    private TrafficLightView mFloatingTrafficLightLeft;
+    private TrafficLightView mFloatingTrafficLightStraight;
+    private TrafficLightView mFloatingTrafficLightRight;
     private boolean mIsFloatingEnabled = false;
-    private boolean mIsPositioningMode = false;
-    private TrafficLightView mFloatingTrafficLightView;
-    private boolean mIsFloatingTrafficLightShowing = false;
-    private LinearLayout mFloatingContainer;
     
     // Data Cache to prevent flickering
     private int mLastSpeed = -1;
@@ -78,9 +75,9 @@ public class PresentationManager extends android.app.Presentation {
     private Runnable mFloatingFlashRunnable; // Flashing Logic Runnable
     private boolean mIsHudStyle = false; // false = Dashboard (AudiRS), true = HUD (Simple)
 
-    // HUD Style Views
-    private View mContainerDashboard;
-    private cn.navitool.view.TrafficLightView mHudTrafficLightView; // Floating HUD Style
+    // [DEPRECATED] mContainerDashboard removed - Now only capsule style
+    // private View mContainerDashboard;
+    // private cn.navitool.view.TrafficLightView mHudTrafficLightView;
 
     private NaviInfoManager.TrafficLightInfo mLatestTrafficLightInfo = null; // Track latest data
     private NaviInfoManager.GuideInfo mLatestGuideInfo = null; // [FIX] Track latest Guide info for restoration
@@ -196,7 +193,7 @@ public class PresentationManager extends android.app.Presentation {
         }
     }
 
-    // --- Floating Traffic Light Logic (Preserved 1:1) ---
+    // --- Floating Traffic Light Logic (3 Capsule Style) ---
     private void initializeFloatingTrafficLight() {
         if (mFloatingTrafficLightContainer != null) return;
         try {
@@ -222,17 +219,24 @@ public class PresentationManager extends android.app.Presentation {
 
             mFloatingTrafficLightContainer.setVisibility(View.GONE);
             
-            mFloatingCountdown = mFloatingTrafficLightContainer.findViewById(R.id.floatingCountdown);
-            mFloatingArrow = mFloatingTrafficLightContainer.findViewById(R.id.floatingDirectionArrow);
-            mFloatingLightRed = mFloatingTrafficLightContainer.findViewById(R.id.floatingLightRed);
-            mFloatingLightYellow = mFloatingTrafficLightContainer.findViewById(R.id.floatingLightYellow);
-            mFloatingLightGreen = mFloatingTrafficLightContainer.findViewById(R.id.floatingLightGreen);
-            mContainerDashboard = mFloatingTrafficLightContainer.findViewById(R.id.containerDashboard);
-            mHudTrafficLightView = mFloatingTrafficLightContainer.findViewById(R.id.hudTrafficLightView);
+            // Bind 3 Capsule TrafficLightViews
+            mFloatingTrafficLightLeft = mFloatingTrafficLightContainer.findViewById(R.id.floatingTrafficLightLeft);
+            mFloatingTrafficLightStraight = mFloatingTrafficLightContainer.findViewById(R.id.floatingTrafficLightStraight);
+            mFloatingTrafficLightRight = mFloatingTrafficLightContainer.findViewById(R.id.floatingTrafficLightRight);
 
-            mIsHudStyle = ConfigManager.getInstance().getBoolean("floating_style_hud", false);
-            if (mHudTrafficLightView != null) mHudTrafficLightView.setPreviewScale(1.5f);
-            updateFloatingTrafficLightStyle();
+            // Set direction overrides for each capsule
+            if (mFloatingTrafficLightLeft != null) {
+                mFloatingTrafficLightLeft.setOverrideDirection(1); // Left
+                mFloatingTrafficLightLeft.setPreviewScale(1.5f);
+            }
+            if (mFloatingTrafficLightStraight != null) {
+                mFloatingTrafficLightStraight.setOverrideDirection(4); // Straight
+                mFloatingTrafficLightStraight.setPreviewScale(1.5f);
+            }
+            if (mFloatingTrafficLightRight != null) {
+                mFloatingTrafficLightRight.setOverrideDirection(2); // Right
+                mFloatingTrafficLightRight.setPreviewScale(1.5f);
+            }
 
             mFloatingTrafficLightContainer.setOnTouchListener(new android.view.View.OnTouchListener() {
                 private float initialTouchX, initialTouchY;
@@ -263,30 +267,16 @@ public class PresentationManager extends android.app.Presentation {
         }
     }
 
-    private void updateFloatingTrafficLightStyle() {
-        if (mContainerDashboard != null) mContainerDashboard.setVisibility(!mIsHudStyle ? View.VISIBLE : View.GONE);
-        if (mHudTrafficLightView != null) mHudTrafficLightView.setVisibility(mIsHudStyle ? View.VISIBLE : View.GONE);
-        if (mIsTempShowing) {
-            if (mIsHudStyle) {
-                if (mHudTrafficLightView != null) mHudTrafficLightView.updateState(TrafficLightView.STATUS_RED, 14, 4);
-            } else {
-                if (mFloatingCountdown != null) { mFloatingCountdown.setText("60"); mFloatingCountdown.setVisibility(View.VISIBLE); }
-                if (mFloatingLightRed != null) mFloatingLightRed.setAlpha(1.0f);
-            }
-        }
-    }
+    // [DEPRECATED] Style toggle removed - Now only capsule style is supported
+    // private void updateFloatingTrafficLightStyle() { ... }
 
     public void setFloatingTrafficLightEnabled(boolean enabled) {
         mIsFloatingEnabled = enabled;
         updateFloatingTrafficLightVisibility();
     }
 
-    public void toggleFloatingTrafficLightStyle() {
-        mIsHudStyle = !mIsHudStyle;
-        ConfigManager.getInstance().setBoolean("floating_style_hud", mIsHudStyle);
-        updateFloatingTrafficLightStyle();
-        forceShowFloatingTrafficLightTemporary();
-    }
+    // [DEPRECATED] Style toggle removed - Now only capsule style is supported
+    // public void toggleFloatingTrafficLightStyle() { ... }
 
     private Runnable mTempShowRunnable = () -> { mIsTempShowing = false; updateFloatingTrafficLightVisibility(); };
     private boolean mIsTempShowing = false;
@@ -305,9 +295,12 @@ public class PresentationManager extends android.app.Presentation {
             mIsTempShowing = true;
             updateFloatingTrafficLightVisibility();
             mMainHandler.postDelayed(mTempShowRunnable, 3000);
+            // Show preview with sample data
             if (mLatestTrafficLightInfo == null) {
-                 if (mFloatingCountdown != null) mFloatingCountdown.setText("60");
-                 updateFloatingTrafficLightStyle();
+                 if (mFloatingTrafficLightStraight != null) {
+                     mFloatingTrafficLightStraight.setVisibility(View.VISIBLE);
+                     mFloatingTrafficLightStraight.updateState(TrafficLightView.STATUS_RED, 60, 4);
+                 }
             }
         }
     }
@@ -369,16 +362,14 @@ public class PresentationManager extends android.app.Presentation {
         if (mFloatingTrafficLightContainer == null) return;
 
         if (!mIsFloatingEnabled && !mIsTempShowing) {
-            // [FIX] 即使悬浮窗未启用，也要确保隐藏 HUD 红绿灯组件
-            if (mContainerDashboard != null) mContainerDashboard.setVisibility(View.GONE);
-            if (mHudTrafficLightView != null) mHudTrafficLightView.setVisibility(View.GONE);
+            // Hide all capsules when floating is disabled
+            hideAllFloatingCapsules();
             updateFloatingTrafficLightVisibility();
             return;
         }
         if (info == null && !mIsTempShowing) {
-            // [FIX] 导航结束时也隐藏 HUD 红绿灯组件
-            if (mContainerDashboard != null) mContainerDashboard.setVisibility(View.GONE);
-            if (mHudTrafficLightView != null) mHudTrafficLightView.setVisibility(View.GONE);
+            // Hide all capsules when no data
+            hideAllFloatingCapsules();
             updateFloatingTrafficLightVisibility();
             return;
         }
@@ -388,59 +379,40 @@ public class PresentationManager extends android.app.Presentation {
         int time = info.redCountdown;
         
         if (mappedStatus == 0 && time <= 0) {
-            // Treat as empty/hidden
-             if (mContainerDashboard != null) mContainerDashboard.setVisibility(View.GONE);
-             if (mHudTrafficLightView != null) mHudTrafficLightView.setVisibility(View.GONE);
-             updateFloatingTrafficLightVisibility();
-             return;
+            hideAllFloatingCapsules();
+            updateFloatingTrafficLightVisibility();
+            return;
         }
 
         updateFloatingTrafficLightVisibility();
         mFloatingTrafficLightContainer.setBackgroundResource(0);
         
-        if (mContainerDashboard != null) mContainerDashboard.setVisibility(!mIsHudStyle ? View.VISIBLE : View.GONE);
-        if (mHudTrafficLightView != null) mHudTrafficLightView.setVisibility(mIsHudStyle ? View.VISIBLE : View.GONE);
-
-        if (mIsHudStyle && mHudTrafficLightView != null) {
-            mHudTrafficLightView.updateState(mappedStatus, time, info.direction);
-            return;
+        // Determine which capsule to show based on direction
+        // 1=Left, 2=Right, 3=TurnBack(Left), 4=Straight, 8=Straight, 0=Unknown(Straight)
+        TrafficLightView targetView = null;
+        
+        // First hide all
+        hideAllFloatingCapsules();
+        
+        if (info.direction == 1 || info.direction == 3) {
+            targetView = mFloatingTrafficLightLeft;
+        } else if (info.direction == 2) {
+            targetView = mFloatingTrafficLightRight;
+        } else {
+            // Default to straight (0, 4, 8, or any other)
+            targetView = mFloatingTrafficLightStraight;
         }
-
-        if (mFloatingCountdown != null) {
-            if (time > 0) {
-                mFloatingCountdown.setText(String.valueOf(time));
-                mFloatingCountdown.setVisibility(View.VISIBLE);
-                int color = 0xFFFFFFFF;
-                if (mappedStatus == TrafficLightView.STATUS_RED) color = 0xFFFF0000;
-                else if (mappedStatus == TrafficLightView.STATUS_YELLOW) color = 0xFFFFFF00;
-                else if (mappedStatus == TrafficLightView.STATUS_GREEN) color = 0xFF00FF00;
-                mFloatingCountdown.setTextColor(color);
-                if (mFloatingArrow != null) mFloatingArrow.setColorFilter(color);
-            } else {
-                mFloatingCountdown.setVisibility(View.GONE);
-            }
-        }
-        updateFloatingLightImages(mappedStatus, 1.0f);
-        if (mFloatingArrow != null) {
-            float rotation = 0;
-            switch (info.direction) {
-                case 1: rotation = 0f; break;
-                case 2: rotation = 180f; break;
-                case 3: rotation = -45f; break;
-                case 4: rotation = 90f; break;
-                case 5: rotation = 45f; break;
-                case 6: rotation = -90f; break;
-                default: rotation = 90f; break;
-            }
-            mFloatingArrow.setRotation(rotation);
+        
+        if (targetView != null && mappedStatus != 0) {
+            targetView.setVisibility(View.VISIBLE);
+            targetView.updateState(mappedStatus, time, info.direction);
         }
     }
     
-    private void updateFloatingLightImages(int mappedStatus, float alpha) {
-        final float ALPHA_DIM = 0.3f;
-        if (mFloatingLightRed != null) mFloatingLightRed.setAlpha(mappedStatus == TrafficLightView.STATUS_RED ? alpha : ALPHA_DIM);
-        if (mFloatingLightYellow != null) mFloatingLightYellow.setAlpha(mappedStatus == TrafficLightView.STATUS_YELLOW ? alpha : ALPHA_DIM);
-        if (mFloatingLightGreen != null) mFloatingLightGreen.setAlpha(mappedStatus == TrafficLightView.STATUS_GREEN ? alpha : ALPHA_DIM);
+    private void hideAllFloatingCapsules() {
+        if (mFloatingTrafficLightLeft != null) mFloatingTrafficLightLeft.setVisibility(View.GONE);
+        if (mFloatingTrafficLightStraight != null) mFloatingTrafficLightStraight.setVisibility(View.GONE);
+        if (mFloatingTrafficLightRight != null) mFloatingTrafficLightRight.setVisibility(View.GONE);
     }
 
     public void setHudVisible(boolean visible) {
@@ -710,9 +682,9 @@ public class PresentationManager extends android.app.Presentation {
             DebugLogger.e(TAG, "Error resetting theme traffic lights", e);
         }
         
-        // [FIX] 导航结束时，直接强制隐藏 HUD 红绿灯组件
-        if (mHudTrafficLightView != null) mHudTrafficLightView.setVisibility(View.GONE);
-        if (mContainerDashboard != null) mContainerDashboard.setVisibility(View.GONE);
+        
+        // [FIX] 导航结束时，隐藏所有悬浮胶囊
+        hideAllFloatingCapsules();
         
         // [FIX] Use Force Remove Logic
         forceRemoveFloatingWindow();

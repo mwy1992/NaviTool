@@ -199,27 +199,7 @@ public class ClusterHudManager
         // Register Traffic Light Listener - REMOVED (AIDL Deleted)
         // AmapAidlManager.getInstance(mContext).setListener(this);
 
-        // [FIX] Register Broadcast Monitor Listener for reliable Traffic Light Data
-        cn.navitool.managers.AmapMonitorManager.getInstance(mContext)
-                .setListener(new cn.navitool.managers.AmapMonitorManager.OnBroadcastListener() {
-                    @Override
-                    public void onTrafficLightUpdate(NaviInfoManager.TrafficLightInfo info) {
-                        ClusterHudManager.this.onTrafficLightUpdate(info);
-                    }
-
-                    @Override
-                    public void onGuideInfoUpdate(NaviInfoManager.GuideInfo info) {
-                        ClusterHudManager.this.onGuideInfoUpdate(info);
-                    }
-
-                    @Override
-                    public void onNaviStatusUpdate(int state) {
-                        ClusterHudManager.this.onNaviStatusUpdate(state);
-                    }
-                });
-
-        // [FIX] Start Monitoring immediately
-        cn.navitool.managers.AmapMonitorManager.getInstance(mContext).startMonitoring();
+        // [REMOVED] AmapMonitorManager - All traffic light data now comes via AIDL (NaviInfoManager)
 
     }
 
@@ -378,13 +358,14 @@ public class ClusterHudManager
         }
     }
 
-    public void toggleFloatingTrafficLightStyle() {
-        if (mPresentationManager != null) {
-            mPresentationManager.toggleFloatingTrafficLightStyle();
-        } else {
-            DebugLogger.toast(mContext, "HUD未连接，无法切换样式");
-        }
-    }
+    // [DEPRECATED] Style toggle removed - Now only capsule style is supported
+    // public void toggleFloatingTrafficLightStyle() {
+    //     if (mPresentationManager != null) {
+    //         mPresentationManager.toggleFloatingTrafficLightStyle();
+    //     } else {
+    //         DebugLogger.toast(mContext, "HUD未连接，无法切换样式");
+    //     }
+    // }
 
     // --- cache transparent bitmap ---
     private android.graphics.Bitmap mTransparentBitmap;
@@ -667,8 +648,8 @@ public class ClusterHudManager
 
         dismissPresentationManager();
 
-        // Stop Broadcast Monitor
-        cn.navitool.managers.AmapMonitorManager.getInstance(mContext).stopMonitoring();
+        // [DEPRECATED] Broadcast Monitor Disabled - Using AIDL via NaviInfoManager
+        // cn.navitool.managers.AmapMonitorManager.getInstance(mContext).stopMonitoring();
 
         // Unregister Receivers
         try {
