@@ -62,6 +62,7 @@ public class PresentationManager extends android.app.Presentation {
     
     // Data Cache to prevent flickering
     private int mLastSpeed = -1;
+    private int mLastRpm = -1; // [FIX] Added missing field
     private int mLastGear = -1;
     // ... other generic fields
     
@@ -125,7 +126,9 @@ public class PresentationManager extends android.app.Presentation {
         if (getWindow() != null) {
             getWindow().setBackgroundDrawable(
                     new android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT));
-            // [FIX] Z-Order: Force TYPE_APPLICATION_OVERLAY for Service Context
+            // [Refactor] Double Insurance: Use TYPE_APPLICATION_OVERLAY + 3s Delay
+            // While 3s delay resolves the race condition, this explicit type ensures strictly top Z-Order
+            // regardless of system window management quirks on different car head units.
             getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
         }
 
@@ -451,6 +454,16 @@ public class PresentationManager extends android.app.Presentation {
         }
     }
 
+    /**
+     * [New] Toggle Cluster Visibility separate from HUD
+     * Used for Staggered Launch (HUD First, Cluster Later)
+     */
+    public void setClusterVisible(boolean visible) {
+        if (mLayoutCluster != null) {
+            mLayoutCluster.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+    }
+
     public void updateDebugMode(boolean isDebug) {
         // ...
     }
@@ -477,9 +490,16 @@ public class PresentationManager extends android.app.Presentation {
                 // Initialize Audi RS Layout
                 if (mAudiRsLayout == null && mLayoutCluster != null) {
                      android.view.LayoutInflater inflater = android.view.LayoutInflater.from(getContext());
-                     mAudiRsLayout = inflater.inflate(R.layout.layout_cluster_audi_rs, null);
+                     // [FIX] Use parent for inflation to preserve LayoutParams (dp/sp)
                      if (mLayoutCluster instanceof android.view.ViewGroup) {
-                         ((android.view.ViewGroup) mLayoutCluster).addView(mAudiRsLayout);
+                         mAudiRsLayout = inflater.inflate(R.layout.layout_cluster_audi_rs, (android.view.ViewGroup) mLayoutCluster, false);
+                         ((android.view.ViewGroup) mLayoutCluster).addView(mAudiRsLayout, 
+                                 new android.view.ViewGroup.LayoutParams(
+                                     android.view.ViewGroup.LayoutParams.MATCH_PARENT, 
+                                     android.view.ViewGroup.LayoutParams.MATCH_PARENT));
+                     } else {
+                         // Fallback
+                         mAudiRsLayout = inflater.inflate(R.layout.layout_cluster_audi_rs, null);
                      }
                 }
                 
@@ -493,14 +513,13 @@ public class PresentationManager extends android.app.Presentation {
                 mThemeController = new AudiRsThemeController();
                 if (mAudiRsLayout != null) {
                     final View target = mAudiRsLayout;
-                    target.post(() -> {
-                        if (mThemeController != null) {
-                            mThemeController.bindViews(target);
-                            // [FIX] Restore latest data to the new controller
-                            if (mLatestGuideInfo != null) mThemeController.updateGuideInfo(mLatestGuideInfo);
-                            if (mLatestTrafficLightInfo != null) mThemeController.updateTrafficLight(mLatestTrafficLightInfo);
-                        }
-                    });
+                    // [FIX] Bind immediately to avoid frame delay
+                    if (mThemeController != null) {
+                        mThemeController.bindViews(target);
+                        // [FIX] Restore latest data to the new controller
+                        if (mLatestGuideInfo != null) mThemeController.updateGuideInfo(mLatestGuideInfo);
+                        if (mLatestTrafficLightInfo != null) mThemeController.updateTrafficLight(mLatestTrafficLightInfo);
+                    }
                 }
 
             } else {
@@ -513,6 +532,30 @@ public class PresentationManager extends android.app.Presentation {
                 
                 // Set the active controller to the standard one
                 mThemeController = mStandardController;
+            }
+            
+            // [FIX] Data Replay: Immediately sync cached vehicle state to the new controller
+            // This prevents the "zero state" flash and size jumps caused by default values.
+            if (mThemeController != null) {
+                // 1. Speed & RPM 
+                // Use direct update to skip animation if possible, or let animator handle it (depending on impl).
+                // If mLastSpeed > 0, we want it to show immediately.
+                if (mLastSpeed >= 0) mThemeController.updateSpeed((float)mLastSpeed);
+                if (mLastRpm >= 0) mThemeController.updateRpm((float)mLastRpm);
+                
+                // 2. Gear
+                // Re-apply cached gear string or int
+                if (mLastGear != -1) {
+                    // Try simple set first
+                    mThemeController.setGear(mLastGear);
+                    // Also check if we have a string representation cached logic
+                    // (Actually ClusterHudManager handles the mapping, here we just pass int usually)
+                }
+                
+                // 3. Status
+                if (mThemeController instanceof BaseThemeController) {
+                    // Sync generic logic if needed
+                }
             }
 
         } catch (Exception e) {
@@ -724,12 +767,7 @@ public class PresentationManager extends android.app.Presentation {
     
 
     
-    public void setClusterVisible(boolean visible) {
-        if (mLayoutCluster != null) mLayoutCluster.setVisibility(visible ? View.VISIBLE : View.INVISIBLE);
-        if (!visible && mThemeController != null) {
-            // Optional: Pause animations?
-        }
-    }
+
     
     // --- Cluster Dashboard Mode (Standard Theme) ---
 

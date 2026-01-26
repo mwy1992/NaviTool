@@ -23,6 +23,7 @@ import java.util.Locale;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONException;
+import cn.navitool.service.MediaInfo;
 
 // ECarX AdaptAPI Imports
 import com.ecarx.xui.adaptapi.car.Car;
@@ -32,9 +33,11 @@ import com.ecarx.xui.adaptapi.car.sensor.ISensorEvent;
 import com.ecarx.xui.adaptapi.FunctionStatus;
 import com.ecarx.xui.adaptapi.car.base.ICarFunction;
 
+import android.view.WindowManager;
 import android.content.ComponentCallbacks;
 import android.content.res.Configuration;
 import android.content.res.Configuration;
+import android.text.TextUtils;
 import cn.navitool.managers.VehicleSensorManager;
 
 public class ClusterHudManager
@@ -68,11 +71,8 @@ public class ClusterHudManager
     private float mCachedOdometer = 0f;
     private float mCachedFuelIns = 0f;
     
-    // [FIX] Music Cache for Consistency (Backfill)
-    private String mCachedSongTitle = null;
-    private String mCachedSongArtist = null;
-    private android.graphics.Bitmap mCachedCoverArt = null;
-    private boolean mCachedIsPlaying = false;
+    // [Refactor] MediaInfo State
+    private MediaInfo mCurrentMediaState = new MediaInfo();
 
     // Bug 2 Fix: Independent timeout for navigation info
     // [FIX] Removed Timeout Logic to prevent hiding static data
@@ -114,6 +114,10 @@ public class ClusterHudManager
     // [OPTIMIZATION] Shared Handler to reduce allocation
     private final Handler mMainHandler = new Handler(Looper.getMainLooper());
     public Handler getSharedHandler() { return mMainHandler; }
+    
+    // [Refactor] Centralized Runnable for Presentation Creation
+    // Ensures we can CANCEL pending shows (e.g., ignition OFF during 3s delay)
+    private final Runnable mPresentationTask = this::performShowPresentation;
 
     // [FIX] Traffic Light Timeout - Auto-clear traffic light UI only
     // Note: Navigation state is now managed solely by onNaviStatusUpdate(state==2)
@@ -389,6 +393,7 @@ public class ClusterHudManager
         if (mTransparentBitmap == null) {
             mTransparentBitmap = android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888);
             mTransparentBitmap.eraseColor(android.graphics.Color.TRANSPARENT);
+            DebugLogger.d(TAG, "Created TransparentBitmap: " + Integer.toHexString(mTransparentBitmap.hashCode()));
         }
         return mTransparentBitmap;
     }
@@ -1069,56 +1074,32 @@ public class ClusterHudManager
             mMediaReceiver = new android.content.BroadcastReceiver() {
                 @Override
                 public void onReceive(Context context, android.content.Intent intent) {
-                    if (cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE
-                            .equals(intent.getAction())) {
-                        // Handle Direct Service Broadcast
-                        String title = intent.getStringExtra("title");
-                        String artist = intent.getStringExtra("artist");
-                        boolean isPlaying = intent.getBooleanExtra("is_playing", false);
-
-                        if (isPlaying) {
-                            String display = title;
-                            if (artist != null && !artist.isEmpty()) {
-                                display = title + "\n" + artist;
-                            }
-                            updateComponentText("song_2line", display);
-                            updateComponentText("song_1line", title == null ? "" : title);
-
-                            // [FIX] Update Cache
-                            mCachedSongTitle = title;
-                            mCachedSongArtist = artist;
+                    if (cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE.equals(intent.getAction())) {
+                        try {
+                            intent.setExtrasClassLoader(MediaInfo.class.getClassLoader());
+                            MediaInfo info = intent.getParcelableExtra("media_info");
                             
-                            // Update Cover (Byte Array)
-                            boolean hasArtwork = intent.getBooleanExtra("has_artwork", true); // Default true
-                            if (!hasArtwork) {
-                                updateComponentImage("song_cover", null);
-                                mCachedCoverArt = null; // Clear Cache
-                            } else {
-                                byte[] artwork = intent.getByteArrayExtra("artwork");
-                                if (artwork != null) {
-                                    android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(artwork, 0,
-                                            artwork.length);
-                                    if (bmp != null) {
-                                        updateComponentImage("song_cover", bmp);
-                                        mCachedCoverArt = bmp; // Update Cache
+                            if (info != null) {
+                                // [State Logic]
+                                if (!info.isPlaying) {
+                                    // Pause: Only update playing state, keep metadata
+                                    mCurrentMediaState.isPlaying = false;
+                                } else {
+                                    // Playing: Update logic
+                                    // [FIX] Stale Art Fix: Only keep old artwork if TITLE is also the same.
+                                    // If title changed, it's a new song, so we must not show old art (show placeholder instead).
+                                    if (info.artwork == null && mCurrentMediaState.artwork != null 
+                                            && info.packageName != null && info.packageName.equals(mCurrentMediaState.packageName)
+                                            && info.title != null && info.title.equals(mCurrentMediaState.title)) {
+                                        info.artwork = mCurrentMediaState.artwork;
                                     }
+                                    mCurrentMediaState = info;
                                 }
+                                refreshMediaComponents();
                             }
-                        } else {
-                            // Paused: Clear UI
-                            updateComponentText("song_2line", "");
-                            updateComponentText("song_1line", "");
-                            updateComponentImage("song_cover", null);
-                            
-                            // Clear Cache
-                            mCachedSongTitle = null;
-                            mCachedSongArtist = null;
-                            mCachedCoverArt = null;
+                        } catch (Exception e) {
+                            DebugLogger.e(TAG, "Error parsing MediaInfo", e);
                         }
-
-                        // Update Playing State (for other logic if needed)
-                        updateMediaPlayingState(isPlaying);
-                        mCachedIsPlaying = isPlaying;
                     }
                 }
             };
@@ -1127,9 +1108,8 @@ public class ClusterHudManager
             mContext.registerReceiver(mMediaReceiver, filter, null, new Handler(Looper.getMainLooper()));
             DebugLogger.i(TAG, "Registered Media Receiver for Service Updates");
 
-            // Request Initial Media State immediately (in case Service is already running)
-            android.content.Intent requestIntent = new android.content.Intent(
-                    "cn.navitool.ACTION_REQUEST_MEDIA_REBROADCAST");
+            // Request Initial Media State immediately
+            android.content.Intent requestIntent = new android.content.Intent("cn.navitool.ACTION_REQUEST_MEDIA_REBROADCAST");
             requestIntent.setPackage(mContext.getPackageName());
             mContext.sendBroadcast(requestIntent);
             DebugLogger.i(TAG, "Sent Media Sync Request");
@@ -1137,71 +1117,41 @@ public class ClusterHudManager
             DebugLogger.e(TAG, "Failed to init Media Broadcast Receiver", e);
         }
 
-        // [FIX] Request initial media state re-broadcast (Sync State)
-        try {
-            android.content.Intent requestIntent = new android.content.Intent(
-                    "cn.navitool.ACTION_REQUEST_MEDIA_REBROADCAST");
-            requestIntent.setPackage(mContext.getPackageName());
-            mContext.sendBroadcast(requestIntent);
-            DebugLogger.i(TAG, "Requested Media Re-Broadcast for initial state sync");
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to request re-broadcast", e);
-        }
-
-        // [OPTIMIZATION] Retry sync after 2 seconds to catch Service/Player startup lag
+        // [OPTIMIZATION] Retry sync after 2 seconds
         mMainHandler.postDelayed(() -> {
             try {
-                android.content.Intent requestIntent = new android.content.Intent(
-                        "cn.navitool.ACTION_REQUEST_MEDIA_REBROADCAST");
+                android.content.Intent requestIntent = new android.content.Intent("cn.navitool.ACTION_REQUEST_MEDIA_REBROADCAST");
                 requestIntent.setPackage(mContext.getPackageName());
                 mContext.sendBroadcast(requestIntent);
-                DebugLogger.i(TAG, "Sent Retry Media Sync Request (2s delay)");
-            } catch (Exception e) {
-                // Ignore
-            }
+            } catch (Exception e) { }
         }, 2000);
     }
 
-    // Broadcast Receiver
-    private class MusicBroadcastReceiver extends android.content.BroadcastReceiver {
-        @Override
-        public void onReceive(Context context, android.content.Intent intent) {
-            String action = intent.getAction();
-            if (action == null)
-                return;
+    /**
+     * [Refactor] Centralized Media UI Update
+     */
+    private void refreshMediaComponents() {
+        if (mCurrentMediaState == null) return;
+        
+        // 1. Update Playing State
+        updateMediaPlayingState(mCurrentMediaState.isPlaying);
+        
+        // 2. Format Text
+        String display = mCurrentMediaState.getFormatText();
+        
+        // 3. Update HUD Components
+        updateComponentText("song_2line", display);
+        updateComponentText("song_1line", mCurrentMediaState.title == null ? "" : mCurrentMediaState.title);
+        
+        // 4. Update Cover (Always update)
+        updateComponentImage("song_cover", mCurrentMediaState.artwork);
+        
+        // 5. Notify Preview Listener (Removed Redundant Calls)
+        // mListener is already notified inside updateComponentText/Image
+    }
 
-            if (cn.navitool.service.MediaNotificationListener.ACTION_MEDIA_INFO_UPDATE.equals(action)) {
-                // Handle Direct Service Broadcast
-                String title = intent.getStringExtra("title");
-                String artist = intent.getStringExtra("artist");
-                boolean isPlaying = intent.getBooleanExtra("is_playing", false);
-
-                String display = title;
-                if (artist != null && !artist.isEmpty()) {
-                    display = title + "\n" + artist;
-                }
-                updateComponentText("song_2line", display);
-                updateComponentText("song_1line", title == null ? "" : title);
-
-                // Update Playing State
-                updateMediaPlayingState(isPlaying);
-
-                // Update Cover (Byte Array)
-                boolean hasArtwork = intent.getBooleanExtra("has_artwork", true); // Default true
-                if (!hasArtwork) {
-                    updateComponentImage("song_cover", null);
-                } else {
-                    byte[] artwork = intent.getByteArrayExtra("artwork");
-                    if (artwork != null) {
-                        android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeByteArray(artwork, 0,
-                                artwork.length);
-                        if (bmp != null) {
-                            updateComponentImage("song_cover", bmp);
-                        }
-                    }
-                }
-            }
-        }
+    public MediaInfo getCurrentMediaInfo() {
+        return mCurrentMediaState;
     }
 
     // --- AdaptAPI Init ---
@@ -1379,7 +1329,9 @@ public class ClusterHudManager
             }
             if (mIsClusterEnabled || mIsHudEnabled) {
                 if (mPresentationManager == null) {
-                    showPresentationManager();
+                if (mPresentationManager == null) {
+                    schedulePresentation(0);
+                }
                 }
             }
         });
@@ -1456,7 +1408,7 @@ public class ClusterHudManager
             mPendingTheme = savedTheme;
             DebugLogger.i(TAG, "forceRefresh: Loaded saved theme: " + savedTheme);
 
-            showPresentationManager();
+            schedulePresentation(0);
 
             // 调用 switchNaviMode
             if (mIsClusterEnabled && mDimMenuInteraction != null) {
@@ -1503,7 +1455,9 @@ public class ClusterHudManager
 
         // 创建并显示 PresentationManager
         if (clusterEnabled || hudEnabled) {
-            showPresentationManager();
+        if (clusterEnabled || hudEnabled) {
+            schedulePresentation(0);
+        }
         }
     }
 
@@ -1542,6 +1496,8 @@ public class ClusterHudManager
                 mLastNaviModeApplyTime = now;
                 
                 DebugLogger.i(TAG, sourceTag + "applyNaviMode: Called switchNaviMode(" + mode + ")");
+
+
             } catch (Exception e) {
                 DebugLogger.e(TAG, sourceTag + "applyNaviMode: Failed to call switchNaviMode", e);
             }
@@ -1640,9 +1596,14 @@ public class ClusterHudManager
              }
         }
 
-        // [FIX] 调用ensureUiVisible时标记点火就绪
-        // 因为此方法只应由handleIgnitionDriving触发
-        mIgnitionReady = true;
+        // [FIX] Strict Ignition Check
+        // Only allow UI to show if ignition is confirmed READY by Service.
+        // This prevents the Activity (e.g., Settings page) from accidentally waking up the HUD 
+        // when the car is OFF (Simulator/Bench test scenario).
+        if (!mIgnitionReady) {
+            DebugLogger.w(TAG, "ensureUiVisible: Ignored. Ignition NOT READY.");
+            return;
+        }
 
         // [FIX] Check if features are enabled before showing
         // Force reload config to be safe
@@ -1661,13 +1622,25 @@ public class ClusterHudManager
         // 否则直到下一次传感器变动前，界面都会显示0
         loadInitialSensorData();
 
-        // Use post to ensure we are on main thread (redundant but safe)
-        if (Thread.currentThread() == Looper.getMainLooper().getThread()) {
-            DebugLogger.d(TAG, "ensureUiVisible: Already on Main Thread, showing now.");
-            showPresentationManager();
+        loadInitialSensorData();
+        
+        // [FIX] Z-Order Optimization with Lifecycle Safety
+        if (mPresentationManager != null) {
+            // Hot check: already exists? fast path (check visibility)
+            performShowPresentation(); 
+            return;
+        }
+
+        if (mIsHudEnabled) {
+             DebugLogger.i(TAG, "ensureUiVisible: HUD Enabled - Scheduling launch IMMEDIATELY (Staggered Launch)");
+             // If Cluster is also enabled, it will be initially hidden and shown after delay in performShowPresentation
+             schedulePresentation(0);
+        } else if (mIsClusterEnabled) {
+             DebugLogger.i(TAG, "ensureUiVisible: Only Cluster Enabled - Scheduling launch in 3s (Z-Order Fix)");
+             schedulePresentation(3000);
         } else {
-            DebugLogger.d(TAG, "ensureUiVisible: Posting to Main Thread handler.");
-            mMainHandler.post(this::showPresentationManager);
+             // Redundant case (handled by earlier check), but safe fallback
+             schedulePresentation(0);
         }
     }
 
@@ -1678,8 +1651,12 @@ public class ClusterHudManager
      */
     public void enterStandbyMode() {
         DebugLogger.i(TAG, "Entering Standby Mode (Destroying PresentationManager)...");
+        
+        // 1. [CRITICAL] Cancel any pending creation tasks!
+        // Prevents "Zombie Window" if ignition turns OFF during the 3s delay.
+        cancelPendingPresentation();
 
-        // 1. 销毁 PresentationManager 窗口 (释放 Surface/Window 资源)
+        // 2. 销毁 PresentationManager 窗口 (释放 Surface/Window 资源)
         if (mPresentationManager != null) {
             // Dismissing ensures strict cleanup of the display context
             mPresentationManager.dismiss();
@@ -1705,6 +1682,7 @@ public class ClusterHudManager
         }
 
         // 3. 重置内部状态
+        mIgnitionReady = false; // [FIX] Reset Ignition State
         mSimulatedGearEnabled = ConfigManager.getInstance().getBoolean("simulated_gear_enabled", false);
         
         DebugLogger.i(TAG, "Standby Mode Active: UI Dismissed, Caches Reset.");
@@ -1731,7 +1709,7 @@ public class ClusterHudManager
         // LEAST ONE is enabled.
         if (mIsClusterEnabled || mIsHudEnabled) {
             if (mPresentationManager == null) {
-                showPresentationManager();
+                schedulePresentation(0);
             } else {
                 // Ensure specific visibilities are updated
                 mPresentationManager.setClusterVisible(mIsClusterEnabled);
@@ -1742,6 +1720,27 @@ public class ClusterHudManager
             dismissPresentationManager();
         }
     }
+    
+    // [Refactor] Task Scheduler
+    private void schedulePresentation(long delayMs) {
+        // Always remove existing to prevent double-scheduling
+        mMainHandler.removeCallbacks(mPresentationTask);
+        if (delayMs <= 0) {
+            if (Thread.currentThread() == Looper.getMainLooper().getThread()) {
+                mPresentationTask.run();
+            } else {
+                mMainHandler.post(mPresentationTask);
+            }
+        } else {
+            DebugLogger.d(TAG, "schedulePresentation: Delayed by " + delayMs + "ms");
+            mMainHandler.postDelayed(mPresentationTask, delayMs);
+        }
+    }
+    
+    private void cancelPendingPresentation() {
+        mMainHandler.removeCallbacks(mPresentationTask);
+        DebugLogger.d(TAG, "cancelPendingPresentation: Tasks cancelled");
+    }
 
     // [New] Allow Service to configure and trigger UI directly
     public void configureAndShowUi(boolean showCluster, boolean showHud) {
@@ -1751,32 +1750,11 @@ public class ClusterHudManager
         ensureUiVisible();
     }
 
-    private void showPresentationManager() {
-        DebugLogger.d(TAG, "showPresentationManager: [Step 1] Getting DisplayManager");
-        DisplayManager dm = (DisplayManager) mContext.getSystemService(Context.DISPLAY_SERVICE);
-        if (dm == null) {
-            DebugLogger.e(TAG, "showPresentationManager: Failed to get DisplayManager");
-            return;
-        }
-        Display[] displays = dm.getDisplays();
-        DebugLogger.d(TAG, "showPresentationManager: [Step 2] Found " + displays.length + " displays total");
-
-        Display targetDisplay = null;
-        try {
-            for (Display d : displays) {
-                if (d == null)
-                    continue;
-                // [FIX] Minimal access to avoid native crash on weird displays
-                if (d.getDisplayId() == 2) {
-                    targetDisplay = d;
-                    // Only log details for the target to be safe
-                    DebugLogger.i(TAG, "  -> FOUND TARGET DISPLAY (ID 2): " + d.getName());
-                    break;
-                }
-            }
-        } catch (Throwable t) { // Catch Throwable (Errors + Exceptions)
-            DebugLogger.e(TAG, "Error iterating displays", t);
-        }
+    // Renamed from showPresentationManager for clarity
+    private void performShowPresentation() {
+        DebugLogger.d(TAG, "performShowPresentation: [Step 1] Finding Display 2");
+        
+        Display targetDisplay = getTargetDisplay(); // Extracted Helper
 
         if (targetDisplay != null) {
             // [FIX] Prevent Duplicate PresentationManager (Ghosting Issue)
@@ -1789,13 +1767,13 @@ public class ClusterHudManager
             }
 
             mRetryCount = 0; // Reset retry counter on success
-            DebugLogger.d(TAG, "showPresentationManager: [Step 3] Creating PresentationManager Window");
+            DebugLogger.d(TAG, "performShowPresentation: [Step 3] Creating PresentationManager Window");
             try {
                 // [FIX] Z-Order Correction: Use standard Presentation constructor
                 // This ensures correct Z-Order handling (system managed)
                 mPresentationManager = new PresentationManager(mContext, targetDisplay);
                 mCurrentAppliedTheme = -1; // [FIX] Reset state so theme is re-applied to new instance
-                DebugLogger.d(TAG, "showPresentationManager: [Step 4] Presentation Object Created (Standard Presentation)");
+                DebugLogger.d(TAG, "performShowPresentation: [Step 4] Presentation Object Created (Standard Presentation)");
 
                 // Logging for verification
                 if (mPresentationManager.getWindow() != null) {
@@ -1848,7 +1826,20 @@ public class ClusterHudManager
                     // [FIX] Apply Visibility inside OnShowListener to ensure Views are inflated and ready
                     // Doing this outside show() caused race condition where views were still null/gone.
                     DebugLogger.i(TAG, "OnShowListener: Applying Visibility - Cluster=" + mIsClusterEnabled + ", HUD=" + mIsHudEnabled);
-                    mPresentationManager.setClusterVisible(mIsClusterEnabled);
+                    // [FIX] Staggered Launch Logic (HUD First, Cluster Later)
+                    if (mIsHudEnabled && mIsClusterEnabled) {
+                        DebugLogger.i(TAG, "OnShowListener: Staggered Launch - Showing HUD, Hiding Cluster (Sch. 3s)");
+                        mPresentationManager.setClusterVisible(false); // Hide Cluster initially
+                        mMainHandler.postDelayed(() -> {
+                            if (mPresentationManager != null) {
+                                DebugLogger.i(TAG, "Staggered Launch: Revealing Cluster now");
+                                mPresentationManager.setClusterVisible(true);
+                            }
+                        }, 3000);
+                    } else {
+                        // Standard logic for single mode
+                        mPresentationManager.setClusterVisible(mIsClusterEnabled);
+                    }
                     mPresentationManager.setHudVisible(mIsHudEnabled);
                     
                     // [FIX] Apply Floating Traffic Light State
@@ -1911,7 +1902,7 @@ public class ClusterHudManager
             if (mRetryCount < 30) {
                 mRetryCount++;
                 DebugLogger.w(TAG, "Display ID 2 not found yet. Retrying in 1s... (Attempt " + mRetryCount + "/30)");
-                mMainHandler.postDelayed(this::showPresentationManager, 1000);
+                schedulePresentation(1000); // Use scheduler to reuse token
             } else {
                 DebugLogger.e(TAG, "Display ID 2 check timed out after 30s. Background UI start failed.");
                 // Optionally reset retry count here if we want to allow manual retries later
@@ -1921,6 +1912,7 @@ public class ClusterHudManager
     }
 
     private void dismissPresentationManager() {
+        cancelPendingPresentation(); // [CRITICAL] Stop any retry loops or scheduled starts
         if (mPresentationManager != null) {
             try {
                 mPresentationManager.dismiss();
@@ -1931,6 +1923,23 @@ public class ClusterHudManager
                 DebugLogger.i(TAG, "ClusterHudPresentationManager DISMISSED");
             }
         }
+    }
+    
+    // Helper to find Display 2
+    private Display getTargetDisplay() {
+        DisplayManager dm = (DisplayManager) mContext.getSystemService(Context.DISPLAY_SERVICE);
+        if (dm == null) return null;
+        
+        try {
+            for (Display d : dm.getDisplays()) {
+                if (d != null && d.getDisplayId() == 2) {
+                     return d;
+                }
+            }
+        } catch (Throwable t) {
+            DebugLogger.e(TAG, "Error finding display", t);
+        }
+        return null;
     }
 
     /**
@@ -1943,7 +1952,7 @@ public class ClusterHudManager
         dismissPresentationManager();
         // If either Cluster or HUD is enabled, recreate immediately
         if (mIsClusterEnabled || mIsHudEnabled) {
-            mMainHandler.postDelayed(this::showPresentationManager, 100);
+            schedulePresentation(100);
         }
     }
 
@@ -1964,36 +1973,36 @@ public class ClusterHudManager
                 } else if ("auto_hold".equals(newData.type)) {
                     newData.image = getAutoHoldBitmap(mIsAutoHoldOn);
                 } else if ("gear".equals(newData.type)) {
-                    // [FIX] Backfill current gear (Sync Logic - Existing Data)
-                    newData.text = getGearString(mCachedGear);
+                    // [FIX] Anti-Flicker: Prefer Simulated Gear if enabled
+                    if (mSimulatedGearEnabled && !TextUtils.isEmpty(mLastSimulatedGear)) {
+                        newData.text = mLastSimulatedGear;
+                    } else {
+                        // Backfill current real gear
+                        newData.text = getGearString(mCachedGear);
+                    }
                 } else if ("song_2line".equals(newData.type)) {
-                    // [FIX] Backfill Music Title/Artist
-                    if (mCachedSongTitle != null && !mCachedSongTitle.isEmpty()) {
-                        String display = mCachedSongTitle;
-                        if (mCachedSongArtist != null && !mCachedSongArtist.isEmpty()) {
-                            display = mCachedSongTitle + "\n" + mCachedSongArtist;
-                        }
-                        newData.text = display;
+                    // [Refactor] Backfill Music Title/Artist
+                    if (mCurrentMediaState != null && mCurrentMediaState.isValid()) {
+                         newData.text = mCurrentMediaState.getFormatText();
                     } else if ("歌曲标题".equals(newData.text)) {
-                         // Placeholder preservation: do nothing if cache is empty
-                    } else if (mCachedSongTitle != null) {
-                        // Cache is empty string but not null, and current text isn't placeholder
-                        // We can overwrite it (e.g. music stopped)
+                         // Placeholder preservation
+                    } else {
+                         // Clear only if not placeholder
                          newData.text = "";
                     }
                 } else if ("song_1line".equals(newData.type)) {
-                    // [FIX] Backfill Music Title Only
-                    if (mCachedSongTitle != null && !mCachedSongTitle.isEmpty()) {
-                        newData.text = mCachedSongTitle;
+                    // [Refactor] Backfill Music Title Only
+                    if (mCurrentMediaState != null && mCurrentMediaState.title != null) {
+                        newData.text = mCurrentMediaState.title;
                     } else if ("歌曲标题".equals(newData.text)) {
                         // Placeholder preservation
-                    } else if (mCachedSongTitle != null) {
+                    } else {
                          newData.text = "";
                     }
                 } else if ("song_cover".equals(newData.type)) {
-                    // [FIX] Backfill Cover Art
-                    if (mCachedCoverArt != null) {
-                        newData.image = mCachedCoverArt;
+                    // [Refactor] Backfill Cover Art
+                    if (mCurrentMediaState != null && mCurrentMediaState.artwork != null) {
+                        newData.image = mCurrentMediaState.artwork;
                     }
                 } else if ("fuel".equals(newData.type)) {
                     if (mCachedFuelText != null) newData.text = mCachedFuelText;
@@ -2335,6 +2344,12 @@ public class ClusterHudManager
         // [FIX] 即使是 -1 也传递给转换函数，因为 -1 代表 M 档，不应替换为 P
         String baseGear = SimulateGear.mapRawGearToChar(mCachedGear);
 
+        // [FIX] Simulator/Fallback: If gear is unknown/empty but simulation is on, assume "D"
+        // This restores "D1-D8" display in simulators that don't send valid gear signals.
+        if (mSimulatedGearEnabled && TextUtils.isEmpty(baseGear)) {
+            baseGear = "D";
+        }
+
         String calculated = SimulateGear.getInstance().calculateGear(
                 mCachedSpeed,
                 mCachedRpm,
@@ -2644,6 +2659,9 @@ public class ClusterHudManager
         } catch (org.json.JSONException e) {
             DebugLogger.e(TAG, "loadHudLayoutFromDisk: Failed to parse layout JSON", e);
         }
+        
+        // [Refactor] Immediately refresh media components to override possible stale text from JSON
+        refreshMediaComponents();
     }
 
     public void updateFuel(String text) {

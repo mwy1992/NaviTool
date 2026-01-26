@@ -27,7 +27,9 @@ import android.widget.Toast;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 
 import org.json.JSONArray;
+import org.json.JSONArray;
 import org.json.JSONException;
+import cn.navitool.service.MediaInfo;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
@@ -109,6 +111,9 @@ public class HudSettingsController {
         ClusterHudManager.getInstance(mActivity).forceNotifyListener();
     }
     
+    // Field for VSM Listener
+    private cn.navitool.managers.VehicleSensorManager.Listener mVsmListener;
+
     private void setupHudEditor() {
         if (mLayoutHud == null) return;
         mLayoutHud.findViewById(R.id.btnHudAdd).setOnClickListener(v -> showAddHudComponentDialog());
@@ -116,42 +121,61 @@ public class HudSettingsController {
         mLayoutHud.findViewById(R.id.btnHudDelete).setOnClickListener(v -> deleteSelectedHudComponent());
         mLayoutHud.findViewById(R.id.btnHudSave).setOnClickListener(v -> lockHudComponent());
         mLayoutHud.findViewById(R.id.btnHudReset).setOnClickListener(v -> resetHudComponent());
+        
         mLayoutHud.findViewById(R.id.btnHudSwitchMode).setOnClickListener(v -> switchHudMode());
         mLayoutHud.findViewById(R.id.btnHudSnowMode).setOnClickListener(v -> toggleSnowMode());
 
-        // Restore Snow Mode
-        mIsSnowModeEnabled = ConfigManager.getInstance().getBoolean("hud_snow_mode", false);
+        // Initial Button State Update
+        updateHudModeButton();
         updateHudSnowModeButton();
     }
     
-    private void switchHudMode() {
-        // 1. Save current layout
-        saveCurrentHudLayout(mHudMode);
-
-        // 2. Toggle Mode
-        mHudMode = (mHudMode == MODE_WHUD) ? MODE_AR : MODE_WHUD;
-        ConfigManager.getInstance().setInt("hud_current_mode", mHudMode);
-
-        // 3. Update UI
-        updateHudModeButton();
-        DebugLogger.toast(mActivity, "已切换至 " + ((mHudMode == MODE_WHUD) ? "WHUD" : "AR") + " 模式");
-
-        // 4. Load Layout
-        loadHudLayout(mHudMode);
-    }
+    // [Methods moved to end of file to resolve duplication]
 
     public void onResume() {
         // Register HUD Listener for Preview Updates
-        ClusterHudManager.getInstance(mActivity).setListener((type, text, image) -> {
+        ClusterHudManager manager = ClusterHudManager.getInstance(mActivity);
+        manager.setListener((type, text, image) -> {
             mActivity.runOnUiThread(() -> {
                 updatePreview(type, text, image);
             });
         });
+        
+        // [NEW] Register VSM Listener
+        if (mVsmListener == null) {
+            mVsmListener = new cn.navitool.managers.VehicleSensorManager.Listener() {
+                @Override
+                public void onFunctionChanged(int functionId, int zone, int value) {
+                    mActivity.runOnUiThread(() -> {
+                         if (functionId == cn.navitool.managers.VehicleSensorManager.SETTING_FUNC_HUD_AR_ENGINE) {
+                             mHudMode = (value == 1) ? MODE_AR : MODE_WHUD;
+                             updateHudModeButton();
+                         } else if (functionId == cn.navitool.managers.VehicleSensorManager.SETTING_FUNC_HUD_SNOW_MODE) {
+                             mIsSnowModeEnabled = (value == 1);
+                             updateHudSnowModeButton();
+                         }
+                    });
+                }
+            };
+        }
+        cn.navitool.managers.VehicleSensorManager.getInstance(mActivity).registerListener(mVsmListener);
+        
+        // [Refactor] Immediately sync current media state to Preview
+        MediaInfo mediaInfo = manager.getCurrentMediaInfo();
+        if (mediaInfo != null && mediaInfo.isValid()) {
+            updatePreview("song_2line", mediaInfo.getFormatText(), null);
+            updatePreview("song_cover", null, mediaInfo.artwork);
+        }
     }
 
     public void onPause() {
         // Unregister HUD Listener
         ClusterHudManager.getInstance(mActivity).setListener(null);
+        
+        // [NEW] Unregister VSM Listener
+        if (mVsmListener != null) {
+            cn.navitool.managers.VehicleSensorManager.getInstance(mActivity).unregisterListener(mVsmListener);
+        }
     }
 
     private void updatePreview(String type, String text, Bitmap image) {
@@ -196,62 +220,101 @@ public class HudSettingsController {
 
                     if (child instanceof TextView && text != null) {
                         ((TextView) child).setText(text);
-                    } else if (child instanceof LinearLayout && ("song_2line".equals(type))) {
+                    } else if (child instanceof LinearLayout && ("song_2line".equals(type) || "song_1line".equals(type))) {
                         LinearLayout ll = (LinearLayout) child;
                         
-                        // [FIX] Preview Placeholder Protection
-                        if ((text == null || text.isEmpty()) && ll.getChildCount() > 0 && ll.getChildAt(0) instanceof TextView) {
-                            TextView currentTv = (TextView) ll.getChildAt(0);
-                            if ("歌曲标题".equals(currentTv.getText().toString())) {
-                                continue; // Skip update to preserve preview placeholder
-                            }
-                        }
+                        // [FIX] Placeholders for Song Info
+                        String title = "歌曲标题";
+                        String artist = "歌手名";
+                        boolean isPlaceholder = false;
 
-                        String[] parts = (text != null ? text : "").split("\n");
-                        String title = parts.length > 0 ? parts[0] : "";
-                        String artist = parts.length > 1 ? parts[1] : "";
+                        if (text == null || text.trim().isEmpty()) {
+                            isPlaceholder = true;
+                            // Defaults are already set above
+                        } else {
+                            String[] parts = text.split("\n");
+                            title = parts.length > 0 ? parts[0] : "";
+                            artist = parts.length > 1 ? parts[1] : "";
+                        }
 
                         if (ll.getChildCount() > 0 && ll.getChildAt(0) instanceof TextView) {
                             ((TextView) ll.getChildAt(0)).setText(title);
                         }
 
-                        if (!artist.isEmpty()) {
-                            if (ll.getChildCount() > 1) {
-                                ((TextView) ll.getChildAt(1)).setText(artist);
-                                ll.getChildAt(1).setVisibility(View.VISIBLE);
-                            } else {
-                                TextView tvArtist = new TextView(mActivity);
-                                tvArtist.setText(artist);
-                                tvArtist.setTextSize(TypedValue.COMPLEX_UNIT_PX, 44);
-                                tvArtist.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
-                                tvArtist.setSingleLine(true);
-                                tvArtist.setEllipsize(TextUtils.TruncateAt.MARQUEE);
-                                tvArtist.setMarqueeRepeatLimit(-1);
-                                tvArtist.setSelected(true);
-                                tvArtist.setIncludeFontPadding(false);
-                                
-                                LinearLayout.LayoutParams artistParams = new LinearLayout.LayoutParams(
-                                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                                    LinearLayout.LayoutParams.WRAP_CONTENT
-                                );
-                                artistParams.topMargin = -8; 
-                                ll.addView(tvArtist, artistParams);
-                            }
-                        } else {
+                        // [FIX] Single Line Mode: Hide Artist Line
+                        if ("song_1line".equals(type)) {
                             if (ll.getChildCount() > 1) {
                                 ll.getChildAt(1).setVisibility(View.GONE);
                             }
+                        } else {
+                            // Double Line Mode: Handle Artist Line
+                            if (ll.getChildCount() > 1) {
+                                TextView tvArtist = (TextView) ll.getChildAt(1);
+                                if (isPlaceholder || !artist.isEmpty()) {
+                                    tvArtist.setText(artist);
+                                    tvArtist.setVisibility(View.VISIBLE);
+                                } else {
+                                    tvArtist.setVisibility(View.GONE);
+                                }
+                            } else if (isPlaceholder || !artist.isEmpty()) {
+                                 // Dynamic creation if missing (legacy support)
+                                    TextView tvArtist = new TextView(mActivity);
+                                    tvArtist.setText(artist);
+                                    tvArtist.setTextSize(TypedValue.COMPLEX_UNIT_PX, 44);
+                                    tvArtist.setTextColor(mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF);
+                                    tvArtist.setSingleLine(true);
+                                    tvArtist.setEllipsize(TextUtils.TruncateAt.MARQUEE);
+                                    tvArtist.setMarqueeRepeatLimit(-1);
+                                    tvArtist.setSelected(true);
+                                    tvArtist.setIncludeFontPadding(false);
+                                    
+                                    LinearLayout.LayoutParams artistParams = new LinearLayout.LayoutParams(
+                                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                                        LinearLayout.LayoutParams.WRAP_CONTENT
+                                    );
+                                    artistParams.topMargin = -8; 
+                                    ll.addView(tvArtist, artistParams);
+                            }
                         }
-                    } else if (child instanceof ImageView && image != null) {
-                        ((ImageView) child).setImageBitmap(image);
-                        if ("volume".equals(type)) {
-                             // Volume specific adjustment if needed, but mostly standard
+
+                    } else if (child instanceof ImageView) {
+                        if ("song_cover".equals(type)) {
+                            // [FIX] Strict Sync: Ignore 'image' param, use Data Source
+                            MediaInfo info = ClusterHudManager.getInstance(mActivity).getCurrentMediaInfo();
+                            Bitmap realArt = (info != null && info.isValid()) ? info.artwork : null;
+                            
+                            // Deep Debugging (Simplified)
+                            String infoTitle = (info != null) ? info.title : "NULL";
+                            String infoArtHash = (realArt != null) ? Integer.toHexString(realArt.hashCode()) : "NULL";
+                            
+                            DebugLogger.d("HUD_PREVIEW", String.format("song_cover sync: Title='%s', InfoArtHash=%s", infoTitle, infoArtHash));
+
+                            if (realArt != null) {
+                                ((ImageView) child).setImageBitmap(realArt);
+                                ((ImageView) child).setColorFilter(null);
+                                ((ImageView) child).setScaleType(ImageView.ScaleType.FIT_CENTER);
+                            } else {
+                                ImageView iv = (ImageView) child;
+                                iv.setImageBitmap(null); // [Aggressive Clear]
+                                iv.setImageDrawable(null); // [Aggressive Clear]
+                                iv.setImageResource(android.R.drawable.ic_media_play);
+                                iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                                iv.setColorFilter(Color.WHITE);
+                                iv.setVisibility(View.VISIBLE);
+                                iv.invalidate(); // [Force Redraw]
+                            }
+                        } else {
+                            // Standard logic for others
+                            if (image != null) {
+                                ((ImageView) child).setImageBitmap(image);
+                            }
                         }
                     }
                 }
             }
         }
     }
+
     
     private void saveCurrentHudLayout(int mode) {
         FrameLayout preview = mLayoutHud.findViewById(R.id.layoutHudPreview);
@@ -373,6 +436,8 @@ public class HudSettingsController {
 
         // Clear Preview
         preview.removeAllViews();
+        // [FIX] Ensure Grid Background is always visible
+        preview.setBackground(new GridBackgroundDrawable());
         mHudTestComponent = null;
 
         String key = (mode == MODE_WHUD) ? "hud_layout_whud" : "hud_layout_ar";
@@ -443,6 +508,32 @@ public class HudSettingsController {
         ClusterHudManager.getInstance(mActivity).syncHudLayout(syncList);
     }
 
+    private void switchHudMode() {
+        // Toggle Logic
+        int targetMode = (mHudMode == MODE_WHUD) ? MODE_AR : MODE_WHUD;
+        int targetValue = (targetMode == MODE_AR) ? 1 : 0;
+        
+        // Send to System
+        cn.navitool.managers.VehicleSensorManager.getInstance(mActivity).setFunctionValue(
+                cn.navitool.managers.VehicleSensorManager.SETTING_FUNC_HUD_AR_ENGINE, 
+                Integer.MIN_VALUE, 
+                targetValue
+        );
+        
+        // Optimistic Update
+        mHudMode = targetMode;
+        updateHudModeButton();
+        DebugLogger.toast(mActivity, "正在切换至 " + ((mHudMode == MODE_WHUD) ? "WHUD" : "AR") + " 模式...");
+    }
+    
+    private void updateHudModeButton() {
+        if (mLayoutHud == null) return;
+        Button btn = mLayoutHud.findViewById(R.id.btnHudSwitchMode);
+        if (btn != null) {
+            btn.setText("当前为" + ((mHudMode == MODE_WHUD) ? "WHUD" : "AR") + "模式");
+        }
+    }
+
     private void toggleSnowMode() {
         mIsSnowModeEnabled = !mIsSnowModeEnabled;
         ConfigManager.getInstance().setBoolean("hud_snow_mode", mIsSnowModeEnabled);
@@ -484,8 +575,8 @@ public class HudSettingsController {
         FrameLayout preview = mLayoutHud.findViewById(R.id.layoutHudPreview);
         if (preview == null) return;
 
-        // Apply Grid Background (20px Grid)
-        preview.setBackground(new GridBackgroundDrawable());
+        // [FIX] Background is now set in loadHudLayout to ensure persistence
+        // preview.setBackground(new GridBackgroundDrawable());
 
         View view;
         boolean isMediaCover = "song_cover".equals(type);
@@ -638,7 +729,9 @@ public class HudSettingsController {
                 view.setLayoutParams(params);
             } else {
                 // Media Cover
+                // [FIX] Revert to simple ImageView (No Border)
                 iv.setImageResource(android.R.drawable.ic_media_play);
+                iv.setScaleType(ImageView.ScaleType.FIT_CENTER); // Ensure it's visible
                 FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(200, 200);
                 view = iv;
                 view.setLayoutParams(params);
@@ -1150,16 +1243,7 @@ public class HudSettingsController {
         ClusterHudManager.getInstance(mActivity).syncHudLayout(list);
     }
     
-    private void updateHudModeButton() {
-        Button btn = mLayoutHud.findViewById(R.id.btnHudSwitchMode);
-        if (btn != null) {
-            if (mHudMode == MODE_WHUD) {
-                btn.setText("切换AR模式");
-            } else {
-                btn.setText("切换WHUD模式");
-            }
-        }
-    }
+    // [Duplicate updateHudModeButton removed]
     
     private void lockHudComponent() {
         clearHudSelection();

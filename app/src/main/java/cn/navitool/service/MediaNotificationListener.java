@@ -199,13 +199,12 @@ public class MediaNotificationListener extends NotificationListenerService {
     // [FIX] Helper to broadcast empty/clear state
     private void broadcastClearState() {
         Intent intent = new Intent(ACTION_MEDIA_INFO_UPDATE);
-        intent.putExtra("package_name", "");
-        intent.putExtra("title", "");
-        intent.putExtra("artist", "");
-        intent.putExtra("is_playing", false);
-        intent.putExtra("has_artwork", false);
+        MediaInfo emptyInfo = new MediaInfo();
+        intent.putExtra("media_info", emptyInfo);
         intent.setPackage(getPackageName());
         sendBroadcast(intent);
+        
+        mLastMediaInfo = null; // Reset cache
         DebugLogger.i(TAG, "Broadcast Clear State (Session End/Destroyed)");
     }
 
@@ -267,8 +266,8 @@ public class MediaNotificationListener extends NotificationListenerService {
         }
     }
 
-    private Bitmap mLastBitmap = null;
-    private String mLastPackage = null;
+    // [Refactor] Use MediaInfo model
+    private MediaInfo mLastMediaInfo = null;
 
     private void extractMediaInfo(MediaController controller) {
         extractMediaInfo(controller, false);
@@ -282,17 +281,9 @@ public class MediaNotificationListener extends NotificationListenerService {
         PlaybackState playbackState = controller.getPlaybackState();
         String packageName = controller.getPackageName();
 
-        // Reset fallback if package changed
-        if (mLastPackage != null && !mLastPackage.equals(packageName)) {
+        // Reset fallback if package changed (Optimization: Check packageName against stored MediaInfo)
+        if (mLastMediaInfo != null && !packageName.equals(mLastMediaInfo.packageName)) {
             mFallbackNotificationBitmap = null;
-        }
-
-        if (metadata == null) {
-            // Try to use fallback even if metadata is null? Usually metadata isn't null if
-            // session is active.
-            // But if specific keys are null...
-            // DebugLogger.e(TAG, "Metadata is null for package: " + packageName);
-            // return;
         }
 
         String title = null;
@@ -304,6 +295,16 @@ public class MediaNotificationListener extends NotificationListenerService {
             title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE);
             artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST);
             album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM);
+            
+            // [FIX] Reset fallback if Song Title Changed (Prevents Ghost Art from previous song)
+            if (mLastMediaInfo != null && title != null && !title.equals(mLastMediaInfo.title)) {
+                // If we are same package but different song, clear old fallback art
+                // This ensures we don't apply Song A's cached Notification Icon to Song B
+                if (packageName.equals(mLastMediaInfo.packageName)) {
+                     mFallbackNotificationBitmap = null;
+                }
+            }
+
             albumArt = metadata.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
 
             if (albumArt == null) {
@@ -342,19 +343,15 @@ public class MediaNotificationListener extends NotificationListenerService {
             albumArt = mFallbackNotificationBitmap;
         }
 
-        // Ensure we have a Title (fallback to package name? No, skip empty/unknown)
+        // Ensure we have a Title
         if (title == null) {
-            // If Notification fallback exists, maybe get title from Notification too?
-            // Notification.EXTRA_TITLE
-            // For now, assume Metadata provides at least Title.
-
-            // Fix for NetEase: Check if we are Playing but lack Title.
             boolean isPlayingCheck = false;
             if (playbackState != null) {
                 isPlayingCheck = playbackState.getState() == PlaybackState.STATE_PLAYING;
             }
+            // NetEase delay fix
             if (isPlayingCheck) {
-                DebugLogger.w(TAG, "Playing but Title is null (NetEase delay?). Retrying in 1000ms...");
+                DebugLogger.w(TAG, "Playing but Title is null. Retrying in 1000ms...");
                 if (mWorkHandler != null) {
                     mWorkHandler.postDelayed(() -> {
                         if (mCurrentController != null)
@@ -370,62 +367,51 @@ public class MediaNotificationListener extends NotificationListenerService {
             isPlaying = playbackState.getState() == PlaybackState.STATE_PLAYING;
         }
 
-        Intent intent = new Intent(ACTION_MEDIA_INFO_UPDATE);
-        intent.putExtra("package_name", packageName);
-        intent.putExtra("title", title);
-        intent.putExtra("artist", artist != null ? artist : "");
-        intent.putExtra("album", album != null ? album : "");
-        intent.putExtra("is_playing", isPlaying);
-        intent.putExtra("has_artwork", albumArt != null);
-
-        // Optimization: Check if artwork changed
-        boolean isPackageChanged = mLastPackage == null || !mLastPackage.equals(packageName);
-        if (isPackageChanged) {
-            mLastPackage = packageName;
-        }
-
-        boolean isArtChanged = false;
-        if (force) {
-            isArtChanged = true; // [FIX] Force update requested
-        } else if (isPackageChanged) {
-            isArtChanged = true;
-        } else {
-            if (albumArt == null && mLastBitmap == null)
-                isArtChanged = false;
-            else if (albumArt != null && mLastBitmap != null)
-                isArtChanged = !albumArt.sameAs(mLastBitmap);
-            else
-                isArtChanged = true;
-        }
-
-        if (isArtChanged) {
-            mLastBitmap = albumArt;
-            if (albumArt != null) {
-                int byteCount = albumArt.getByteCount();
-                if (byteCount > 1000000) {
-                    try {
-                        Bitmap scaled = Bitmap.createScaledBitmap(albumArt, 200, 200, true);
-                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                        scaled.compress(Bitmap.CompressFormat.PNG, 100, baos);
-                        intent.putExtra("artwork", baos.toByteArray());
-                        if (scaled != albumArt) {
-                            scaled.recycle();
-                        }
-                    } catch (Exception e) {
-                    }
-                } else {
-                    try {
-                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                        albumArt.compress(Bitmap.CompressFormat.PNG, 100, baos);
-                        intent.putExtra("artwork", baos.toByteArray());
-                    } catch (Exception e) {
-                    }
-                }
+        // [Scaling] Optimize Bitmap for Parcelable (Max 1MB limit for entire transaction)
+        // Scale down to ~200x200 which is enough for HUD
+        if (albumArt != null) {
+            int byteCount = albumArt.getByteCount();
+            if (byteCount > 100000) { // If > 100KB (approx), scale it down safely
+                 try {
+                     float aspectRatio = (float) albumArt.getWidth() / albumArt.getHeight();
+                     int targetW = 200;
+                     int targetH = (int) (200 / aspectRatio);
+                     
+                     // Don't upscale
+                     if (targetW < albumArt.getWidth()) {
+                         Bitmap scaled = Bitmap.createScaledBitmap(albumArt, targetW, targetH, true);
+                         // If we created a new bitmap, use it. The original (metadata) bitmap is managed by system?
+                         // Actually MediaMetadata logic caches it, we shouldn't recycle it if we didn't create it.
+                         // But createScaledBitmap returns a new one (usually).
+                         albumArt = scaled;
+                     }
+                 } catch (Exception e) {
+                     DebugLogger.e(TAG, "Failed to scale artwork", e);
+                 }
             }
         }
+
+        // Construct MediaInfo
+        MediaInfo currentInfo = new MediaInfo(packageName, title, artist, album, albumArt, isPlaying);
+
+        // Check for Diff
+        boolean isMetadataChanged = currentInfo.isMetadataDifferent(mLastMediaInfo);
+        boolean isStateChanged = (mLastMediaInfo == null) || (mLastMediaInfo.isPlaying != isPlaying);
+        
+        // If nothing changed, and not forced, return
+        if (!isMetadataChanged && !isStateChanged && !force) {
+            return;
+        }
+
+        // Update Cache
+        mLastMediaInfo = currentInfo;
+
+        // Broadcast
+        Intent intent = new Intent(ACTION_MEDIA_INFO_UPDATE);
+        intent.putExtra("media_info", currentInfo); // [Core Change] Send Object
         intent.setPackage(getPackageName());
         sendBroadcast(intent);
-        DebugLogger.i(TAG, "Broadcast Update: " + title + " (Has Art: " + (albumArt != null) + ", Forced: " + force + ")");
 
+        DebugLogger.i(TAG, "Broadcast MediaInfo: " + currentInfo.toString() + " (Force: " + force + ")");
     }
 }

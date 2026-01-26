@@ -394,6 +394,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
             return;
         }
         mIgnitionReady = true;
+        // [FIX] Sync Ignition State to ClusterHudManager
+        ClusterHudManager.getInstance(this).setIgnitionReady(true);
         mEngineStarted = true; // [FIX] Ensure flag is set so gear sounds can play
 
         DebugLogger.i(TAG, "Ignition DRIVING detected! triggering AutoStart and scheduling Heavy Sensors...");
@@ -407,16 +409,19 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
         triggerAutoStart();
 
         // 2. Schedule Heavy Sensor Audio/Logic (Logic managed by VSM mostly now)
+        // 2. Schedule Heavy Sensor Audio/Logic (Logic managed by VSM mostly now)
+        // [FIX] Removed 3s delay here because ClusterHudManager now manages the specific delays (Staggered Launch).
+        // If we delay here, HUD will be late.
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             // [Refactor] registerHeavySensors removed - VSM always listens
             // Just ensure UI is visible and mode applied
-            DebugLogger.i(TAG, "Ignition + 3s: Calling ensureUiVisible() directly");
+            DebugLogger.i(TAG, "Ignition + 0s: Calling ensureUiVisible() directly (Manager controls delays)");
             ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).ensureUiVisible();
 
             // [FIX] Auto-Switch to Instrument Mode (NaviMode 3)
-            DebugLogger.i(TAG, "Ignition + 3s: Auto-Switching to NaviMode 3 (Instrument Mode)");
+            DebugLogger.i(TAG, "Ignition + 0s: Auto-Switching to NaviMode 3 (Instrument Mode)");
             ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).applyNaviMode(3);
-        }, 3000);
+        }, 0);
 
         // 3. Check Amap Services & Map Monitors
         checkAndStartMapServices();
@@ -625,15 +630,22 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
         // 先更新UI（总是更新，不受音效限制）
         ClusterHudManager.getInstance(this).updateGear(gear);
         
-        // 只有状态变化且发动机启动后才播放音效
+        // [FIX] Initial Silent Check
+        if (mLastGear == -1) {
+            mLastGear = gear;
+            DebugLogger.d(TAG, "Gear initial state recorded (Silent): " + gear);
+            return;
+        }
+
+        // 只有状态变化才播放音效 (Removed mEngineStarted check)
         if (mLastGear != gear) {
-            if (mEngineStarted) {
+            // if (mEngineStarted) { // Removed per user request
                 cn.navitool.managers.SoundPromptManager
                         .getInstance(this)
                         .playGearSound(gear);
-            } else {
-                DebugLogger.d(TAG, "Gear sound skipped: Engine not started yet. Gear=" + gear);
-            }
+            // } else {
+            //     DebugLogger.d(TAG, "Gear sound skipped: Engine not started yet. Gear=" + gear);
+            // }
             mLastGear = gear;
         }
     }
@@ -757,8 +769,8 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
         mLastDoorStatus.put(zone, value);
         
         if (lastValue == null) {
-            // 首次记录初始状态，不播放音效
-            DebugLogger.d(TAG, "Door initial state recorded: zone=" + zone + ", value=" + value);
+            // 首次记录初始状态，不播放音效 (Silent Init)
+            DebugLogger.d(TAG, "Door initial state recorded (Silent): zone=" + zone + ", value=" + value);
             return;
         }
         
@@ -767,11 +779,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
             return;
         }
         
-        // [FIX] Bug 2: 只有发动机启动后才播放门音效（与档位音效逻辑一致）
-        if (!mEngineStarted) {
-            DebugLogger.d(TAG, "Door sound skipped: Engine not started yet. Zone=" + zone);
-            return;
-        }
+        // [FIX] Config: Removed mEngineStarted check per user request. 
+        // Play sound on any state change regardless of ignition/engine state.
+        // if (!mEngineStarted) { ... }
         
         cn.navitool.managers.SoundPromptManager soundMgr = cn.navitool.managers.SoundPromptManager.getInstance(this);
 

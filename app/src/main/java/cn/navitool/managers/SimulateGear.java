@@ -181,9 +181,28 @@ public class SimulateGear {
                 }
             }
         }
+
+        // [FIX] Stability: Hold Last Valid Gear
+        // If calculation failed (returned "D") but we are moving, hold the last known specific gear (e.g. "D3")
+        // preventing "D" flicker during shift gaps.
+        if ("D".equals(finalGear) && speedKmh > 5.0f && mLastCalculatedValidGear != null) {
+            finalGear = mLastCalculatedValidGear;
+        } else if (finalGear.startsWith("D") && finalGear.length() > 1) {
+            // Found a specific gear (D1-D8), update memory
+            mLastCalculatedValidGear = finalGear;
+        } else if (speedKmh <= 0.5f) {
+             // Reset on stop if needed, or just let it be. 
+             // Actually, staying in "D1" at stop is correct for 8AT.
+             // If we stopped and result is "D", maybe we should allow reset?
+             // But existing logic usually returns "D1" at 0 speed (line 128).
+             // So this branch might not be hit often for "D".
+        }
         
         return finalGear;
     }
+    
+    // [New] State for stability
+    private String mLastCalculatedValidGear = null;
 
     public String calculateGear(float speedKmh, float rpm, String currentSensorGear) {
         return calculateGear(speedKmh, rpm, currentSensorGear, false);

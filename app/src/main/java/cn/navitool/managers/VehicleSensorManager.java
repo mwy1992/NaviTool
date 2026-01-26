@@ -117,11 +117,10 @@ public class VehicleSensorManager {
     private static final int FUNC_CLUSTER_RIGHT_TURN = 553980416;
     public static final int FUNC_AUTOHOLD_STATUS = 33661;
     private static final int FUNC_PSD_SCREEN_SWITCH = 539495936;
-    private static final int FUNC_AVM_STATUS = 2097152; // IPAS.PAS_FUNC_PAC_ACTIVATION (Check value) -> Assuming 2097152 based on usage in KeepAlive
-    // KeepAlive defines: private static final int FUNC_AVM_STATUS = IPAS.PAS_FUNC_PAC_ACTIVATION;
-    // We should use the raw imports or value if IPAS is not imported. 
-    // Let's import IPAS or use dynamic value. 
-    // Importing com.ecarx.xui.adaptapi.car.vehicle.IPAS;
+    
+    // [NEW] HUD & Snow Mode Constants
+    public static final int SETTING_FUNC_HUD_AR_ENGINE = 654443008; // AR/WHUD Switch
+    public static final int SETTING_FUNC_HUD_SNOW_MODE = 654442752; // Snow Mode Switch
     
     // --- 监听器 ---
     private final List<Listener> mListeners = new ArrayList<>();
@@ -146,7 +145,7 @@ public class VehicleSensorManager {
         default void onSeatOccupiedChanged(boolean occupied) {}
         default void onDoorChanged(int zone, int status) {} // 1: Open, 0: Close
         default void onTurnSignalChanged(boolean isLeft, boolean isOn) {}
-        default void onFunctionChanged(int functionId, int zone, int value) {} // Generic Fallback (AVM, PSD, Brightness)
+        default void onFunctionChanged(int functionId, int zone, int value) {} // Generic Fallback (AVM, PSD, Brightness, HUD)
         default void onCustomizeFunctionChanged(int functionId, int zone, float value) {} // Generic Float
     }
 
@@ -165,11 +164,10 @@ public class VehicleSensorManager {
         }
         return mPrefs;
     }
-
+    
+    // [FIX] Make constructor private and handle init call properly
     private VehicleSensorManager(Context context) {
         mContext = context;
-        // [OPTIMIZATION] Move SharedPreferences init to background thread in init()
-        // mPrefs = mContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
     }
 
     // --- 初始化 ---
@@ -186,32 +184,37 @@ public class VehicleSensorManager {
         }).start();
 
         CarServiceManager.getInstance(mContext).registerListener(() -> {
-            mSensor = CarServiceManager.getInstance(mContext).getSensor();
-            mCarFunction = CarServiceManager.getInstance(mContext).getCarFunction();
-            
-            if (mSensor != null) {
-                registerSensors();
-                checkTripReset();
-            }
-            if (mCarFunction != null) {
-                registerFunctions();
-            }
-            
-            if (mSensor != null || mCarFunction != null) {
-                mIsInitialized = true;
-                DebugLogger.action(TAG, "车辆传感器与功能监听初始化完成");
+            try {
+                mSensor = CarServiceManager.getInstance(mContext).getSensor();
+                mCarFunction = CarServiceManager.getInstance(mContext).getCarFunction();
+                
+                if (mSensor != null) {
+                    registerSensors();
+                    checkTripReset();
+                }
+                if (mCarFunction != null) {
+                    registerFunctions();
+                }
+                
+                if (mSensor != null || mCarFunction != null) {
+                    mIsInitialized = true;
+                    DebugLogger.action(TAG, "车辆传感器与功能监听初始化完成");
+                }
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Error in init callback", e);
             }
         });
     }
 
+    // [NEW] Register Sensors
     private void registerSensors() {
         if (mSensor == null) return;
         
         if (mSensorListener == null) {
-            mSensorListener = new ISensor.ISensorListener() {
+             mSensorListener = new ISensor.ISensorListener() {
                 @Override
-                public void onSensorEventChanged(int sensorType, int value) {
-                    handleEventSensor(sensorType, value);
+                public void onSensorEventChanged(int sensorType, int eventValue) {
+                    handleEventSensor(sensorType, eventValue);
                 }
 
                 @Override
@@ -220,45 +223,61 @@ public class VehicleSensorManager {
                 }
 
                 @Override
-                public void onSensorSupportChanged(int sensorType, com.ecarx.xui.adaptapi.FunctionStatus status) {
-                }
-            };
+                public void onSensorSupportChanged(int sensorType, com.ecarx.xui.adaptapi.FunctionStatus status) {}
+             };
         }
 
-        // 注册事件类型传感器
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_IGNITION);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_GEAR);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_DAY_NIGHT);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_SEAT_OCCUPIED); // [NEW] Register Seat Occupied
+        try {
+            // Register Event Sensors
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_IGNITION);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_GEAR);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_DAY_NIGHT);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_SEAT_OCCUPIED); // [NEW]
 
-        // 注册数值类型传感器
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_SPEED, ISensor.RATE_UI);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_RPM, ISensor.RATE_UI);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL_PERCENT, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL_CONSUMPTION_INS, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL_CONSUMPTION_AVG, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TEMP_INDOOR, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TEMP_OUTDOOR, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_RANGE, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_ODOMETER, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_LIGHT, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_DIM_CAR_SPEED, ISensor.RATE_UI);
+            // Register Value Sensors
+            // mSensor.registerListener(mSensorListener, SENSOR_TYPE_SPEED); // Use DIM Speed instead
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_DIM_CAR_SPEED);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_RPM);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL_PERCENT);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL_CONSUMPTION_INS);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_FUEL_CONSUMPTION_AVG);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_TEMP_INDOOR);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_TEMP_OUTDOOR);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_RANGE);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_ODOMETER);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_LIGHT);
+            
+            // Register TPMS
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_FL);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_FR);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_RL);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_RR);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_FL);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_FR);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_RL);
+            mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_RR);
 
-        // 注册 TPMS
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_FL, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_FR, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_RL, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_PRESSURE_RR, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_FL, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_FR, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_RL, ISensor.RATE_NORMAL);
-        mSensor.registerListener(mSensorListener, SENSOR_TYPE_TIRE_TEMP_RR, ISensor.RATE_NORMAL);
-
-        DebugLogger.i(TAG, "All sensors registered (including Seat Occupied)");
-        refreshAllValues();
+            DebugLogger.i(TAG, "Sensors registered successfully");
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error registering sensors", e);
+        }
     }
 
+    // [New] Generic Setter for Car Functions
+    public void setFunctionValue(int functionId, int zone, int value) {
+        if (mCarFunction != null) {
+            try {
+                mCarFunction.setFunctionValue(functionId, zone, value);
+                DebugLogger.d(TAG, "setFunctionValue: ID=" + functionId + " Zone=" + zone + " Val=" + value);
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Failed to set function value: " + functionId, e);
+            }
+        } else {
+             DebugLogger.w(TAG, "CarFunction not initialized, cannot set value");
+        }
+    }
+    
     // [NEW] Register Functions
     private void registerFunctions() {
         if (mCarFunction == null) return;
@@ -287,24 +306,29 @@ public class VehicleSensorManager {
         }
         
         // Register Watchers
-        mCarFunction.registerFunctionValueWatcher(BCM_FUNC_DOOR, mFunctionWatcher);
-        mCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_LEFT_TRUN_SIGNAL, mFunctionWatcher);
-        mCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_RIGHT_TRUN_SIGNAL, mFunctionWatcher);
-        mCarFunction.registerFunctionValueWatcher(FUNC_CLUSTER_LEFT_TURN, mFunctionWatcher);
-        mCarFunction.registerFunctionValueWatcher(FUNC_CLUSTER_RIGHT_TURN, mFunctionWatcher);
-        mCarFunction.registerFunctionValueWatcher(FUNC_AUTOHOLD_STATUS, mFunctionWatcher);
-        mCarFunction.registerFunctionValueWatcher(FUNC_PSD_SCREEN_SWITCH, mFunctionWatcher);
-        
-        // Also register AVM and Brightness related functions if we want full centralization
-        // For now, KeepAlive still handles Brightness directly via ThemeBrightnessManager, but eventually we should proxy it.
-        // Let's add them to be safe and future proof.
-        // Assuming constants are defined or we use raw values.
-        mCarFunction.registerFunctionValueWatcher(2097152 /*FUNC_AVM_STATUS*/, mFunctionWatcher);
-        mCarFunction.registerFunctionValueWatcher(538448128 /*FUNC_BRIGHTNESS_DAY*/, mFunctionWatcher); // IVehicle.SETTING_FUNC_BRIGHTNESS_DAY
-        mCarFunction.registerFunctionValueWatcher(538448384 /*FUNC_BRIGHTNESS_NIGHT*/, mFunctionWatcher); // IVehicle.SETTING_FUNC_BRIGHTNESS_NIGHT
-        mCarFunction.registerFunctionValueWatcher(538251520 /*FUNC_DAYMODE_SETTING*/, mFunctionWatcher); // 0x20150100 
-        
-        DebugLogger.i(TAG, "Function watchers registered (Doors, Lights, AVM...)");
+        try {
+            mCarFunction.registerFunctionValueWatcher(BCM_FUNC_DOOR, mFunctionWatcher);
+            mCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_LEFT_TRUN_SIGNAL, mFunctionWatcher);
+            mCarFunction.registerFunctionValueWatcher(BCM_FUNC_LIGHT_RIGHT_TRUN_SIGNAL, mFunctionWatcher);
+            mCarFunction.registerFunctionValueWatcher(FUNC_CLUSTER_LEFT_TURN, mFunctionWatcher);
+            mCarFunction.registerFunctionValueWatcher(FUNC_CLUSTER_RIGHT_TURN, mFunctionWatcher);
+            mCarFunction.registerFunctionValueWatcher(FUNC_AUTOHOLD_STATUS, mFunctionWatcher);
+            mCarFunction.registerFunctionValueWatcher(FUNC_PSD_SCREEN_SWITCH, mFunctionWatcher);
+            
+            // [NEW] HUD Watchers
+            mCarFunction.registerFunctionValueWatcher(SETTING_FUNC_HUD_AR_ENGINE, mFunctionWatcher);
+            mCarFunction.registerFunctionValueWatcher(SETTING_FUNC_HUD_SNOW_MODE, mFunctionWatcher);
+
+            // Also register AVM and Brightness explicitly
+            mCarFunction.registerFunctionValueWatcher(2097152 /*FUNC_AVM_STATUS*/, mFunctionWatcher);
+            mCarFunction.registerFunctionValueWatcher(538448128 /*FUNC_BRIGHTNESS_DAY*/, mFunctionWatcher);
+            mCarFunction.registerFunctionValueWatcher(538448384 /*FUNC_BRIGHTNESS_NIGHT*/, mFunctionWatcher);
+            mCarFunction.registerFunctionValueWatcher(538251520 /*FUNC_DAYMODE_SETTING*/, mFunctionWatcher);
+            
+            DebugLogger.i(TAG, "Function watchers registered (HUD, Doors, Lights...)");
+        } catch (Exception e) {
+            DebugLogger.e(TAG, "Error registering function watchers", e);
+        }
     }
 
     /**

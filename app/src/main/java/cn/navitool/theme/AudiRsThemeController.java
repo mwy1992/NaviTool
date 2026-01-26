@@ -16,7 +16,7 @@ import cn.navitool.managers.NaviInfoManager.TrafficLightInfo;
 import cn.navitool.managers.NaviInfoManager.GuideInfo;
 import cn.navitool.utils.DebugLogger;
 import cn.navitool.view.ClippedImageView;
-// import cn.navitool.view.animation.SmoothTextAnimator;
+import cn.navitool.view.animation.SmoothTextAnimator;
 
 /**
  * 奥迪RS转速表主题控制器
@@ -106,7 +106,7 @@ public class AudiRsThemeController extends BaseThemeController {
     private int mCurrentRawStatus = 0; 
     
     // Animation Animator
-    // private SmoothTextAnimator mSpeedTextAnimator;
+    private SmoothTextAnimator mSpeedTextAnimator;
 
     // Animation Loop
     // Reuse mHandler for animation loop
@@ -117,12 +117,12 @@ public class AudiRsThemeController extends BaseThemeController {
             boolean needsUpdate = false;
 
             // Speed Text
-            /*if (mSpeedTextAnimator != null) {
+            if (mSpeedTextAnimator != null) {
                  mSpeedTextAnimator.onTick();
                  if (mSpeedTextAnimator.isRunning()) {
                      needsUpdate = true;
                  }
-            }*/
+            }
 
             if (needsUpdate) {
                 mHandler.postDelayed(this, 16); // ~60FPS
@@ -212,6 +212,12 @@ public class AudiRsThemeController extends BaseThemeController {
         setGear(currentGear);
         
         updateDayMode();
+        
+        // Init Animators
+        if (mSpeedText != null) {
+            mSpeedTextAnimator = new SmoothTextAnimator(mSpeedText);
+            mSpeedTextAnimator.setInitialValue(0);
+        }
     }
     
     private void bindTpmsViews(View rootView) {
@@ -238,7 +244,7 @@ public class AudiRsThemeController extends BaseThemeController {
         // Stop animation
         mHandler.removeCallbacks(mAnimationRunnable);
         mIsAnimating = false;
-        // mSpeedTextAnimator = null;
+        mSpeedTextAnimator = null;
 
         // Release specific references
         mPointer = null;
@@ -528,19 +534,19 @@ public class AudiRsThemeController extends BaseThemeController {
         mLastSpeed = speed;
 
         // Update Text Animator
-        /*if (mSpeedTextAnimator != null) {
+        if (mSpeedTextAnimator != null) {
             mSpeedTextAnimator.updateTargetValue((int) speed);
              // Ensure Animation Loop is running
             if (!mIsAnimating) {
                 mIsAnimating = true;
                 mHandler.post(mAnimationRunnable);
             }
-        } else {*/
+        } else {
             // Fallback if animator failed
              if (mSpeedText != null) {
                 mSpeedText.setText(String.valueOf((int) speed));
             }
-        //}
+        }
         
         // Not calling onSpeedUpdated as it's empty in base and replaced here for text.
         // But if there were other speed logic we would call it.
