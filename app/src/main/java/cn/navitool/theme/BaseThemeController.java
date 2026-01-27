@@ -7,8 +7,8 @@ import android.widget.TextView;
 
 import cn.navitool.interfaces.IClusterTheme;
 import cn.navitool.managers.NaviInfoManager;
-import cn.navitool.managers.NaviInfoManager.GuideInfo;
-import cn.navitool.managers.NaviInfoManager.TrafficLightInfo;
+import cn.navitool.model.GuideInfo;
+import cn.navitool.model.TrafficLightInfo;
 
 /**
  * Base Controller for Cluster Themes.

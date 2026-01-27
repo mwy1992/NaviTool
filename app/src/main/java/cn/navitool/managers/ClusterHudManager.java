@@ -24,6 +24,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONException;
 import cn.navitool.service.MediaInfo;
+import cn.navitool.model.HudComponentData;
 
 // ECarX AdaptAPI Imports
 import com.ecarx.xui.adaptapi.car.Car;
@@ -40,8 +41,13 @@ import android.content.res.Configuration;
 import android.text.TextUtils;
 import cn.navitool.managers.VehicleSensorManager;
 
+import cn.navitool.interfaces.NaviStatusListener;
+import cn.navitool.model.GuideInfo;
+import cn.navitool.model.TrafficLightInfo;
+import cn.navitool.managers.NaviInfoManager;
+
 public class ClusterHudManager
-        implements VehicleSensorManager.Listener, ComponentCallbacks {
+        implements VehicleSensorManager.Listener, ComponentCallbacks, NaviStatusListener {
     private static final String TAG = "ClusterHudManager";
 
     private static volatile ClusterHudManager instance;
@@ -196,11 +202,9 @@ public class ClusterHudManager
         // Register for System Theme Changes
         mContext.registerComponentCallbacks(this);
 
-        // Register Traffic Light Listener - REMOVED (AIDL Deleted)
-        // AmapAidlManager.getInstance(mContext).setListener(this);
 
-        // [REMOVED] AmapMonitorManager - All traffic light data now comes via AIDL (NaviInfoManager)
-
+        // Register for Traffic Light Updates via Listener
+        NaviInfoManager.getInstance(mContext).addListener(this);
     }
 
     public static ClusterHudManager getInstance(Context context) {
@@ -347,6 +351,7 @@ public class ClusterHudManager
 
     public void setFloatingTrafficLightEnabled(boolean enabled) {
         mIsFloatingEnabled = enabled; // Update local state
+        ConfigManager.getInstance().setBoolean("floating_traffic_light_enabled", enabled);
         updateFloatingLightVisibility();
     }
 
@@ -695,6 +700,9 @@ public class ClusterHudManager
 
         // Unregister from VehicleSensorManager
         VehicleSensorManager.getInstance(mContext).unregisterListener(this);
+        
+        // Unregister from NaviInfoManager
+        NaviInfoManager.getInstance(mContext).removeListener(this);
     }
 
     // --- Volume Listener ---
@@ -770,6 +778,8 @@ public class ClusterHudManager
 
     @Override
     public void onRpmChanged(float rpm) {
+        // [FIX] Ignore 0 RPM if we are already at 0 (or initial 0 state) to keep pointer hidden
+        if (rpm <= 0.1f && mCachedRpm <= 0.1f) return;
         // [FIX] Ensure RPM update triggers simulated gear calculation
         updateRpm(rpm);
     }
@@ -1612,17 +1622,9 @@ public class ClusterHudManager
             return;
         }
 
-        if (mIsHudEnabled) {
-             DebugLogger.i(TAG, "ensureUiVisible: HUD Enabled - Scheduling launch IMMEDIATELY (Staggered Launch)");
-             // If Cluster is also enabled, it will be initially hidden and shown after delay in performShowPresentation
-             schedulePresentation(0);
-        } else if (mIsClusterEnabled) {
-             DebugLogger.i(TAG, "ensureUiVisible: Only Cluster Enabled - Scheduling launch in 3s (Z-Order Fix)");
-             schedulePresentation(3000);
-        } else {
-             // Redundant case (handled by earlier check), but safe fallback
-             schedulePresentation(0);
-        }
+        // [FIX] Immediate Launch (Unified 3s Delay handled by KeepAliveAccessibilityService)
+        DebugLogger.i(TAG, "ensureUiVisible: Scheduling UI launch IMMEDIATELY (Unified Launch)");
+        schedulePresentation(0);
     }
 
     /**
@@ -1800,7 +1802,9 @@ public class ClusterHudManager
                         mPresentationManager.updateFuelRemain(mCachedFuelLiters);
                         mPresentationManager.updateOdometer(mCachedOdometer);
                         mPresentationManager.updateSpeed(mCachedSpeed);
-                        mPresentationManager.updateRpm(mCachedRpm);
+                        if (mCachedRpm > 0) {
+                            mPresentationManager.updateRpm(mCachedRpm);
+                        }
                         mPresentationManager.updateInstantFuel(mCachedFuelIns); 
                     }
                     
@@ -1808,19 +1812,10 @@ public class ClusterHudManager
                     // Doing this outside show() caused race condition where views were still null/gone.
                     DebugLogger.i(TAG, "OnShowListener: Applying Visibility - Cluster=" + mIsClusterEnabled + ", HUD=" + mIsHudEnabled);
                     // [FIX] Staggered Launch Logic (HUD First, Cluster Later)
-                    if (mIsHudEnabled && mIsClusterEnabled) {
-                        DebugLogger.i(TAG, "OnShowListener: Staggered Launch - Showing HUD, Hiding Cluster (Sch. 3s)");
-                        mPresentationManager.setClusterVisible(false); // Hide Cluster initially
-                        mMainHandler.postDelayed(() -> {
-                            if (mPresentationManager != null) {
-                                DebugLogger.i(TAG, "Staggered Launch: Revealing Cluster now");
-                                mPresentationManager.setClusterVisible(true);
-                            }
-                        }, 3000);
-                    } else {
-                        // Standard logic for single mode
-                        mPresentationManager.setClusterVisible(mIsClusterEnabled);
-                    }
+                    // [FIX] Unified Launch (No Stagger)
+                    // Both Cluster and HUD appear together immediately
+                    DebugLogger.i(TAG, "OnShowListener: Showing UI (Unified) - Cluster=" + mIsClusterEnabled + ", HUD=" + mIsHudEnabled);
+                    mPresentationManager.setClusterVisible(mIsClusterEnabled);
                     mPresentationManager.setHudVisible(mIsHudEnabled);
                     
                     // [FIX] Apply Floating Traffic Light State
@@ -2443,33 +2438,40 @@ public class ClusterHudManager
         // Removed per user request: No longer save media state to disk.
     }
 
-    public static class HudComponentData {
-        public String type; // "text", "time", "song_2line", "song_1line", "fuel", "temp_out", "temp_in", "range", "gear",
-                            // "song_cover", "turn_signal", "volume", "gauge"
-        public String text;
-        public android.graphics.Bitmap image;
-        public float x;
-        public float y;
-        public int color;
-        public float[] gaugeConfig; // [min, max, start, end, px, py]
-        public android.graphics.Typeface typeface;
-        public String pathData; // For "path_gauge"
-        public float maxValue; // For "path_gauge" progress calc
-        public float scale = 1.0f; // 组件缩放比例，默认1.0（不缩放）
+    /**
+     * @deprecated 请使用 cn.navitool.model.HudComponentData 代替。
+     * 此内部类保留是为了向后兼容。
+     */
+    @Deprecated
+    public static class HudComponentDataLegacy extends cn.navitool.model.HudComponentData {
+        public HudComponentDataLegacy() {
+            super();
+        }
 
+        public HudComponentDataLegacy(String type, String text, float x, float y, int color) {
+            super(type, text, x, y, color);
+        }
+
+        public HudComponentDataLegacy(String type, String text, float x, float y) {
+            super(type, text, x, y);
+        }
+    }
+
+    /**
+     * 类型别名 - 保持 ClusterHudManager.HudComponentData 的向后兼容性。
+     * 实际实现已移至 cn.navitool.model.HudComponentData。
+     */
+    public static class HudComponentData extends cn.navitool.model.HudComponentData {
         public HudComponentData() {
+            super();
         }
 
         public HudComponentData(String type, String text, float x, float y, int color) {
-            this.type = type;
-            this.text = text;
-            this.x = x;
-            this.y = y;
-            this.color = color;
+            super(type, text, x, y, color);
         }
 
         public HudComponentData(String type, String text, float x, float y) {
-            this(type, text, x, y, android.graphics.Color.WHITE);
+            super(type, text, x, y);
         }
     }
 
@@ -2491,6 +2493,8 @@ public class ClusterHudManager
             });
         }
     }
+
+
 
     public boolean isSnowModeEnabled() {
         return ConfigManager.getInstance().getBoolean("hud_snow_mode", false);
@@ -2529,7 +2533,7 @@ public class ClusterHudManager
         
         // [FIX] PRM & Speed - Direct Read logic as requested by user
         float rpm = manager.getRpm();
-        updateRpm(rpm); 
+        if (rpm > 0) updateRpm(rpm); 
         
         float speed = manager.getSpeed();
         updateSpeed(speed);
@@ -2665,37 +2669,32 @@ public class ClusterHudManager
         mCachedFuelLiters = liters;
         String text = String.format("⛽ %.0fL", liters);
         mCachedFuelText = text;
-        // saveSensorCache("last_fuel_text", text); [REMOVED]
+        // [FIX] Always update cache, regardless of Presentation state
+        updateComponentText("fuel", text);
+        updateFuelRangeComponent();
+        // Presentation-specific update
         if (mPresentationManager != null) {
-            updateComponentText("fuel", text);
-            updateFuelRangeComponent();
             mPresentationManager.updateFuelRemain(liters);
         }
     }
 
     public void updateRange(String text) {
         mCachedRangeText = text;
-        // saveSensorCache("last_range_text", text); [REMOVED]
-        if (mPresentationManager != null) {
-            updateComponentText("range", text);
-            updateComponentText("fuel_range", mCachedFuelText + "|" + mCachedRangeText); // Update combined too
-        }
+        // [FIX] Always update cache, regardless of Presentation state
+        updateComponentText("range", text);
+        updateComponentText("fuel_range", mCachedFuelText + "|" + mCachedRangeText);
     }
 
     public void updateTempOut(String text) {
         mCachedTempOutText = text;
-        // saveSensorCache("last_temp_out_text", text); [REMOVED]
-        if (mPresentationManager != null) {
-            updateComponentText("temp_out", text);
-        }
+        // [FIX] Always update cache, regardless of Presentation state
+        updateComponentText("temp_out", text);
     }
 
     public void updateTempIn(String text) {
         mCachedTempInText = text;
-        // saveSensorCache("last_temp_in_text", text); [REMOVED]
-        if (mPresentationManager != null) {
-            updateComponentText("temp_in", text);
-        }
+        // [FIX] Always update cache, regardless of Presentation state
+        updateComponentText("temp_in", text);
     }
 
     // --- [Merged from ClusterManager.java] ---
@@ -2779,38 +2778,35 @@ public class ClusterHudManager
 
     // --- Simplified Navigation Logic ---
 
-    // [SIMPLIFIED] Direct Pass-through
-    public void onTrafficLightUpdate(final NaviInfoManager.TrafficLightInfo info) {
+    // --- NaviStatusListener Implementation ---
+
+    @Override
+    public void onTrafficLightUpdate(List<TrafficLightInfo> lights) {
         mMainHandler.post(() -> {
-            if (mPresentationManager != null) {
-                // [FIX] Do NOT force navigating state on data. Rely on onNaviStatusUpdate.
-                mPresentationManager.updateTrafficLight(info);
+            if (mPresentationManager != null && lights != null) {
+                // Update specific inputs (Floating Window / Presentation)
+                // Note: We iterate to update the relevant Views in PresentationManager
+                for (TrafficLightInfo info : lights) {
+                     mPresentationManager.updateTrafficLight(info);
+                }
             }
-            // Also update Main Screen Manager
-            NaviInfoManager.getInstance(mContext).updateTrafficLight(info);
         });
     }
 
-    // [SIMPLIFIED] Direct Pass-through
-    // [SIMPLIFIED] Direct Pass-through & Auto-Start
-    public void onGuideInfoUpdate(final NaviInfoManager.GuideInfo info) {
+    @Override
+    public void onGuideInfoUpdate(GuideInfo info) {
         mMainHandler.post(() -> {
-            // [FIX] Auto-Start Logic: If we receive valid data, we are navigating.
-            // We NO LONGER block updates based on !isNavigating().
-            // Instead, we FORCE it to true if data comes in.
+            // [FIX] Auto-Start Logic via Listener
             if (mPresentationManager != null && !mPresentationManager.isNavigating()) {
-                 DebugLogger.e(TAG, "[NAVI_CYCLE] Auto-Starting Navigation (Data Received)");
+                 DebugLogger.i(TAG, "[NAVI_CYCLE] Auto-Starting Navigation (Data Received)");
                  mPresentationManager.setNavigating(true);
             }
 
-            // [FIX] Explicitly update generic components (text/cache)
-            // This ensures HUD components like navi_next_road, navi_current_road update correctly,
-            // and mCachedHudComponents is kept in sync.
             if (info != null) {
+                // Update generic cache
                 updateComponentText("navi_current_road", info.currentRoadName);
                 updateComponentText("navi_next_road", info.nextRoadName);
                 
-                // Distance and Time need formatting
                 String distanceText = info.routeRemainDis >= 1000 ? 
                         String.format(Locale.US, "%.1fKM", info.routeRemainDis / 1000f) : 
                         info.routeRemainDis + "M";
@@ -2818,41 +2814,37 @@ public class ClusterHudManager
                 
                 String etaText = NaviInfoManager.calculateEta(info.routeRemainTime);
                 updateComponentText("navi_arrival_time", etaText);
-            }
-
-            if (mPresentationManager != null) {
-                mPresentationManager.updateGuideInfo(info);
-            }
-            NaviInfoManager.getInstance(mContext).updateGuideInfo(info);
-        });
-    }
-
-
-    public void onNaviStatusUpdate(final int state) {
-        mMainHandler.post(() -> {
-            try {
-                DebugLogger.e(TAG, "[NAVI_CYCLE] onNaviStatusUpdate: State=" + state); // [LOG] High Priority
                 
-                // State 1=Navi, 8=Emulator, 9=StartGuide
-                if (state == 1 || state == 8 || state == 9) {
-                    if (mPresentationManager != null) {
-                        DebugLogger.e(TAG, "[NAVI_CYCLE] Starting Navigation (setNavigating=true)"); // [LOG]
-                        mPresentationManager.setNavigating(true);
-                    }
-                } 
-                // State 2 = Stopped (User says NO), 40 = End (Confirmed?)
-                // [FIX] State 40 is a KEEP-ALIVE heartbeat (every ~10s). IGNORE IT.
-                // [FIX] Log analysis shows State 35, 308 appear at END sequence.
-                // We use 35 and 308 as explicit hard-stop triggers.
-                else if (state == 35 || state == 308) {
-                     DebugLogger.e(TAG, "[NAVI_CYCLE] STOP DETECTED (State " + state + ") -> calling resetAllNavigationUI"); // [LOG]
-                     resetAllNavigationUI();
+                // Update HUD / Cluster UI
+                if (mPresentationManager != null) {
+                    mPresentationManager.updateGuideInfo(info);
                 }
-            } catch (Exception e) {
-                DebugLogger.e(TAG, "Error in onNaviStatusUpdate state=" + state, e);
             }
         });
     }
+
+    @Override
+    public void onNaviStatusChanged(int status) {
+        mMainHandler.post(() -> {
+            DebugLogger.i(TAG, "onNaviStatusChanged: " + status);
+            
+            if (status == NaviInfoManager.STATUS_NAVI || status == NaviInfoManager.STATUS_CRUISE) {
+                if (mPresentationManager != null) {
+                    mPresentationManager.setNavigating(true);
+                }
+            } else if (status == NaviInfoManager.STATUS_IDLE) {
+                // Reset UI when IDLE
+                resetAllNavigationUI();
+            }
+        });
+    }
+
+    @Override
+    public void onOriginalPacketReceived(String json, JSONObject parsed) {
+        // Handled by NaviDataRecorder, no-op here
+    }
+
+    // Deprecated / Forwarder methods removed to prevent cycles
 
     /**
      * Centralized Reset for ALL Navigation UI

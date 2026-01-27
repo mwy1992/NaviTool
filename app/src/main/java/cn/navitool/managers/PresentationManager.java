@@ -21,9 +21,11 @@ import cn.navitool.theme.AudiRsThemeController;
 import cn.navitool.theme.BaseThemeController;
 import cn.navitool.interfaces.IClusterTheme;
 import cn.navitool.managers.NaviInfoManager;
-import cn.navitool.managers.NaviInfoManager.TrafficLightInfo;
-import cn.navitool.managers.NaviInfoManager.GuideInfo;
+import cn.navitool.model.TrafficLightInfo;
+import cn.navitool.model.GuideInfo;
 import cn.navitool.R;
+import cn.navitool.model.HudComponentData;
+import cn.navitool.view.HudComponentRenderer;
 import cn.navitool.view.TrafficLightView;
 
 import java.util.ArrayList;
@@ -79,8 +81,8 @@ public class PresentationManager extends android.app.Presentation {
     // private View mContainerDashboard;
     // private cn.navitool.view.TrafficLightView mHudTrafficLightView;
 
-    private NaviInfoManager.TrafficLightInfo mLatestTrafficLightInfo = null; // Track latest data
-    private NaviInfoManager.GuideInfo mLatestGuideInfo = null; // [FIX] Track latest Guide info for restoration
+    private TrafficLightInfo mLatestTrafficLightInfo = null; // Track latest data
+    private GuideInfo mLatestGuideInfo = null; // [FIX] Track latest Guide info for restoration
     
     // Generic Component Lists (For backward compatibility with existing generic logic if needed)
     private List<View> mRealHudComponents = new ArrayList<>();
@@ -356,7 +358,7 @@ public class PresentationManager extends android.app.Presentation {
             }
         }
     }
-    private void updateFloatingTrafficLightLogic(NaviInfoManager.TrafficLightInfo info) {
+    private void updateFloatingTrafficLightLogic(TrafficLightInfo info) {
         mLatestTrafficLightInfo = info;
         if (mFloatingTrafficLightContainer == null) initializeFloatingTrafficLight();
         if (mFloatingTrafficLightContainer == null) return;
@@ -569,7 +571,7 @@ public class PresentationManager extends android.app.Presentation {
         mLatestTrafficLightInfo = null; // Clear cache immediately
     };
     
-    public void updateTrafficLight(NaviInfoManager.TrafficLightInfo info) {
+    public void updateTrafficLight(TrafficLightInfo info) {
         // [FIX] Strict State Check: If not navigating, IGNORE all data.
         if (!mIsNavigating) return;
 
@@ -585,7 +587,7 @@ public class PresentationManager extends android.app.Presentation {
         updateTrafficLightGeneric(mRealHudComponents, info);
     }
 
-    public void updateGuideInfo(NaviInfoManager.GuideInfo info) {
+    public void updateGuideInfo(GuideInfo info) {
         // [FIX] Strict State Check: If not navigating, IGNORE all data.
         // This prevents "Zombie" UI elements from reappearing after navigation ends.
         if (!mIsNavigating) return;
@@ -953,7 +955,7 @@ public class PresentationManager extends android.app.Presentation {
         }
     }
     
-    private void updateTrafficLightGeneric(List<View> viewList, NaviInfoManager.TrafficLightInfo info) {
+    private void updateTrafficLightGeneric(List<View> viewList, TrafficLightInfo info) {
         // Update Dynamic Traffic Light Components in the list
         if (viewList != null) {
             for (View v : viewList) {
@@ -1024,298 +1026,79 @@ public class PresentationManager extends android.app.Presentation {
 
             // Add new
             for (ClusterHudManager.HudComponentData data : components) {
-                View view;
-                boolean isSong = "song_2line".equals(data.type)
-                        || "song_1line".equals(data.type);
+                // ========== 使用 HudComponentRenderer 创建组件 ==========
+                // isPreview = false (1x scale for real HUD)
+                View view = HudComponentRenderer.createComponent(getContext(), data, false, data.color);
+                
+                if (view == null) {
+                    cn.navitool.utils.DebugLogger.e(TAG, "Failed to create component: " + data.type);
+                    continue;
+                }
+
+                // ========== PresentationManager 特有的布局逻辑 ==========
+                android.widget.FrameLayout.LayoutParams params;
+                if (view.getLayoutParams() instanceof android.widget.FrameLayout.LayoutParams) {
+                    params = (android.widget.FrameLayout.LayoutParams) view.getLayoutParams();
+                } else {
+                    params = new android.widget.FrameLayout.LayoutParams(
+                            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
+                }
+
+                // 特殊组件的尺寸覆盖
+                boolean isSong = "song_2line".equals(data.type) || "song_1line".equals(data.type);
                 boolean isTurnSignal = "turn_signal".equals(data.type);
                 boolean isVolume = "volume".equals(data.type);
                 boolean isAutoHold = "auto_hold".equals(data.type);
                 boolean isMediaCover = "song_cover".equals(data.type);
-                
-                android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
-                        android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
-                        android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
 
                 if (isSong) {
-                    android.widget.LinearLayout ll = new android.widget.LinearLayout(getContext());
-                    ll.setOrientation(android.widget.LinearLayout.VERTICAL);
-                    ll.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                    // Ensure padding/margins are minimal
-                    ll.setPadding(0, 0, 0, 0);
-
-                    String text = data.text != null ? data.text : "";
-                    String[] parts = text.split("\n");
-                    String title = parts.length > 0 ? parts[0] : "";
-                    String artist = parts.length > 1 ? parts[1] : "";
-
-                    // Title View
-                    android.widget.TextView tvTitle = new android.widget.TextView(getContext());
-                    tvTitle.setText(title);
-                    tvTitle.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 22);
-                    tvTitle.setTextColor(data.color);
-                    tvTitle.setSingleLine(true);
-                    tvTitle.setMaxLines(1);
-                    tvTitle.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
-                    tvTitle.setMarqueeRepeatLimit(-1);
-                    tvTitle.setSelected(true);
-                    tvTitle.setIncludeFontPadding(false);
-                    tvTitle.setPadding(0, 0, 0, 0);
-                    tvTitle.setLineSpacing(0, 1f);
-                    ll.addView(tvTitle);
-
-                    // Artist View (Only if exists)
-                    if (!artist.isEmpty()) {
-                        android.widget.TextView tvArtist = new android.widget.TextView(getContext());
-                        tvArtist.setText(artist);
-                        tvArtist.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 22);
-                        tvArtist.setTextColor(data.color);
-                        tvArtist.setSingleLine(true);
-                        tvArtist.setMaxLines(1);
-                        tvArtist.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
-                        tvArtist.setMarqueeRepeatLimit(-1);
-                        tvArtist.setSelected(true);
-                        tvArtist.setIncludeFontPadding(false);
-                        tvArtist.setPadding(0, 0, 0, 0);
-                        tvArtist.setLineSpacing(0, 1f);
-                        
-                        // [FIX] Reduce line spacing by negative margin
-                        android.widget.LinearLayout.LayoutParams artistParams = new android.widget.LinearLayout.LayoutParams(
-                            android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
-                            android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
-                        );
-                        artistParams.topMargin = -4; // Pull up by 4 pixels
-                        
-                        ll.addView(tvArtist, artistParams);
-                    }
-
                     params.width = 300;
-                    view = ll;
-                } else if (isMediaCover || isTurnSignal || isVolume || isAutoHold) {
-                    android.widget.ImageView iv = new android.widget.ImageView(getContext());
-                    if (data.image != null) {
-                        iv.setImageBitmap(data.image);
-                        iv.clearColorFilter(); // Ensure no tint on real image
-                    } else {
-                        // Fallback
-                        if (isMediaCover) {
-                            iv.setImageResource(android.R.drawable.ic_media_play); 
-                            iv.setColorFilter(data.color); 
-                        } else if (isVolume) {
-                            iv.setImageResource(R.drawable.ic_volume); 
-                            iv.setColorFilter(data.color);
-                        }
+                } else if (isMediaCover) {
+                    params.width = 100;
+                    params.height = 100;
+                } else if (isTurnSignal || isVolume || isAutoHold) {
+                    params.height = 36;
+                    params.width = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
+                } else if ("gear".equals(data.type)) {
+                    params.width = 100;
+                } else if ("fuel_range".equals(data.type) || "fuel".equals(data.type)) {
+                    params.width = 175;
+                } else if ("guide_line".equals(data.type)) {
+                    params.width = 50;
+                    params.height = 190;
+                } else if ("gauge".equals(data.type) && data.image != null) {
+                    params.width = data.image.getWidth();
+                    params.height = data.image.getHeight();
+                } else if ("path_gauge".equals(data.type) && data.gaugeConfig != null && data.gaugeConfig.length >= 3) {
+                    if (data.gaugeConfig[1] > 0 && data.gaugeConfig[2] > 0) {
+                        params.width = (int) data.gaugeConfig[1];
+                        params.height = (int) data.gaugeConfig[2];
                     }
-                    iv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
+                } else if ("hud_rpm".equals(data.type)) {
+                    params.width = 120;
+                } else if ("navi_distance_remaining".equals(data.type)) {
+                    params.width = 120;
+                } else if ("temp_out".equals(data.type) || "temp_in".equals(data.type)) {
+                    params.width = 90;
+                }
 
-                    if (isMediaCover) {
-                        params.width = 100;
-                        params.height = 100;
-                    } else {
-                        if (isTurnSignal || isVolume || isAutoHold) {
-                            params.height = 36;
-                            if (data.image == null) {
-                                if (isTurnSignal) {
-                                    iv.setImageDrawable(null);
-                                } else if (isVolume) {
-                                    iv.setImageResource(R.drawable.ic_volume);
-                                } else if (isAutoHold) {
-                                    iv.setImageResource(R.drawable.ic_auto_hold);
-                                }
-                            }
-                        } else {
-                            params.height = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
-                        }
-                        params.width = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
-                        iv.setAdjustViewBounds(true);
-                        iv.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
-                    }
-                    view = iv;
-                } else if ("time".equals(data.type)) {
-                    android.widget.TextClock tc = new android.widget.TextClock(getContext());
-                    String format = "HH:mm"; // Default
-                    if (data.text != null && (data.text.contains("H") || data.text.contains("h"))) {
-                        format = data.text;
-                    }
-                    tc.setFormat12Hour(format);
-                    tc.setFormat24Hour(format);
-                    tc.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                    tc.setTextColor(data.color);
-                    tc.setPadding(0, 0, 0, 0);
-                    tc.setIncludeFontPadding(false); 
-                    tc.setLineSpacing(0, 1f); 
-                    tc.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24);
-                    if (data.typeface != null) {
-                        tc.setTypeface(data.typeface);
-                    }
-                    view = tc;
-                } else if ("gauge".equals(data.type)) {
-                    android.widget.ImageView iv = new android.widget.ImageView(getContext());
-                    if (data.image != null) {
-                        iv.setImageBitmap(data.image);
-                        iv.clearColorFilter();
-                    }
-                    iv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                    iv.setScaleType(android.widget.ImageView.ScaleType.FIT_XY); 
-                    
-                    if (data.gaugeConfig != null && data.gaugeConfig.length >= 6) {
-                        // Config exists
-                    }
-                    view = iv;
-                    if (data.image != null) {
-                         params.width = data.image.getWidth();
-                         params.height = data.image.getHeight();
-                    }
-                } else if ("path_gauge".equals(data.type) && data.pathData != null) {
-                     PathGaugeView pgv = new PathGaugeView(getContext());
-                     try {
-                         pgv.setPath(androidx.core.graphics.PathParser.createPathFromPathData(data.pathData));
-                     } catch (Exception e) {
-                         try {
-                             android.graphics.Path p = parsePathSimple(data.pathData);
-                             if (p != null) pgv.setPath(p);
-                         } catch (Exception ex) {}
-                     }
-                     pgv.setColor(data.color);
-                     if (data.gaugeConfig != null && data.gaugeConfig.length > 0) {
-                         pgv.setStrokeWidth(data.gaugeConfig[0]);
-                     }
-                     pgv.setMaxValue(data.maxValue > 0 ? data.maxValue : 100);
-                     pgv.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                     view = pgv;
-                     if (data.gaugeConfig != null && data.gaugeConfig.length >= 3 && data.gaugeConfig[1] > 0 && data.gaugeConfig[2] > 0) {
-                         params.width = (int) data.gaugeConfig[1];
-                         params.height = (int) data.gaugeConfig[2];
-                     } else {
-                         params.width = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
-                         params.height = android.widget.FrameLayout.LayoutParams.WRAP_CONTENT;
-                     }
-                } else if ("debug_status".equals(data.type)) {
-                    android.widget.TextView tv = new android.widget.TextView(getContext());
-                    tv.setText(data.text);
-                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 32);
-                    tv.setTextColor(data.color);
-                    view = tv;
-                } else if ("traffic_light".equals(data.type)) {
-                    cn.navitool.view.TrafficLightView tlv = new cn.navitool.view.TrafficLightView(getContext());
-                    params.width = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
-                    params.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
-                    view = tlv;
-                    // [FIX] Default to GONE if not navigating
+                // 交通灯的导航状态默认可见性
+                if ("traffic_light".equals(data.type) && view instanceof cn.navitool.view.TrafficLightView) {
+                    cn.navitool.view.TrafficLightView tlv = (cn.navitool.view.TrafficLightView) view;
                     tlv.setVisibility(mIsNavigating ? View.VISIBLE : View.GONE);
-
                     if (mLatestTrafficLightInfo != null) {
                         int mappedStatus = NaviInfoManager.mapStatus(mLatestTrafficLightInfo.status);
                         tlv.updateState(mappedStatus, mLatestTrafficLightInfo.redCountdown, mLatestTrafficLightInfo.direction);
                     }
-                } else if ("gear".equals(data.type)) {
-                    android.widget.TextView tv = new android.widget.TextView(getContext());
-                    tv.setText(data.text != null ? data.text : "P");
-                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 48); 
-                    tv.setTextColor(data.color);
-                    tv.setGravity(android.view.Gravity.CENTER);
-                    params.width = 100;
-                    view = tv;
-                } else if ("fuel_range".equals(data.type) || "fuel".equals(data.type)) {
-                    android.widget.LinearLayout ll = new android.widget.LinearLayout(getContext());
-                    ll.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-                    // [FIX] Use Right Alignment (Gravity.END) to prevent visual shifting when digits change
-                    ll.setGravity(android.view.Gravity.CENTER_VERTICAL | android.view.Gravity.END); 
-
-                    // 1. Emoji View (18px)
-                    android.widget.TextView tvEmoji = new android.widget.TextView(getContext());
-                    tvEmoji.setText("⛽");
-                    tvEmoji.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 18f);
-                    tvEmoji.setTextColor(data.color);
-                    tvEmoji.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                    tvEmoji.setIncludeFontPadding(false);
-                    ll.addView(tvEmoji);
-
-                    // 2. Value View (24px)
-                    android.widget.TextView tvValue = new android.widget.TextView(getContext());
-                    String valText = (data.text != null) ? data.text.replace("⛽", "").trim() : "";
-                    tvValue.setText(" " + valText); 
-                    tvValue.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24f);
-                    tvValue.setTextColor(data.color);
-                    tvValue.setBackgroundColor(android.graphics.Color.TRANSPARENT);
-                    tvValue.setIncludeFontPadding(false);
-                    // [FIX] Force Single Line to prevent wrapping in narrow width
-                    tvValue.setSingleLine(true);
-                    tvValue.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                    ll.addView(tvValue);
-                    
-                    view = ll;
-                    // [FIX] Set Fixed Width (220px) - Calculated based on "100L|9999KM" max length (~180px) + padding
-                    // 350px was too wide per user feedback.
-                    params.width = 175; 
-                } else if ("guide_line".equals(data.type)) {
-                     // [Refactor] Guide Line - Direct Draw for 100% Stability
-                     // Avoids rotation/clipping issues with XML shapes
-                     view = new View(getContext()) {
-                         private final android.graphics.Paint mPaint = new android.graphics.Paint(
-                                 android.graphics.Paint.ANTI_ALIAS_FLAG);
-                         {
-                             mPaint.setColor(android.graphics.Color.CYAN);
-                             mPaint.setStyle(android.graphics.Paint.Style.STROKE);
-                             mPaint.setStrokeWidth(4); // Visible Width
-                             // 10px dash, 10px gap for good visibility
-                             mPaint.setPathEffect(new android.graphics.DashPathEffect(new float[] { 10, 10 }, 0));
-                         }
-
-                         @Override
-                         protected void onDraw(android.graphics.Canvas canvas) {
-                             super.onDraw(canvas);
-                             float cx = getWidth() / 2f;
-                             // Draw vertical line from top to bottom
-                             canvas.drawLine(cx, 0, cx, getHeight(), mPaint);
-                         }
-                     };
-
-                     // Explicit Size (0.5x of Preview: 100x380 -> 50x190)
-                     params.width = 50;
-                     params.height = 190;
-                } else {
-                    // Generic TextView (including navi_arrival_time, navi_distance_remaining, etc.)
-                    android.widget.TextView tv = new android.widget.TextView(getContext());
-                    
-                    // Initial text: prefer cache for navi components
-                    String displayText = data.text != null ? data.text : "";
-                    if ("navi_arrival_time".equals(data.type) && mCachedNaviArrivalTime != null) {
-                        displayText = mCachedNaviArrivalTime;
-                    } else if ("navi_distance_remaining".equals(data.type) && mCachedNaviDistance != null) {
-                        displayText = mCachedNaviDistance;
-                    }
-                    
-                    tv.setText(displayText);
-                    tv.setTextColor(data.color);
-                    tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 24f); 
-                    tv.setIncludeFontPadding(false);
-                    if (data.typeface != null) {
-                        tv.setTypeface(data.typeface);
-                    }
-                    view = tv;
-
-                    // [FIX] Default NAVI components to GONE if not navigating
-                    if (data.type != null && data.type.startsWith("navi_")) {
-                        boolean visible = mIsNavigating;
-                        tv.setVisibility(visible ? View.VISIBLE : View.GONE);
-                        DebugLogger.e(TAG, "[HUD_INIT] Created " + data.type + ", mIsNavigating=" + mIsNavigating + " -> Visibility=" + (visible ? "VISIBLE" : "GONE"));
-                    }
-                    
-                    // Type-specific adjustments
-                    if ("hud_rpm".equals(data.type)) {
-                        tv.setGravity(android.view.Gravity.END);
-                        params.width = 120;
-                        tv.setSingleLine(true);
-                    } else if ("temp_out".equals(data.type) || "temp_in".equals(data.type) || "fuel".equals(data.type)) {
-                        tv.setGravity(android.view.Gravity.END);
-                        params.width = 90;
-                    } else if ("navi_distance_remaining".equals(data.type)) {
-                        // [FIX] Fixed width for consistent alignment
-                        tv.setGravity(android.view.Gravity.END);
-                        params.width = 120;
-                    }
                 }
 
+                // 导航组件的默认可见性
+                if (data.type != null && data.type.startsWith("navi_")) {
+                    view.setVisibility(mIsNavigating ? View.VISIBLE : View.GONE);
+                }
+
+                // 设置 Tag 以便后续更新
                 view.setTag(data);
                 params.gravity = android.view.Gravity.TOP | android.view.Gravity.START;
                 container.addView(view, params);
@@ -1327,11 +1110,10 @@ public class PresentationManager extends android.app.Presentation {
                     view.setScaleY(data.scale);
                 }
 
-                // Measure
+                // ========== 尺寸测量 ==========
                 int widthSpec = android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED);
                 int heightSpec = android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED);
 
-                // Priority: Use LayoutParams explicit size if set
                 if (params.width > 0)
                     widthSpec = android.view.View.MeasureSpec.makeMeasureSpec(params.width, android.view.View.MeasureSpec.EXACTLY);
                 if (params.height > 0)
@@ -1356,22 +1138,20 @@ public class PresentationManager extends android.app.Presentation {
                 int measuredWidth = view.getMeasuredWidth();
                 int measuredHeight = view.getMeasuredHeight();
 
-                // Bounds Clamp with Tolerance
+                // ========== 边界检查 ==========
                 float effectiveScale = isTurnSignal ? 1.0f : data.scale;
                 float scaledWidth = measuredWidth * effectiveScale;
                 float scaledHeight = measuredHeight * effectiveScale;
                 
-                // Bound Limits
                 float minX = 0f;
                 float maxXLimit = maxWidth - scaledWidth;
                 
-                // [Feature] guide_line relax bounds (50% width tolerance)
                 if ("guide_line".equals(data.type)) {
                     minX = -0.5f * scaledWidth;
                     maxXLimit = maxWidth - (0.5f * scaledWidth);
                 }
 
-                // [FIX] Allow overshoot for TextViews to match Preview logic (Visual Margin Compensation)
+                // 容差计算（允许 TextView 稍微超出边界以隐藏字体填充）
                 float toleranceTop = 0f;
                 float toleranceBottom = 0f;
                 float FACTOR_TOP = 0.18f;
@@ -1381,12 +1161,9 @@ public class PresentationManager extends android.app.Presentation {
                         || "song_1line".equals(data.type);
 
                 if (isMusicComponent) {
-                    // Music components use setIncludeFontPadding(false) so they cannot afford negative margins.
                     toleranceTop = 0f;
                     toleranceBottom = 0f;
                 } else if ("volume".equals(data.type)) {
-                    // [Feature] Volume component gets fixed tolerance
-                    // Reduced to 10f to prevent excessive off-screen dragging for small icons
                     toleranceTop = 10f;
                     toleranceBottom = 10f;
                 } else if (view instanceof android.widget.TextView) {
@@ -1394,15 +1171,13 @@ public class PresentationManager extends android.app.Presentation {
                     toleranceTop = currentSize * FACTOR_TOP * data.scale;
                     toleranceBottom = currentSize * FACTOR_BOTTOM * data.scale;
                 } else if (view instanceof android.view.ViewGroup) {
-                    // For Container Views, find max text size
                     android.view.ViewGroup vg = (android.view.ViewGroup) view;
                     float maxTextSize = 0f;
                     for (int k = 0; k < vg.getChildCount(); k++) {
                         View child = vg.getChildAt(k);
                         if (child instanceof android.widget.TextView) {
                             float size = ((android.widget.TextView) child).getTextSize();
-                            if (size > maxTextSize)
-                                maxTextSize = size;
+                            if (size > maxTextSize) maxTextSize = size;
                         }
                     }
                     if (maxTextSize > 0) {
@@ -1412,34 +1187,28 @@ public class PresentationManager extends android.app.Presentation {
                 }
 
                 float clampedX = Math.max(minX, Math.min(data.x, maxXLimit));
-                // Allow Y to go slightly negative (by toleranceTop) or beyond bottom (by toleranceBottom) to hide padding
                 float clampedY = Math.max(-toleranceTop, Math.min(data.y, maxHeight - scaledHeight + toleranceBottom));
 
                 view.setX(clampedX);
                 view.setY(clampedY);
 
-                if ("gauge".equals(data.type)) {
-                    // Calculate Pivot now that we have measured dim
-                    if (data.gaugeConfig != null && data.gaugeConfig.length >= 6) {
-                        float px = data.gaugeConfig[4]; // 0.0 - 1.0
-                        float py = data.gaugeConfig[5];
-                        view.setPivotX(measuredWidth * px);
-                        view.setPivotY(measuredHeight * py);
-                    }
+                // Gauge Pivot 设置
+                if ("gauge".equals(data.type) && data.gaugeConfig != null && data.gaugeConfig.length >= 6) {
+                    float px = data.gaugeConfig[4];
+                    float py = data.gaugeConfig[5];
+                    view.setPivotX(measuredWidth * px);
+                    view.setPivotY(measuredHeight * py);
                 }
 
-                // Visibility
+                // ========== 可见性控制 ==========
                 if (isSong || isMediaCover) {
                     view.setVisibility(mIsMediaPlaying ? View.VISIBLE : View.GONE);
                 } else if (isVolume) {
                     view.setVisibility(mIsVolumeVisible ? View.VISIBLE : View.GONE);
                 } else {
-                    // [FIX] Do NOT blindly set VISIBLE. Check Nav state for Nav components.
                     boolean isNavComponent = (data.type != null && (data.type.startsWith("navi_") || "traffic_light".equals(data.type)));
                     if (isNavComponent) {
-                         boolean shouldShow = mIsNavigating;
-                         view.setVisibility(shouldShow ? View.VISIBLE : View.GONE);
-                         DebugLogger.e(TAG, "[HUD_SYNC] Comp=" + data.type + " Override -> " + (shouldShow ? "VISIBLE" : "GONE"));
+                         view.setVisibility(mIsNavigating ? View.VISIBLE : View.GONE);
                     } else {
                          view.setVisibility(View.VISIBLE);
                     }

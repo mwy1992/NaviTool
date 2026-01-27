@@ -8,8 +8,6 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.RemoteException;
-import android.view.View;
-import android.widget.TextView;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -20,42 +18,32 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CopyOnWriteArrayList;
 
+import cn.navitool.interfaces.NaviStatusListener;
+import cn.navitool.model.GuideInfo;
+import cn.navitool.model.TrafficLightInfo;
 import cn.navitool.utils.DebugLogger;
-import cn.navitool.view.TrafficLightView;
+import cn.navitool.utils.NaviDataRecorder;
 
 import com.autonavi.amapauto.aidl.IJsonProtocolInterface;
 import com.autonavi.amapauto.aidl.IJsonProtocolReceiveInterface;
 
 /**
  * 导航信息管理器 (NaviInfoManager)
- * [Refactored] Integrated AIDL Client for Amap/GeelyMap
+ * [Refactored] Pure Data Publisher - Decoupled from UI
  */
 public class NaviInfoManager {
     private static final String TAG = "NaviInfoManager";
 
-    // --- Traffic Light Views ---
-    private TrafficLightView mTrafficLightLeft;
-    private TrafficLightView mTrafficLightStraight;
-    private TrafficLightView mTrafficLightRight;
-
-    // --- Navi Info Views (Optional) ---
-    private TextView mDistanceView;
-    private TextView mEtaView;
-
-    // --- State ---
-    private int mLastValidDirection = 0;
-    
     // Status State
-    private static final int STATUS_IDLE = 0;
-    private static final int STATUS_NAVI = 1;
-    private static final int STATUS_CRUISE = 2;
+    public static final int STATUS_IDLE = 0;
+    public static final int STATUS_NAVI = 1;
+    public static final int STATUS_CRUISE = 2;
     private int mCurrentStatus = STATUS_IDLE;
 
-    // Data Cache
-    private int mRouteRemainDis = -1;
-    private int mRouteRemainTime = -1;
-    private String mEtaText = ""; 
+    // Listeners
+    private final List<NaviStatusListener> mListeners = new CopyOnWriteArrayList<>();
 
     private static volatile NaviInfoManager instance;
     private Context mContext;
@@ -81,12 +69,15 @@ public class NaviInfoManager {
         mMainHandler = new Handler(Looper.getMainLooper());
     }
 
-    // Added: startManager method with binding logic
     public void startManager(Context context) {
         this.mContext = context.getApplicationContext(); 
         if (mMainHandler == null) {
             mMainHandler = new Handler(Looper.getMainLooper());
         }
+        
+        // Initialize Recorder and Register it
+        NaviDataRecorder.getInstance().init(context);
+        addListener(NaviDataRecorder.getInstance());
         
         // Start Binding Services (Async, Both)
         bindAidlServices();
@@ -106,17 +97,49 @@ public class NaviInfoManager {
         return instance;
     }
     
-    // --- Shared AIDL Callback (Both services use the same callback) ---
+    // --- Listener Management ---
+    public void addListener(NaviStatusListener listener) {
+        if (listener != null && !mListeners.contains(listener)) {
+            mListeners.add(listener);
+            // Verify: Send current status to new listener immediately?
+            // listener.onNaviStatusChanged(mCurrentStatus); 
+        }
+    }
+
+    public void removeListener(NaviStatusListener listener) {
+        mListeners.remove(listener);
+    }
+    
+    private void notifyListenersStatus(int status) {
+        for (NaviStatusListener l : mListeners) {
+            l.onNaviStatusChanged(status);
+        }
+    }
+
+    private void notifyListenersTrafficLight(List<TrafficLightInfo> lights) {
+        for (NaviStatusListener l : mListeners) {
+            l.onTrafficLightUpdate(lights);
+        }
+    }
+
+    private void notifyListenersGuideInfo(GuideInfo info) {
+        for (NaviStatusListener l : mListeners) {
+            l.onGuideInfoUpdate(info);
+        }
+    }
+
+    private void notifyListenersOriginalPacket(String json, JSONObject parsed) {
+        for (NaviStatusListener l : mListeners) {
+            l.onOriginalPacketReceived(json, parsed);
+        }
+    }
+
+    // --- Shared AIDL Callback ---
     private IJsonProtocolReceiveInterface mCallback = new IJsonProtocolReceiveInterface.Stub() {
         @Override
         public void received(String message) throws RemoteException {
             // DebugLogger.d(TAG, "AIDL RAW: " + message);
-            try {
-                JSONObject json = new JSONObject(message);
-                mMainHandler.post(() -> processPacket(json));
-            } catch (JSONException e) {
-                DebugLogger.e(TAG, "JSON Parse Error", e);
-            }
+            mMainHandler.post(() -> processRawPacket(message));
         }
 
         @Override
@@ -124,6 +147,18 @@ public class NaviInfoManager {
             return null;
         }
     };
+
+    private void processRawPacket(String rawJson) {
+        try {
+            JSONObject json = new JSONObject(rawJson);
+            // Notify recorder first
+            notifyListenersOriginalPacket(rawJson, json);
+            // Process logic
+            processPacket(json);
+        } catch (JSONException e) {
+            DebugLogger.e(TAG, "JSON Parse Error", e);
+        }
+    }
 
     // --- Geely Map Connection ---
     private ServiceConnection mGeelyConnection = new ServiceConnection() {
@@ -144,7 +179,6 @@ public class NaviInfoManager {
             DebugLogger.w(TAG, "[Geely] Service Disconnected");
             mGeelyService = null;
             mGeelyBound = false;
-            // Auto-reconnect after 3s
             mMainHandler.postDelayed(() -> bindToPackage(PKG_GEELY, mGeelyConnection, true), 3000);
         }
     };
@@ -168,12 +202,10 @@ public class NaviInfoManager {
             DebugLogger.w(TAG, "[Amap] Service Disconnected");
             mAmapService = null;
             mAmapBound = false;
-            // Auto-reconnect after 3s
             mMainHandler.postDelayed(() -> bindToPackage(PKG_AMAP, mAmapConnection, false), 3000);
         }
     };
     
-    // Bind to both services simultaneously
     private void bindAidlServices() {
         bindToPackage(PKG_GEELY, mGeelyConnection, true);
         bindToPackage(PKG_AMAP, mAmapConnection, false);
@@ -220,8 +252,7 @@ public class NaviInfoManager {
         DebugLogger.i(TAG, "Navi Status Changed: " + statusStr);
         mCurrentStatus = newStatus;
         
-        // [FIX] Forward Status to ClusterHudManager (Handles Navigation Start/Stop UI logic)
-        ClusterHudManager.getInstance(mContext).onNaviStatusUpdate(mCurrentStatus);
+        notifyListenersStatus(mCurrentStatus);
     }
 
     private void processPacket(JSONObject json) {
@@ -234,7 +265,7 @@ public class NaviInfoManager {
                      updateStatus(STATUS_NAVI); 
                      List<TrafficLightInfo> list = new ArrayList<>();
                      list.add(parseTrafficLight(dataNavi));
-                     updateTrafficLights(list);
+                     notifyListenersTrafficLight(list);
                  }
                  break;
              case 80194: // Cruise Traffic Light
@@ -254,7 +285,7 @@ public class NaviInfoManager {
                                  list.add(parseTrafficLight(obj));
                              }
                          }
-                         updateTrafficLights(list);
+                         notifyListenersTrafficLight(list);
                      }
                  }
                  break;
@@ -277,58 +308,12 @@ public class NaviInfoManager {
          return info;
     }
     
-    // [Updated] Handle List of Lights
-    public void updateTrafficLights(List<TrafficLightInfo> infos) {
-        if (infos == null) return;
-        
-        // 1. Reset ALL views first (Prevent ghosts)
-        if (mTrafficLightLeft != null) mTrafficLightLeft.setVisibility(View.INVISIBLE);
-        if (mTrafficLightStraight != null) mTrafficLightStraight.setVisibility(View.INVISIBLE);
-        if (mTrafficLightRight != null) mTrafficLightRight.setVisibility(View.INVISIBLE);
-        
-        mLastValidDirection = 0; // Reset? Or keep for fallback? 
-        // In multi-light mode, fallback is tricky. Let's rely on fresh data.
-
-        // 2. Iterate and Map
-        for (TrafficLightInfo info : infos) {
-            TrafficLightView targetView = null;
-            
-            // Simple mapping logic
-            // 1=Left, 2=Right, 4=Straight, 3=TurnBack(Left)
-            // 0=Unknown -> Try Straight?
-            
-            if (info.direction == 1 || info.direction == 3) {
-                targetView = mTrafficLightLeft;
-            } else if (info.direction == 2) {
-                targetView = mTrafficLightRight;
-            } else if (info.direction == 4 || info.direction == 8 || info.direction == 0) {
-                // 8=Straight, 0=Unknown(Usually Straight in Cruise)
-                targetView = mTrafficLightStraight;
-            }
-            
-            if (targetView != null) {
-                int mappedStatus = mapStatus(info.status);
-                if (mappedStatus != 0) {
-                    targetView.setVisibility(View.VISIBLE);
-                    targetView.updateState(mappedStatus, info.redCountdown, info.direction);
-                    
-                    // Log debug
-                    // DebugLogger.d(TAG, "Show Light: Dir=" + info.direction + " Status=" + mappedStatus);
-                }
-            }
-            
-            // [FIX] Forward to ClusterHudManager (Floating Window / Presentation)
-            ClusterHudManager.getInstance(mContext).onTrafficLightUpdate(info);
-        }
-    }
-
-    // Retain legacy method signature for compatibility (if any external calls exist)
-    // but redirect to new logic wrapping in list
+    // Legacy method for external calls (if any)
     public void updateTrafficLight(TrafficLightInfo info) {
          if (info == null) return;
          List<TrafficLightInfo> list = new ArrayList<>();
          list.add(info);
-         updateTrafficLights(list);
+         notifyListenersTrafficLight(list);
     }
     
     private void processGuideInfoData(JSONObject data) {
@@ -337,7 +322,7 @@ public class NaviInfoManager {
          info.routeRemainTime = data.optInt("routeRemainTime", -1);
          info.currentRoadName = data.optString("curRoadName", "");
          info.nextRoadName = data.optString("nextRoadName", "");
-         // info.etaText = ... // Not provided in 30407 usually, calculated
+         // info.etaText = ... 
          
          // [Logic] Determine status based on distance/time
          if (info.routeRemainDis > 0 || info.routeRemainTime > 0) {
@@ -347,14 +332,11 @@ public class NaviInfoManager {
              if (mCurrentStatus == STATUS_NAVI) {
                  DebugLogger.i(TAG, "Navi Finished (Distance/Time is 0) -> IDLE");
                  updateStatus(STATUS_IDLE);
-                 reset(); // Clear UI
+                 reset(); 
              }
          }
          
-         updateGuideInfo(info);
-         // [FIX] Forward to ClusterHudManager
-         ClusterHudManager.getInstance(mContext).onGuideInfoUpdate(info);
-         
+         notifyListenersGuideInfo(info);
          mLastNaviUpdateTime = System.currentTimeMillis();
     }
     
@@ -374,80 +356,20 @@ public class NaviInfoManager {
         mMainHandler.postDelayed(mWatchdogRunnable, 2000);
     }
 
-    // --- Floating Window Control (Connected to ClusterHudManager) ---
-    public void showTrafficLightFloating() {
-        DebugLogger.i(TAG, "showTrafficLightFloating requested");
-        ClusterHudManager.getInstance(mContext).setFloatingTrafficLightEnabled(true);
+    public static int mapStatus(int status) {
+        if (status == 1) return 2; // RED
+        else if (status == 2 || status == 4) return 1; // GREEN
+        else if (status == 3 || status == -1) return 3; // YELLOW
+        else return 0; // NONE
     }
 
-    public void hideTrafficLightFloating() {
-        DebugLogger.i(TAG, "hideTrafficLightFloating requested");
-        ClusterHudManager.getInstance(mContext).setFloatingTrafficLightEnabled(false);
+    public void reset() {
+        updateStatus(STATUS_IDLE); 
+        // Notify empty?
+        // Usually IDLE status is enough for listeners to hide UI
     }
-
-    // [DEPRECATED] Style toggle removed - Now only capsule style is supported
-    // public void toggleFloatingStyle() {
-    //     DebugLogger.i(TAG, "toggleFloatingStyle requested");
-    //     ClusterHudManager.getInstance(mContext).toggleFloatingTrafficLightStyle();
-    // }
-
-    /**
-     * 绑定红绿灯视图
-     */
-    public void bindTrafficLightViews(TrafficLightView left, TrafficLightView straight, TrafficLightView right) {
-        mTrafficLightLeft = left;
-        mTrafficLightStraight = straight;
-        mTrafficLightRight = right;
-
-        if (mTrafficLightLeft != null) {
-            mTrafficLightLeft.setOverrideDirection(1); // Left Arrow
-            mTrafficLightLeft.setVisibility(View.INVISIBLE);
-        }
-        if (mTrafficLightStraight != null) {
-            mTrafficLightStraight.setOverrideDirection(0); // Straight
-            mTrafficLightStraight.setVisibility(View.INVISIBLE);
-        }
-        if (mTrafficLightRight != null) {
-            mTrafficLightRight.setOverrideDirection(2); // Right Arrow
-            mTrafficLightRight.setVisibility(View.INVISIBLE);
-        }
-        mLastValidDirection = 0;
-    }
-
-    /**
-     * 绑定导航信息视图
-     */
-    public void bindNaviInfoViews(TextView distanceView, TextView etaView) {
-        mDistanceView = distanceView;
-        mEtaView = etaView;
-        updateNaviViews();
-    }
-
-    /**
-     * 更新导航引导信息
-     */
-    public void updateGuideInfo(GuideInfo info) {
-        if (info == null) return;
-        mRouteRemainDis = info.routeRemainDis;
-        mRouteRemainTime = info.routeRemainTime;
-        mEtaText = info.etaText; 
-        updateNaviViews();
-    }
-
-    private void updateNaviViews() {
-        if (mDistanceView != null) {
-            String distText = formatDistance(mRouteRemainDis);
-            mDistanceView.setText(distText);
-            mDistanceView.setVisibility(distText.isEmpty() ? View.GONE : View.VISIBLE);
-        }
-        if (mEtaView != null) {
-            String eta = calculateEta(mRouteRemainTime);
-            String displayEta = eta.isEmpty() ? "" : "ETA " + eta;
-            mEtaView.setText(displayEta);
-            mEtaView.setVisibility(displayEta.isEmpty() ? View.GONE : View.VISIBLE);
-        }
-    }
-
+    
+    // --- Utilities ---
     public static String formatDistance(int dist) {
         if (dist < 0) return "";
         if (dist < 1000) return "<1km";
@@ -459,55 +381,5 @@ public class NaviInfoManager {
         long arrivalTime = System.currentTimeMillis() + (remainingSeconds * 1000L);
         SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
         return sdf.format(new Date(arrivalTime));
-    }
-    
-    // Compatibility
-    public String parseEta(int remainingSeconds) { return calculateEta(remainingSeconds); }
-    public static String parseEta(String etaText) { return etaText == null ? "" : etaText; }
-
-
-
-    public static int mapStatus(int status) {
-        if (status == 1) return 2; // RED
-        else if (status == 2 || status == 4) return 1; // GREEN
-        else if (status == 3 || status == -1) return 3; // YELLOW
-        else return 0; // NONE
-    }
-
-    public void reset() {
-        updateStatus(STATUS_IDLE); // Log the reset
-        // mCurrentStatus = STATUS_IDLE; // Handled by updateStatus
-        resetTrafficLights();
-        // Reset Navi Info
-        mRouteRemainDis = -1;
-        mRouteRemainTime = -1;
-        mEtaText = ""; // [FIX] Reset ETA text
-        updateNaviViews();
-    }
-
-    public void resetTrafficLights() {
-        if (mTrafficLightLeft != null) mTrafficLightLeft.setVisibility(View.INVISIBLE);
-        if (mTrafficLightStraight != null) mTrafficLightStraight.setVisibility(View.INVISIBLE);
-        if (mTrafficLightRight != null) mTrafficLightRight.setVisibility(View.INVISIBLE);
-        mLastValidDirection = 0;
-    }
-
-    // --- Inner Models ---
-    public static class TrafficLightInfo {
-        public int status;
-        public int redCountdown;
-        public int greenCountdown;
-        public int direction;
-        public int waitRound;
-    }
-
-    public static class GuideInfo {
-        public String currentRoadName;
-        public String nextRoadName;
-        public int iconType;
-        public int routeRemainDis;
-        public int routeRemainTime;
-        public int segRemainDis;
-        public String etaText;
     }
 }

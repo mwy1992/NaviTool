@@ -56,6 +56,9 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
     public static KeepAliveAccessibilityService getInstance() {
         return instance;
     }
+    
+    // [FIX] Centralized Handler for delayed tasks
+    private final android.os.Handler mHandler = new android.os.Handler(android.os.Looper.getMainLooper());
 
     // ... existing fields ...
     // [Refactor] Direct ICarFunction/ISensor fields removed
@@ -387,41 +390,61 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
         DebugLogger.i(TAG, "Ignition State Reset Complete. Waiting for next DRIVING event.");
     }
 
+    // [mc38.02 Command Format]
+    // Strictly matching original string format as requested
+    private static final String CMD_FORCE_STOP_HUD = "su root am force-stop --user 0 com.ecarx.dimmenu";
+    
+    private boolean mIsDrivingStarted = false; // Debounce flag
+
+    private final Runnable mStartDrivingTask = () -> {
+        DebugLogger.d(TAG, "Engine ready (3s delayed). Starting Driving View...");
+
+        // 1. Ensure UI is ready (Cluster + HUD)
+        // Note: Presentation stays on top (TYPE_APPLICATION_OVERLAY) regardless of delay
+        ClusterHudManager.getInstance(this).ensureUiVisible();
+
+        // 2. Apply Logic (Switch Mode)
+        DebugLogger.i(TAG, "Ignition + 3s: Auto-Switching to NaviMode 3 (Instrument Mode)");
+        ClusterHudManager.getInstance(this).applyNaviMode(3);
+        
+        // 3. Attempt to execute command
+        // This will attempt to use ADB Shell to execute the command if 'su' fails directly
+        DebugLogger.i(TAG, "Executing command: " + CMD_FORCE_STOP_HUD);
+        AdbShell.getInstance(this).exec(CMD_FORCE_STOP_HUD);
+    };
+
     public void handleIgnitionDriving() { // Made Public for Receiver
-        if (mIgnitionReady) {
-            DebugLogger.w(TAG,
-                    "Ignition already READY. Skipping handleIgnitionDriving. (Use resetIgnitionState() to force)");
-            return;
+        if (mIgnitionReady) { 
+             // Already marked ready, but we check mIsDrivingStarted for the actual Task launch
+             if (mIsDrivingStarted) {
+                 DebugLogger.w(TAG, "Ignition already handled (mIsDrivingStarted=true). Skipping duplicate trigger.");
+                 return;
+             }
+        } else {
+             mIgnitionReady = true;
+             // [FIX] Sync Ignition State to ClusterHudManager
+             ClusterHudManager.getInstance(this).setIgnitionReady(true);
+             mEngineStarted = true; // [FIX] Ensure flag is set so gear sounds can play
         }
-        mIgnitionReady = true;
-        // [FIX] Sync Ignition State to ClusterHudManager
-        ClusterHudManager.getInstance(this).setIgnitionReady(true);
-        mEngineStarted = true; // [FIX] Ensure flag is set so gear sounds can play
 
-        DebugLogger.i(TAG, "Ignition DRIVING detected! triggering AutoStart and scheduling Heavy Sensors...");
-
+        DebugLogger.i(TAG, "Ignition DRIVING detected! Scheduling Start Task in 3000ms...");
+        mIsDrivingStarted = true;
+        
+        // Clear any pending attempts to ensure a clean slate
+        new android.os.Handler(android.os.Looper.getMainLooper()).removeCallbacks(mStartDrivingTask);
+        
         // Bug 4 Fix: Delayed start for Floating Ball to avoid conflicts on boot
+        // Increased to 5000ms to be safe after the 3s HUD launch
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             startFloatingBallIfEnabled();
-        }, 3500);
+        }, 5000);
 
-        // 1. Trigger Lightweight Auto Start
+        // 1. Trigger Lightweight Auto Start (Sounds, Permissions)
         triggerAutoStart();
 
-        // 2. Schedule Heavy Sensor Audio/Logic (Logic managed by VSM mostly now)
-        // 2. Schedule Heavy Sensor Audio/Logic (Logic managed by VSM mostly now)
-        // [FIX] Removed 3s delay here because ClusterHudManager now manages the specific delays (Staggered Launch).
-        // If we delay here, HUD will be late.
-        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-            // [Refactor] registerHeavySensors removed - VSM always listens
-            // Just ensure UI is visible and mode applied
-            DebugLogger.i(TAG, "Ignition + 0s: Calling ensureUiVisible() directly (Manager controls delays)");
-            ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).ensureUiVisible();
-
-            // [FIX] Auto-Switch to Instrument Mode (NaviMode 3)
-            DebugLogger.i(TAG, "Ignition + 0s: Auto-Switching to NaviMode 3 (Instrument Mode)");
-            ClusterHudManager.getInstance(KeepAliveAccessibilityService.this).applyNaviMode(3);
-        }, 0);
+        // 2. Schedule Unified Driving View Launch (3s Delay)
+        // This is the core "Clean Startup" logic
+        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(mStartDrivingTask, 3000);
 
         // 3. Check Amap Services & Map Monitors
         checkAndStartMapServices();

@@ -107,12 +107,8 @@ public class GeneralSettingsController {
              // Button btnPosition = mLayoutGeneral.findViewById(R.id.btnPositionTrafficLight);
  
              switchFloatingTraffic.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                 ConfigManager.getInstance().setBoolean("floating_traffic_light_enabled", isChecked);
-                 if (isChecked) {
-                     NaviInfoManager.getInstance(mActivity).showTrafficLightFloating();
-                 } else {
-                     NaviInfoManager.getInstance(mActivity).hideTrafficLightFloating();
-                 }
+                 // ConfigManager is updated inside manager
+                 ClusterHudManager.getInstance(mActivity).setFloatingTrafficLightEnabled(isChecked);
              });
          }
     }

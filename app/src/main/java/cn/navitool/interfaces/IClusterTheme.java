@@ -2,8 +2,8 @@ package cn.navitool.interfaces;
 
 import android.view.View;
 import cn.navitool.managers.NaviInfoManager;
-import cn.navitool.managers.NaviInfoManager.TrafficLightInfo;
-import cn.navitool.managers.NaviInfoManager.GuideInfo;
+import cn.navitool.model.TrafficLightInfo;
+import cn.navitool.model.GuideInfo;
 
 /**
  * Interface for all Cluster Theme Controllers.
