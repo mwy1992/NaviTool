@@ -2,6 +2,7 @@ package cn.navitool.theme;
 
 import android.view.View;
 import android.widget.ImageView;
+import android.widget.TextView;
 import android.os.Handler;
 import android.os.Looper;
 import cn.navitool.R;
@@ -28,9 +29,11 @@ public class StandardThemeController extends BaseThemeController {
     private static final float RPM_START_ANGLE = -120f; 
 
     // Views (Specific to Standard Theme)
-    // Views (Specific to Standard Theme)
     private ImageView mPointerLeft; // Speed
     private ImageView mPointerRight; // RPM
+    
+    // Sensor Views - now uses BaseThemeController protected members:
+    // mOdometerText, mFuelRemainText, mTempInText, mInstantFuelText
 
     // Animators
     private SmoothValueAnimator mSpeedPointerAnimator;
@@ -85,6 +88,20 @@ public class StandardThemeController extends BaseThemeController {
         // Bind Specific Views
         mPointerLeft = rootView.findViewById(R.id.standardLeftPointer);
         mPointerRight = rootView.findViewById(R.id.standardRightPointer);
+        
+        // --- Bind Traffic Light & Navi Views (Shared via BaseThemeController) ---
+        mNaviTrafficContainer = rootView.findViewById(R.id.standardNaviTrafficContainer);
+        mTrafficLightMulti = rootView.findViewById(R.id.standardTrafficLightMulti);
+        if (mTrafficLightMulti != null) {
+            mTrafficLightMulti.setAlignment(cn.navitool.view.TrafficLightView.ALIGN_CENTER);
+            mTrafficLightMulti.setPreviewScale(2f); // Match Audi RS size
+        }
+        
+        mNaviInfoRow = rootView.findViewById(R.id.standardNaviInfoRow);
+        mCurrentRoadText = rootView.findViewById(R.id.standardCurrentRoad);
+        mDestinationText = rootView.findViewById(R.id.standardDestination);
+        mNaviDistance = rootView.findViewById(R.id.standardNaviDistance);
+        mNaviEta = rootView.findViewById(R.id.standardNaviEta);
 
         // Ensure pivots are set correctly (Bottom Right)
         if (mPointerLeft != null) {
@@ -115,6 +132,11 @@ public class StandardThemeController extends BaseThemeController {
         // [FIX] Restore Gear Sync: Fetch latest gear from Manager so we don't show stale "P"
         String currentGear = cn.navitool.managers.ClusterHudManager.getInstance(rootView.getContext()).getCurrentDisplayGear();
         setGear(currentGear);
+        
+        // Bind Sensor Views (Assign to base class protected fields)
+        mOdometerText = rootView.findViewById(R.id.standardOdometer);
+        mFuelRemainText = rootView.findViewById(R.id.standardFuelRemain);
+        mTempInText = rootView.findViewById(R.id.standardTempIn);
 
         // Init Animators
         mSpeedPointerAnimator = new SmoothValueAnimator(0);
@@ -133,6 +155,7 @@ public class StandardThemeController extends BaseThemeController {
         mPointerRight = null;
         mSpeedPointerAnimator = null;
         mSpeedTextAnimator = null;
+        // Sensor view cleanup is handled by super.detachViews()
     }
 
     // --- Specific Logic ---
@@ -207,4 +230,7 @@ public class StandardThemeController extends BaseThemeController {
     // Gear Logic: Completely handled by BaseThemeController (setGear, cycleGear)
 
     // Day/Night stub - Use Base (Empty) or override if needed in future
+    
+    // Sensor methods (updateOdometer, updateFuelRemain, updateIndoorTemp)
+    // are now inherited from BaseThemeController with unified formatting.
 }

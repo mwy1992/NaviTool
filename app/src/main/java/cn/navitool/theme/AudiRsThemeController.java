@@ -49,24 +49,11 @@ public class AudiRsThemeController extends BaseThemeController {
     private ImageView mFlashBar;
     private ImageView mBackground; 
     
-    // New Sensor Data Views
-    private TextView mFuelRemainText;
-    private TextView mOdometerText;
-    private TextView mFuelConsText;
-    private TextView mTempInText;
-
-    // Traffic Light & Navi - New Capsule Layout (3 TrafficLightViews)
-    private View mNaviTrafficContainer;
-    // [FIX] Added missing declaration for Navigation Info Row
-    private View mNaviInfoRow;
-    
-    // 3 Capsule TrafficLightViews for multi-direction support
-    private TrafficLightView mTrafficLightLeft;
-    private TrafficLightView mTrafficLightStraight;
-    private TrafficLightView mTrafficLightRight;
-    
-    private TextView mNaviDistance;
-    private TextView mNaviEta;
+    // Traffic Light & Navi - now uses BaseThemeController protected members:
+    // mNaviTrafficContainer, mNaviInfoRow, mTrafficLightMulti,
+    // mNaviDistance, mNaviEta, mCurrentRoadText, mDestinationText
+    // Sensor Data - now uses BaseThemeController protected members:
+    // mOdometerText, mFuelRemainText, mTempInText, mInstantFuelText
 
     // TPMS Views
     private TextView mPresFL_Val, mPresFL_Unit, mTempFL;
@@ -155,17 +142,24 @@ public class AudiRsThemeController extends BaseThemeController {
         mLight5 = rootView.findViewById(R.id.audiRsLight5);
         mFlashBar = rootView.findViewById(R.id.audiRsFlashBar);
 
-        // Traffic Light & Navi (3 Capsule TrafficLightViews)
+        // Traffic Light & Navi (Long Capsule - 1 Multi View)
         mNaviTrafficContainer = rootView.findViewById(R.id.audiRsNaviTrafficContainer);
         mNaviInfoRow = rootView.findViewById(R.id.audiRsNaviInfoRow);
         
-        // Bind 3 TrafficLightView capsules
-        mTrafficLightLeft = rootView.findViewById(R.id.audiRsTrafficLightLeft);
-        mTrafficLightStraight = rootView.findViewById(R.id.audiRsTrafficLightStraight);
-        mTrafficLightRight = rootView.findViewById(R.id.audiRsTrafficLightRight);
+        // Bind 1 Multi TrafficLightView (居中对齐)
+        mTrafficLightMulti = rootView.findViewById(R.id.audiRsTrafficLightMulti);
+        if (mTrafficLightMulti != null) {
+            mTrafficLightMulti.setAlignment(TrafficLightView.ALIGN_CENTER);
+            // [CHANGE] 放大 1.5 倍以匹配导航信息文字大小 (20sp ≈ 36px+ vs 24px*1.5)
+            mTrafficLightMulti.setPreviewScale(2f);
+        }
         
         mNaviDistance = rootView.findViewById(R.id.audiRsNaviDistance);
         mNaviEta = rootView.findViewById(R.id.audiRsNaviEta);
+        
+        // Bind Location Info TextViews
+        mCurrentRoadText = rootView.findViewById(R.id.audiRsCurrentRoad);
+        mDestinationText = rootView.findViewById(R.id.audiRsDestination);
 
         // Initial state: Hide until data arrives
         if (mNaviTrafficContainer != null) {
@@ -178,10 +172,10 @@ public class AudiRsThemeController extends BaseThemeController {
         // TPMS
         bindTpmsViews(rootView);
         
-        // Sensor Data
+        // Sensor Data (Assign to base class protected fields)
         mFuelRemainText = rootView.findViewById(R.id.audiRsFuelRemain);
         mOdometerText = rootView.findViewById(R.id.audiRsOdometer);
-        mFuelConsText = rootView.findViewById(R.id.audiRsFuelCons);
+        mInstantFuelText = rootView.findViewById(R.id.audiRsFuelCons);
         mTempInText = rootView.findViewById(R.id.audiRsTempIn);
 
         DebugLogger.d(TAG, "Audi RS Views bound successfully");
@@ -226,15 +220,12 @@ public class AudiRsThemeController extends BaseThemeController {
         mIsAnimating = false;
         mSpeedTextAnimator = null;
 
-        // Release specific references
+        // Release specific references (Base class handles: mNaviTrafficContainer, mNaviInfoRow, etc.)
         mPointer = null;
         // mRpmText = null;
         mLight1 = null; mLight2 = null; mLight3 = null; mLight4 = null; mLight5 = null;
         mFlashBar = null;
         mBackground = null;
-        mNaviTrafficContainer = null;
-        mNaviInfoRow = null; // [FIX] Clear reference
-        stopTrafficLightFlash();
         stopRpmFlash();
     }
     
@@ -244,118 +235,9 @@ public class AudiRsThemeController extends BaseThemeController {
         if (mFlashBar != null) mFlashBar.setVisibility(View.INVISIBLE);
     }
 
-    @Override
-    public void updateTrafficLight(TrafficLightInfo info) {
-        if (info == null) {
-            resetTrafficLights();
-            return;
-        }
-
-        int mappedStatus = NaviInfoManager.mapStatus(info.status);
-        
-        // Valid status check
-        boolean isValidStatus = (mappedStatus == TrafficLightView.STATUS_RED || 
-                               mappedStatus == TrafficLightView.STATUS_YELLOW || 
-                               mappedStatus == TrafficLightView.STATUS_GREEN);
-
-        if (!isValidStatus && info.redCountdown <= 0) {
-            if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
-            return;
-        }
-
-        // Show container
-        if (mNaviTrafficContainer != null) {
-            mNaviTrafficContainer.setVisibility(View.VISIBLE);
-        }
-
-        // Determine which TrafficLightView to use based on direction
-        // 1=Left, 2=Right, 3=TurnBack(Left), 4=Straight, 8=Straight, 0=Unknown(Straight)
-        TrafficLightView targetView = null;
-        
-        if (info.direction == 1 || info.direction == 3) {
-            targetView = mTrafficLightLeft;
-        } else if (info.direction == 2) {
-            targetView = mTrafficLightRight;
-        } else {
-            // Default to straight (0, 4, 8, or any other)
-            targetView = mTrafficLightStraight;
-        }
-        
-        if (targetView != null && isValidStatus) {
-            targetView.setVisibility(View.VISIBLE);
-            targetView.updateState(mappedStatus, info.redCountdown, info.direction);
-        }
-    }
-
-    // [DEPRECATED] No longer needed with TrafficLightView capsules
-    // private void updateTrafficLightImages(int rawStatus, float activeAlpha) { }
-
-    // [DEPRECATED] Flash is now handled by TrafficLightView itself
-    private void startTrafficLightFlash() {
-        // TrafficLightView handles flash internally
-    }
-
-    private void stopTrafficLightFlash() {
-        // TrafficLightView handles flash internally
-    }
-    
-    @Override
-    public void resetTrafficLights() {
-        // Hide all 3 TrafficLightViews
-        if (mTrafficLightLeft != null) mTrafficLightLeft.setVisibility(View.GONE);
-        if (mTrafficLightStraight != null) mTrafficLightStraight.setVisibility(View.GONE);
-        if (mTrafficLightRight != null) mTrafficLightRight.setVisibility(View.GONE);
-        
-        if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
-    }
-
-    @Override
-    public void resetNaviInfo() {
-        resetTrafficLights();
-        
-        if (mNaviDistance != null) mNaviDistance.setText("");
-        if (mNaviEta != null) mNaviEta.setText("");
-        
-        if (mNaviInfoRow != null) mNaviInfoRow.setVisibility(View.GONE);
-    }
-
-    @Override
-    public void updateGuideInfo(GuideInfo info) {
-        if (info == null) {
-            if (mNaviInfoRow != null) mNaviInfoRow.setVisibility(View.GONE);
-            return;
-        }
-
-        if (info == null) return;
-        
-        // [FIX] If distance is negative (Navi End), hide the row and return immediately
-        // This solves the persistence issue where empty/reset calls kept showing it.
-        if (info.routeRemainDis < 0) {
-            if (mNaviInfoRow != null) mNaviInfoRow.setVisibility(View.GONE);
-            return;
-        }
-        
-        if (mNaviInfoRow != null && mNaviInfoRow.getVisibility() != View.VISIBLE) {
-            mNaviInfoRow.setVisibility(View.VISIBLE);
-        }
-
-        if (mNaviDistance != null) {
-            String distText = "";
-            if (info.routeRemainDis >= 1000) {
-                 distText = String.format(java.util.Locale.US, "%.1fKM", info.routeRemainDis / 1000f);
-            } else {
-                 distText = info.routeRemainDis + "M";
-            }
-            mNaviDistance.setText(distText);
-        }
-
-        if (mNaviEta != null) {
-            // [FIX] Use calculated ETA for standard "HH:mm" format
-            String eta = NaviInfoManager.calculateEta(info.routeRemainTime);
-            String displayEta = eta.isEmpty() ? "" : "ETA " + eta;
-            mNaviEta.setText(displayEta);
-        }
-    }
+    // --- Traffic Light & Navigation Info ---
+    // Now handled by BaseThemeController (updateTrafficLight, resetTrafficLights, updateGuideInfo, resetNaviInfo)
+    // AudiRsThemeController only needs to bind views in onBindViews() which assigns to BaseThemeController's protected members
     
     @Override
     public void updateTirePressure(int index, float pressure) {
@@ -483,33 +365,8 @@ public class AudiRsThemeController extends BaseThemeController {
         updateLights(rpmInt);
     }
 
-    @Override
-    public void updateFuelRemain(float fuelLiters) {
-        if (mFuelRemainText != null) {
-             mFuelRemainText.setText(String.format(java.util.Locale.US, "剩余油量: %.0fL", fuelLiters));
-        }
-    }
-    
-    @Override
-    public void updateOdometer(float odometer) {
-        if (mOdometerText != null) {
-            mOdometerText.setText(String.format(java.util.Locale.US, "总里程: %.0fkm", odometer));
-        }
-    }
-    
-    @Override
-    public void updateInstantFuel(float fuel) {
-        if (mFuelConsText != null) {
-            mFuelConsText.setText(String.format(java.util.Locale.US, "%.1f L/100km", fuel));
-        }
-    }
-    
-    @Override
-    public void updateIndoorTemp(float temp) {
-        if (mTempInText != null) {
-            mTempInText.setText(String.format(java.util.Locale.US, "In: %.0f°C", temp));
-        }
-    }
+    // Sensor methods (updateOdometer, updateFuelRemain, updateIndoorTemp, updateInstantFuel) 
+    // are now inherited from BaseThemeController with unified formatting.
 
     // --- Private Helper Methods (Specific to Audi RS) ---
 

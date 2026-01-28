@@ -101,24 +101,22 @@ public class NaviDataRecorder implements NaviStatusListener {
     }
 
     private synchronized void saveToFile() {
-        if (mCurrentLogFile == null) return;
+        if (mCurrentLogFile == null || mPacketBuffer.isEmpty()) return;
 
         try {
-            JSONObject root = new JSONObject();
-            root.put("exportTime", mExportTime);
-            root.put("packetCount", mPacketCount);
-
-            JSONArray packetsArray = new JSONArray();
+            // Append mode: Write each packet as a separate JSON line (JSONL format)
+            // This prevents OOM by not holding all data in memory
+            FileWriter writer = new FileWriter(mCurrentLogFile, true); // Append mode
             for (JSONObject p : mPacketBuffer) {
-                packetsArray.put(p);
+                writer.write(p.toString());
+                writer.write("\n");
             }
-            root.put("packets", packetsArray);
-
-            FileWriter writer = new FileWriter(mCurrentLogFile); // Overwrite mode
-            writer.write(root.toString(2)); // Indent 2 for readability
             writer.flush();
             writer.close();
-            // Log.d(TAG, "Saved log to file. Packets: " + mPacketCount);
+            
+            // Clear buffer after successful save to prevent memory leak
+            mPacketBuffer.clear();
+            // Log.d(TAG, "Saved " + mPacketBuffer.size() + " packets. Total: " + mPacketCount);
         } catch (Exception e) {
             Log.e(TAG, "Error saving log file", e);
         }

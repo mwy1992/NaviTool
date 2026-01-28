@@ -64,16 +64,13 @@ public class VehicleSensorManager {
     // ITripData removed as it causes crashes on 0.4.6 and is not supported by standard API
     private boolean mIsInitialized = false;
 
-    // --- Soft Trip Persistence ---
-    private static final String PREF_NAME = "trip_data";
-    private static final String KEY_START_ODO = "start_odo";
-    private static final String KEY_START_TIME = "start_time";
-    private static final String KEY_LAST_IGNITION_OFF = "last_ignition_off";
+    // --- [REMOVED] Soft Trip Persistence ---
+    // 根据用户要求移除手动计算里程的功能
+    // 以下变量和常量已被移除:
+    // KEY_START_ODO, KEY_START_TIME, KEY_LAST_IGNITION_OFF
+    // RESET_THRESHOLD_MS, mStartOdo, mStartTime
+    private static final String PREF_NAME = "vehicle_prefs"; // 保留用于其他功能
     private SharedPreferences mPrefs;
-    private static final long RESET_THRESHOLD_MS = 4 * 60 * 60 * 1000; // 4 Hours
-    
-    private float mStartOdo = -1f;
-    private long mStartTime = 0;
 
     // --- 缓存值 ---
     private float mSpeed = 0; // km/h
@@ -88,9 +85,8 @@ public class VehicleSensorManager {
     private float mOdometer = 0;
     private float mLight = 0;
     
-    // [NEW] Current Trip Data (Soft Calculation)
-    private float mCurrentTripKm = 0f;
-    private long mCurrentTripDuration = 0;
+    // [REMOVED] Current Trip Data (Soft Calculation)
+    // mCurrentTripKm, mCurrentTripDuration 已移除
 
     // [NEW] Trip Data Cache (Soft Calculation)
     private float mAvgFuelConsumption = 0; // Unit: L/100km
@@ -139,7 +135,7 @@ public class VehicleSensorManager {
         default void onDayNightChanged(int mode) {}
         default void onLightChanged(float light) {}
         default void onTireDataChanged(int index, float pressure, float temp) {}
-        default void onTripDataChanged(float distanceKm, long durationSec, float avgFuel) {}
+        // [REMOVED] onTripDataChanged - Soft Trip 已完全移除
         
         // [NEW] Added Callbacks
         default void onSeatOccupiedChanged(boolean occupied) {}
@@ -190,7 +186,7 @@ public class VehicleSensorManager {
                 
                 if (mSensor != null) {
                     registerSensors();
-                    checkTripReset();
+                    // [REMOVED] checkTripReset() - Soft Trip 功能已移除
                 }
                 if (mCarFunction != null) {
                     registerFunctions();
@@ -331,41 +327,7 @@ public class VehicleSensorManager {
         }
     }
 
-    /**
-     * [Soft Trip Implementation]
-     * Check if we need to reset trip data (e.g. after long parking > 4 hours)
-     */
-    private void checkTripReset() {
-        SharedPreferences prefs = getPrefs();
-        long lastOffTime = prefs.getLong(KEY_LAST_IGNITION_OFF, 0);
-        long now = System.currentTimeMillis();
-        
-        mStartOdo = prefs.getFloat(KEY_START_ODO, -1f);
-        mStartTime = prefs.getLong(KEY_START_TIME, 0);
-        
-        boolean needReset = false;
-        
-        if (mStartOdo < 0) {
-            needReset = true; // First run
-        } else if (lastOffTime > 0 && (now - lastOffTime) > RESET_THRESHOLD_MS) {
-            needReset = true; // Long stop
-        }
-        
-        if (needReset) {
-            DebugLogger.i(TAG, "Trip Data Reset Triggered (Soft Trip)");
-            mStartOdo = -1f; 
-            mStartTime = now;
-            prefs.edit()
-                .putFloat(KEY_START_ODO, -1f)
-                .putLong(KEY_START_TIME, now)
-                .apply();
-            mCurrentTripKm = 0;
-            mCurrentTripDuration = 0;
-            notifyTripDataChanged();
-        } else {
-             DebugLogger.i(TAG, "Trip Data Continued: StartOdo=" + mStartOdo);
-        }
-    }
+    // [REMOVED] checkTripReset() - Soft Trip 功能已移除
 
     private void handleEventSensor(int sensorType, int value) {
         switch (sensorType) {
@@ -373,11 +335,7 @@ public class VehicleSensorManager {
                 if (mIgnition != value) {
                     mIgnition = value;
                     DebugLogger.action(TAG, "点火状态变化: " + value);
-                    if (value == ISensorEvent.IGNITION_STATE_OFF || value == ISensorEvent.IGNITION_STATE_ACC) {
-                         getPrefs().edit().putLong(KEY_LAST_IGNITION_OFF, System.currentTimeMillis()).apply();
-                    } else if (value == ISensorEvent.IGNITION_STATE_DRIVING || value == ISensorEvent.IGNITION_STATE_ON) {
-                         checkTripReset();
-                    }
+                    // [REMOVED] Soft Trip - KEY_LAST_IGNITION_OFF 和 checkTripReset() 调用已移除
                     notifyIgnitionChanged(value);
                 }
                 break;
@@ -488,7 +446,7 @@ public class VehicleSensorManager {
                 if (Math.abs(mOdometer - value) > 0.1f) {
                     mOdometer = value;
                     notifyOdometerChanged(value);
-                    updateSoftTripDistance(value);
+                    // [REMOVED] updateSoftTripDistance(value); - Soft Trip 已移除
                 }
                 break;
             case SENSOR_TYPE_LIGHT:
@@ -561,38 +519,14 @@ public class VehicleSensorManager {
             notifyGearChanged(mGear);
             notifyDayNightChanged(mDayNight);
             
-            if (mOdometer > 0) {
-                 updateSoftTripDistance(mOdometer);
-            }
+            // [REMOVED] updateSoftTripDistance(mOdometer); - Soft Trip 功能已移除
             
         } catch (Exception e) {
             DebugLogger.e(TAG, "Failed to refresh values", e);
         }
     }
     
-    private void updateSoftTripDistance(float currentOdo) {
-        if (currentOdo <= 0) return;
-        
-        SharedPreferences prefs = getPrefs(); // Safe getter logic
-        
-        if (mStartOdo < 0) {
-            mStartOdo = currentOdo;
-            mStartTime = System.currentTimeMillis();
-            prefs.edit()
-                .putFloat(KEY_START_ODO, mStartOdo)
-                .putLong(KEY_START_TIME, mStartTime)
-                .apply();
-             DebugLogger.i(TAG, "Soft Trip Initialized: StartOdo=" + mStartOdo);
-        }
-        
-        mCurrentTripKm = currentOdo - mStartOdo;
-        if (mCurrentTripKm < 0) mCurrentTripKm = 0; 
-        
-        long durationMs = System.currentTimeMillis() - mStartTime;
-        mCurrentTripDuration = durationMs / 1000; 
-        
-        notifyTripDataChanged();
-    }
+    // [REMOVED] updateSoftTripDistance() - Soft Trip 功能已移除
 
     // --- Getter 方法 ---
     public float getSpeed() { return mSpeed; }
@@ -610,9 +544,7 @@ public class VehicleSensorManager {
 
     public float getFuelIns() { return mFuelIns; }
     public float getFuelAvg() { return mFuelAvg; }
-    
-    public long getTripDuration() { return mCurrentTripDuration; }
-    public float getAvgFuelConsumption() { return mAvgFuelConsumption; }
+    // [REMOVED] Soft Trip getters 已完全移除: getTripDuration, getCurrentTripKm, getCurrentTripDuration
 
     public boolean isIgnitionOn() {
         return mIgnition == ISensorEvent.IGNITION_STATE_DRIVING;
@@ -625,9 +557,6 @@ public class VehicleSensorManager {
     public boolean isSeatOccupied() {
         return mSeatOccupied;
     }
-
-    public float getCurrentTripKm() { return mCurrentTripKm; }
-    public long getCurrentTripDuration() { return mCurrentTripDuration; }
 
     // --- 监听器管理 (Renamed to register/unregister) ---
     public void registerListener(Listener listener) {
@@ -689,9 +618,7 @@ public class VehicleSensorManager {
         for (Listener l : mListeners) l.onTireDataChanged(index, mTirePressure[index], mTireTemp[index]);
     }
 
-    private void notifyTripDataChanged() {
-        for (Listener l : mListeners) l.onTripDataChanged(mCurrentTripKm, mCurrentTripDuration, mAvgFuelConsumption);
-    }
+    // [REMOVED] notifyTripDataChanged - Soft Trip 已完全移除
 
     // [NEW] Notification Methods for Functions
     private void notifySeatOccupiedChanged(boolean occupied) {

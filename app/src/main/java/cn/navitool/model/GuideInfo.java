@@ -8,4 +8,5 @@ public class GuideInfo {
     public int routeRemainTime;
     public int segRemainDis;
     public String etaText;
+    public String destinationName; // 目的地名称 (from endPOIName)
 }

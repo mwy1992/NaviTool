@@ -39,7 +39,6 @@ import cn.navitool.managers.ThemeBrightnessManager;
 import cn.navitool.managers.SoundPromptManager;
 import cn.navitool.managers.VehicleSensorManager;
 
-import cn.navitool.managers.BaiduMonitorManager;
 // [REMOVED] import cn.navitool.managers.AmapMonitorManager;
 import cn.navitool.managers.SunshadeManager;
 import cn.navitool.managers.CarServiceManager;
@@ -180,12 +179,13 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
             AdbShell.getInstance(this).connect();
         }
 
-        // 3. [Optimized] Immediate UI Display (Load Shedding Step 1)
-        // Ensure UI is visible immediately (T+0s), don't wait for sensors
-        DebugLogger.i(TAG, "[Load Shedding] Immediate UI Display triggered");
-        ClusterHudManager.getInstance(this).ensureUiVisible();
-        // Force Instrument Mode immediately for feedback
-        ClusterHudManager.getInstance(this).applyNaviMode(3);
+        // 3. [REMOVED] Immediate UI Display
+        // 此代码块已移除 - UI 现在严格由 handleIgnitionDriving() 触发
+        // 原因：此逻辑过早初始化 ClusterHudManager 和 PresentationManager，
+        //      导致 HUD/仪表在发动机点火前就被加载和显示尝试。
+        // DebugLogger.i(TAG, "[Load Shedding] Immediate UI Display triggered");
+        // ClusterHudManager.getInstance(this).ensureUiVisible();
+        // ClusterHudManager.getInstance(this).applyNaviMode(3);
 
         // 4. [Load Shedding] Delayed Sensor/Heavy Initialization
         // Split heavy tasks to avoid system startup congestion
@@ -339,13 +339,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
 
     private void checkAndStartMapServices() {
         if (mIgnitionReady) {
-            // Start General Map Monitors (Tencent, Baidu) - run as long as we are driving
-            try {
-                // TencentMonitorManager removed
-                cn.navitool.managers.BaiduMonitorManager.getInstance(this).startMonitoring();
-            } catch (Exception e) {
-                DebugLogger.e(TAG, "Failed to start Map Monitors", e);
-            }
+            // [CLEANUP] Map Monitors (Baidu/Tencent) Removed
         }
 
         checkAndStartAmapServices();
@@ -468,12 +462,7 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
         //     DebugLogger.e(TAG, "Failed to stop AmapMonitorManager", e);
         // }
 
-        try {
-            // TencentMonitorManager removed
-            cn.navitool.managers.BaiduMonitorManager.getInstance(this).stopMonitoring();
-        } catch (Exception e) {
-            DebugLogger.e(TAG, "Failed to stop Map Monitors", e);
-        }
+        // [CLEANUP] Map Monitors Stopped (Code Removed)
 
         cn.navitool.managers.ThemeBrightnessManager.getInstance(this).destroy();
         cn.navitool.managers.SoundPromptManager.getInstance(this).destroy();

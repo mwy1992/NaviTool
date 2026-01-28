@@ -9,10 +9,12 @@ import cn.navitool.interfaces.IClusterTheme;
 import cn.navitool.managers.NaviInfoManager;
 import cn.navitool.model.GuideInfo;
 import cn.navitool.model.TrafficLightInfo;
+import cn.navitool.view.TrafficLightView;
 
 /**
  * Base Controller for Cluster Themes.
  * Implements common logic for Gear mapping, Speed filtering, and default interface methods.
+ * Also handles Traffic Light and Navigation Info display (shared across themes).
  */
 public abstract class BaseThemeController implements IClusterTheme {
     protected static final String TAG = "BaseThemeController";
@@ -23,6 +25,21 @@ public abstract class BaseThemeController implements IClusterTheme {
     // Common Views (Subclasses must assign these in bindViews)
     protected TextView mSpeedText;
     protected TextView mGearText;
+    
+    // Traffic Light & Navi Views (Shared - Subclasses assign in onBindViews)
+    protected TrafficLightView mTrafficLightMulti;
+    protected View mNaviTrafficContainer;
+    protected View mNaviInfoRow;
+    protected TextView mCurrentRoadText;
+    protected TextView mDestinationText;
+    protected TextView mNaviDistance;
+    protected TextView mNaviEta;
+    
+    // Sensor Views (Shared - Subclasses assign in onBindViews)
+    protected TextView mOdometerText;
+    protected TextView mFuelRemainText;
+    protected TextView mTempInText;
+    protected TextView mInstantFuelText;
 
     // --- Gear Logic Constants ---
     protected static final int GEAR_PARK = 2097712;
@@ -59,6 +76,19 @@ public abstract class BaseThemeController implements IClusterTheme {
         mContext = null;
         mSpeedText = null;
         mGearText = null;
+        // Traffic Light & Navi
+        mTrafficLightMulti = null;
+        mNaviTrafficContainer = null;
+        mNaviInfoRow = null;
+        mCurrentRoadText = null;
+        mDestinationText = null;
+        mNaviDistance = null;
+        mNaviEta = null;
+        // Sensor Views
+        mOdometerText = null;
+        mFuelRemainText = null;
+        mTempInText = null;
+        mInstantFuelText = null;
     }
 
     // --- Common Gear Implementation ---
@@ -140,20 +170,154 @@ public abstract class BaseThemeController implements IClusterTheme {
         // Default empty
     }
 
+    // --- Traffic Light Implementation (Shared) ---
+
+    @Override
+    public void updateTrafficLight(java.util.List<TrafficLightInfo> lights) {
+        if (lights == null || lights.isEmpty()) {
+            resetTrafficLights();
+            return;
+        }
+
+        java.util.List<TrafficLightView.LightState> lightStates = new java.util.ArrayList<>();
+        
+        for (TrafficLightInfo info : lights) {
+            if (info == null) continue;
+            
+            int mappedStatus = NaviInfoManager.mapStatus(info.status);
+            boolean isValidStatus = (mappedStatus == TrafficLightView.STATUS_RED || 
+                                   mappedStatus == TrafficLightView.STATUS_YELLOW || 
+                                   mappedStatus == TrafficLightView.STATUS_GREEN);
+
+            if (isValidStatus || info.redCountdown > 0) {
+                lightStates.add(new TrafficLightView.LightState(mappedStatus, info.redCountdown, info.direction));
+            }
+        }
+        
+        if (lightStates.isEmpty()) {
+            if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
+            return;
+        }
+
+        if (mNaviTrafficContainer != null) {
+            mNaviTrafficContainer.setVisibility(View.VISIBLE);
+        }
+        
+        if (mTrafficLightMulti != null) {
+            mTrafficLightMulti.setVisibility(View.VISIBLE);
+            mTrafficLightMulti.updateMultiLights(lightStates);
+        }
+    }
+
+    @Override
+    public void resetTrafficLights() {
+        if (mTrafficLightMulti != null) mTrafficLightMulti.setVisibility(View.GONE);
+        if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
+    }
+
+    // --- Navigation Info Implementation (Shared) ---
+
+    @Override
+    public void updateGuideInfo(GuideInfo info) {
+        if (info == null) {
+            if (mNaviInfoRow != null) mNaviInfoRow.setVisibility(View.GONE);
+            return;
+        }
+        
+        if (info.routeRemainDis < 0) {
+            if (mNaviInfoRow != null) mNaviInfoRow.setVisibility(View.GONE);
+            return;
+        }
+        
+        if (mNaviInfoRow != null && mNaviInfoRow.getVisibility() != View.VISIBLE) {
+            mNaviInfoRow.setVisibility(View.VISIBLE);
+        }
+
+        if (mNaviDistance != null) {
+            String distText = "";
+            if (info.routeRemainDis >= 1000) {
+                 distText = String.format(java.util.Locale.US, "%.1fKM", info.routeRemainDis / 1000f);
+            } else {
+                 distText = info.routeRemainDis + "M";
+            }
+            mNaviDistance.setText(distText);
+        }
+
+        if (mNaviEta != null) {
+            String eta = NaviInfoManager.calculateEta(info.routeRemainTime);
+            String displayEta = eta.isEmpty() ? "" : "ETA " + eta;
+            mNaviEta.setText(displayEta);
+        }
+        
+        // Current Road
+        if (mCurrentRoadText != null) {
+            if (info.currentRoadName != null && !info.currentRoadName.isEmpty()) {
+                mCurrentRoadText.setText("当前：" + info.currentRoadName);
+                mCurrentRoadText.setVisibility(View.VISIBLE);
+            } else {
+                mCurrentRoadText.setVisibility(View.GONE);
+            }
+        }
+        
+        // Destination
+        if (mDestinationText != null) {
+            if (info.destinationName != null && !info.destinationName.isEmpty()) {
+                mDestinationText.setText("目的地：" + info.destinationName);
+                mDestinationText.setVisibility(View.VISIBLE);
+            } else {
+                mDestinationText.setVisibility(View.GONE);
+            }
+        }
+    }
+
+    @Override
+    public void resetNaviInfo() {
+        resetTrafficLights();
+        
+        if (mNaviDistance != null) mNaviDistance.setText("");
+        if (mNaviEta != null) mNaviEta.setText("");
+        if (mCurrentRoadText != null) mCurrentRoadText.setVisibility(View.GONE);
+        if (mDestinationText != null) mDestinationText.setVisibility(View.GONE);
+        
+        if (mNaviInfoRow != null) mNaviInfoRow.setVisibility(View.GONE);
+    }
+
     // --- Default Empty Implementations (Optional Support) ---
 
     @Override public void setDayMode(boolean isDay) {}
     @Override public void setNavigating(boolean isNavigating) {}
     @Override public void updateRpm(float rpm) {}
     @Override public void updateTripInfo(float distance, long duration) {}
-    @Override public void updateOdometer(float odometer) {}
-    @Override public void updateInstantFuel(float fuel) {}
-    @Override public void updateFuelRemain(float fuelLiters) {}
-    @Override public void updateIndoorTemp(float temp) {}
-    @Override public void updateTrafficLight(TrafficLightInfo info) {}
-    @Override public void resetTrafficLights() {}
-    @Override public void updateGuideInfo(GuideInfo info) {}
-    @Override public void resetNaviInfo() {}
     @Override public void updateTirePressure(int index, float pressure) {}
     @Override public void updateTireTemp(int index, float temp) {}
+
+    // --- Common Sensor Implementations ---
+
+    @Override
+    public void updateOdometer(float odometer) {
+        if (mOdometerText != null) {
+            mOdometerText.setText(String.format(java.util.Locale.US, "总里程: %.0fkm", odometer));
+        }
+    }
+
+    @Override
+    public void updateFuelRemain(float fuelLiters) {
+        if (mFuelRemainText != null) {
+            mFuelRemainText.setText(String.format(java.util.Locale.US, "油量: %.1fL", fuelLiters));
+        }
+    }
+
+    @Override
+    public void updateIndoorTemp(float temp) {
+        if (mTempInText != null) {
+            mTempInText.setText(String.format(java.util.Locale.US, "In: %.0f°C", temp));
+        }
+    }
+
+    @Override
+    public void updateInstantFuel(float fuel) {
+        if (mInstantFuelText != null) {
+            mInstantFuelText.setText(String.format(java.util.Locale.US, "%.1f L/100km", fuel));
+        }
+    }
 }

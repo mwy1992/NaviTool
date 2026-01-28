@@ -141,80 +141,97 @@
         android:textSize="24sp"
         android:textStyle="bold" /> -->
 
-    <!-- Navigation & Traffic Light Container (3 Capsule Style) -->
-    <!-- 
-        [未来计划] 合并为单个长胶囊样式：
-        ┌──────────────────────────────────────┐
-        │  ← 🔴 25   │   ↑ 🟢 15   │   → 🔴 25  │
-        └──────────────────────────────────────┘
-        需要修改 TrafficLightView 支持多灯模式
-    -->
-    <LinearLayout
+    <!-- Navigation & Traffic Light Container (Long Capsule Style) -->
+    <FrameLayout
         android:id="@+id/audiRsNaviTrafficContainer"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
-        android:layout_marginStart="10dp"
-        android:layout_marginTop="140dp"
-        android:orientation="horizontal"
-        android:gravity="center">
+        android:layout_marginStart="85dp"
+        android:layout_marginTop="140dp">
 
-        <!-- 左转红绿灯 -->
+        <!-- 长胶囊红绿灯 (多灯合一, 居中对齐) -->
         <cn.navitool.view.TrafficLightView
-            android:id="@+id/audiRsTrafficLightLeft"
+            android:id="@+id/audiRsTrafficLightMulti"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:visibility="gone"
-            android:layout_marginEnd="4dp"/>
-
-        <!-- 直行红绿灯 -->
-        <cn.navitool.view.TrafficLightView
-            android:id="@+id/audiRsTrafficLightStraight"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:visibility="gone"
-            android:layout_marginEnd="4dp"/>
-
-        <!-- 右转红绿灯 -->
-        <cn.navitool.view.TrafficLightView
-            android:id="@+id/audiRsTrafficLightRight"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_gravity="center"
             android:visibility="gone"/>
 
-    </LinearLayout>
+    </FrameLayout>
 
-    <!-- Navigation Info Row (Separated for stability) -->
+
+    <!-- Navigation Info Container (Vertical Stack: Current/Destination/ETA) -->
     <LinearLayout
-        android:id="@+id/audiRsNaviInfoRow"
-        android:layout_width="250dp"
+        android:id="@+id/audiRsNaviContainer"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
         android:layout_marginStart="0dp"
-        android:layout_marginTop="230dp"
-        android:orientation="horizontal"
-        android:gravity="center_horizontal|bottom"
-        android:baselineAligned="true">
-        
+        android:layout_marginTop="180dp"
+        android:orientation="vertical"
+        android:gravity="center_horizontal">
+
+        <!-- Line 1: Current Road -->
         <TextView
-            android:id="@+id/audiRsNaviDistance"
-            android:layout_width="wrap_content"
+            android:id="@+id/audiRsCurrentRoad"
+            android:layout_width="250dp"
             android:layout_height="wrap_content"
-            android:gravity="bottom|end"
-            android:paddingEnd="2dp"
-            android:textColor="#FFFFFF"
+            android:gravity="center"
             android:textSize="20sp"
-            android:maxLines="1" />
+            android:textColor="#FFFFFF"
+            android:maxLines="1"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="12sp"
+            android:autoSizeMaxTextSize="20sp"
+            android:layout_marginBottom="2dp"
+            android:visibility="gone"/>
+
+        <!-- Line 2: Destination -->
+        <TextView
+            android:id="@+id/audiRsDestination"
+            android:layout_width="250dp"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:textSize="20sp"
+            android:textColor="#FFFFFF"
+            android:maxLines="1"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="12sp"
+            android:autoSizeMaxTextSize="20sp"
+            android:layout_marginBottom="2dp"
+            android:visibility="gone"/>
+
+        <!-- Line 3: Existing Info Row (Distance & ETA) -->
+        <LinearLayout
+            android:id="@+id/audiRsNaviInfoRow"
+            android:layout_width="250dp"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_horizontal|bottom"
+            android:baselineAligned="true">
             
-        <TextView
-            android:id="@+id/audiRsNaviEta"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:gravity="bottom|start"
-            android:paddingStart="2dp"
-            android:textColor="#FFFFFF"
-            android:textSize="20sp"
-            android:maxLines="1" />
+            <TextView
+                android:id="@+id/audiRsNaviDistance"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="bottom|end"
+                android:paddingEnd="2dp"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:maxLines="1" />
+                
+            <TextView
+                android:id="@+id/audiRsNaviEta"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="bottom|start"
+                android:paddingStart="2dp"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
+                android:maxLines="1" />
+        </LinearLayout>
+
     </LinearLayout>
 
     <!-- TPMS Layout: Front Left (Top Inner) -->

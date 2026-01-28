@@ -266,6 +266,8 @@ public class NaviInfoManager {
                      List<TrafficLightInfo> list = new ArrayList<>();
                      list.add(parseTrafficLight(dataNavi));
                      notifyListenersTrafficLight(list);
+                     // [FIX] Update watchdog timestamp to prevent flicker
+                     mLastNaviUpdateTime = System.currentTimeMillis();
                  }
                  break;
              case 80194: // Cruise Traffic Light
@@ -286,6 +288,8 @@ public class NaviInfoManager {
                              }
                          }
                          notifyListenersTrafficLight(list);
+                         // [FIX] Update watchdog timestamp to prevent flicker
+                         mLastNaviUpdateTime = System.currentTimeMillis();
                      }
                  }
                  break;
@@ -322,6 +326,7 @@ public class NaviInfoManager {
          info.routeRemainTime = data.optInt("routeRemainTime", -1);
          info.currentRoadName = data.optString("curRoadName", "");
          info.nextRoadName = data.optString("nextRoadName", "");
+         info.destinationName = data.optString("endPOIName", ""); // 目的地
          // info.etaText = ... 
          
          // [Logic] Determine status based on distance/time
@@ -357,8 +362,8 @@ public class NaviInfoManager {
     }
 
     public static int mapStatus(int status) {
-        if (status == 1) return 2; // RED
-        else if (status == 2 || status == 4) return 1; // GREEN
+        if (status == 1 || status == 2) return 2; // RED (Fixed: 2 is also RED)
+        else if (status == 4 || status >= 4) return 1; // GREEN (Usually 4+)
         else if (status == 3 || status == -1) return 3; // YELLOW
         else return 0; // NONE
     }

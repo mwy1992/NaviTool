@@ -4,6 +4,7 @@ import android.view.View;
 import cn.navitool.managers.NaviInfoManager;
 import cn.navitool.model.TrafficLightInfo;
 import cn.navitool.model.GuideInfo;
+import java.util.List;
 
 /**
  * Interface for all Cluster Theme Controllers.
@@ -34,7 +35,7 @@ public interface IClusterTheme {
     void updateIndoorTemp(float temp);
     
     // Navigation & ADAS
-    void updateTrafficLight(TrafficLightInfo info);
+    void updateTrafficLight(List<TrafficLightInfo> lights);
     void resetTrafficLights();
     void updateGuideInfo(GuideInfo info);
     void resetNaviInfo();

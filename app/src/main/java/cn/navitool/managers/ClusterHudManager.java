@@ -171,8 +171,8 @@ public class ClusterHudManager
         // [Refactor] Load initial sensor data directly from Manager (No more disk cache)
         loadInitialSensorData();
 
-        // [NEW] 从磁盘加载HUD布局，支持Headless启动
-        loadHudLayoutFromDisk();
+        // [REMOVED] loadHudLayoutFromDisk() - 已通过 loadSavedState() -> loadCachedHudLayout() 从 Config 加载
+        // 移除此重复调用以避免 HUD 布局被加载两次
 
         initAdaptApi();
         initDimInteraction(); // Restore missing call for Real HUD Mode Switch
@@ -811,17 +811,7 @@ public class ClusterHudManager
         }
     }
 
-    // [Refactor] Implement methods for new sensors
-    @Override
-    public void onTripDataChanged(float distanceKm, long durationSec, float avgFuel) {
-         if (mPresentationManager != null) {
-            mMainHandler.post(() -> {
-                if (mPresentationManager != null) {
-                    mPresentationManager.updateTripInfo(distanceKm, durationSec);
-                }
-            });
-        }
-    }
+    // [REMOVED] onTripDataChanged - Soft Trip 功能已完全移除
 
     @Override
     public void onOdometerChanged(float odometer) {
@@ -1760,10 +1750,43 @@ public class ClusterHudManager
 
                 // Logging for verification
                 if (mPresentationManager.getWindow() != null) {
-                    DebugLogger.d(TAG, "Dialog Window Type: " + mPresentationManager.getWindow().getAttributes().type);
+                    android.view.WindowManager.LayoutParams attrs = mPresentationManager.getWindow().getAttributes();
+                    DebugLogger.d(TAG, "Dialog Window Type: " + attrs.type);
+                    DebugLogger.d(TAG, "Dialog Window Flags: 0x" + Integer.toHexString(attrs.flags));
+                    
+                    // 记录 Z-Order 相关信息
+                    // 注意：surfaceLayer 是系统内部字段，可能在不同 Android 版本有差异
+                    try {
+                        java.lang.reflect.Field layerField = attrs.getClass().getDeclaredField("surfaceLayer");
+                        layerField.setAccessible(true);
+                        int surfaceLayer = layerField.getInt(attrs);
+                        DebugLogger.d(TAG, "Dialog Surface Layer (Z-Order): " + surfaceLayer);
+                    } catch (NoSuchFieldException e) {
+                        DebugLogger.d(TAG, "Dialog Surface Layer: Not available (NoSuchFieldException)");
+                    } catch (Exception e) {
+                        DebugLogger.w(TAG, "Failed to get surface layer: " + e.getMessage());
+                    }
+                    
+                    // 记录其他窗口属性
+                    DebugLogger.d(TAG, "Dialog Window Token: " + attrs.token);
+                    DebugLogger.d(TAG, "Dialog Window Format: " + attrs.format);
                 }
 
                 mPresentationManager.setOnShowListener(dialog -> {
+                    // [NEW] 窗口显示后记录 Z-Order 层级 (此时数据更准确)
+                    if (mPresentationManager.getWindow() != null) {
+                        android.view.WindowManager.LayoutParams attrs = mPresentationManager.getWindow().getAttributes();
+                        DebugLogger.i(TAG, "[OnShow] Dialog Window Type: " + attrs.type);
+                        try {
+                            java.lang.reflect.Field layerField = attrs.getClass().getDeclaredField("surfaceLayer");
+                            layerField.setAccessible(true);
+                            int surfaceLayer = layerField.getInt(attrs);
+                            DebugLogger.i(TAG, "[OnShow] Dialog Surface Layer (Z-Order): " + surfaceLayer);
+                        } catch (Exception e) {
+                            DebugLogger.d(TAG, "[OnShow] Dialog Surface Layer: N/A (" + e.getClass().getSimpleName() + ")");
+                        }
+                    }
+                    
                     // Logic Fix: Apply Persistence Mode (Dashboard vs List)
                     if (mIsDashboardMode) {
                         mPresentationManager.enableClusterDashboard();
@@ -2784,11 +2807,9 @@ public class ClusterHudManager
     public void onTrafficLightUpdate(List<TrafficLightInfo> lights) {
         mMainHandler.post(() -> {
             if (mPresentationManager != null && lights != null) {
-                // Update specific inputs (Floating Window / Presentation)
-                // Note: We iterate to update the relevant Views in PresentationManager
-                for (TrafficLightInfo info : lights) {
-                     mPresentationManager.updateTrafficLight(info);
-                }
+                // [FIX] Pass entire list to PresentationManager at once
+                // This fixes the bug where only the last light was displayed
+                mPresentationManager.updateTrafficLight(lights);
             }
         });
     }

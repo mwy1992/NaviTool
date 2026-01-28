@@ -246,7 +246,30 @@ public class MediaNotificationListener extends NotificationListenerService {
             Notification notification = sbn.getNotification();
             Bundle extras = notification.extras;
             if (extras != null) {
-                Bitmap largeIcon = extras.getParcelable(Notification.EXTRA_LARGE_ICON);
+                Bitmap largeIcon = null;
+                // [FIX] 兼容 API 23+: EXTRA_LARGE_ICON 可能是 Icon 或 Bitmap
+                Object iconObj = extras.getParcelable(Notification.EXTRA_LARGE_ICON);
+                if (iconObj instanceof Bitmap) {
+                    largeIcon = (Bitmap) iconObj;
+                } else if (iconObj instanceof android.graphics.drawable.Icon) {
+                    // 将 Icon 转换为 Bitmap
+                    try {
+                        android.graphics.drawable.Icon icon = (android.graphics.drawable.Icon) iconObj;
+                        android.graphics.drawable.Drawable drawable = icon.loadDrawable(MediaNotificationListener.this);
+                        if (drawable != null) {
+                            int width = drawable.getIntrinsicWidth();
+                            int height = drawable.getIntrinsicHeight();
+                            if (width > 0 && height > 0) {
+                                largeIcon = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                                android.graphics.Canvas canvas = new android.graphics.Canvas(largeIcon);
+                                drawable.setBounds(0, 0, width, height);
+                                drawable.draw(canvas);
+                            }
+                        }
+                    } catch (Exception e) {
+                        DebugLogger.w(TAG, "Failed to convert Icon to Bitmap: " + e.getMessage());
+                    }
+                }
                 if (largeIcon != null) {
                     DebugLogger.d(TAG, "Captured LargeIcon from Notification for fallback: " + sbn.getPackageName());
                     mFallbackNotificationBitmap = largeIcon;

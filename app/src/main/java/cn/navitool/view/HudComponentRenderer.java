@@ -219,8 +219,16 @@ public class HudComponentRenderer {
 
     private static View createTrafficLightComponent(Context context, float scale) {
         TrafficLightView tlv = new TrafficLightView(context);
-        // Preview state: Red, 66s, Straight
-        tlv.updateState(TrafficLightView.STATUS_RED, 66, 0);
+        
+        // [UPDATE] Preview state: 3 lights - Left Red, Straight Green, Right Green, all 66s
+        java.util.List<TrafficLightView.LightState> previewStates = new java.util.ArrayList<>();
+        previewStates.add(new TrafficLightView.LightState(TrafficLightView.STATUS_RED, 66, 1));   // Left - Red
+        previewStates.add(new TrafficLightView.LightState(TrafficLightView.STATUS_GREEN, 66, 0)); // Straight - Green
+        previewStates.add(new TrafficLightView.LightState(TrafficLightView.STATUS_GREEN, 66, 2)); // Right - Green
+        tlv.updateMultiLights(previewStates);
+        
+        // HUD uses right alignment (extends left)
+        tlv.setAlignment(TrafficLightView.ALIGN_RIGHT);
         tlv.setPreviewScale(scale);
 
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(

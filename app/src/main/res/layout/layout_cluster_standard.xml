@@ -94,4 +94,132 @@
         android:textSize="48sp"
         android:textStyle="bold"/>
 
+    <!-- ============================================================ -->
+    <!-- CENTER GROUP: Traffic Light & Navigation Info -->
+    <!-- ============================================================ -->
+
+    <!-- Traffic Light Container -->
+    <FrameLayout
+        android:id="@+id/standardNaviTrafficContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal|top"
+        android:layout_marginTop="120dp"
+        android:visibility="gone">
+
+        <cn.navitool.view.TrafficLightView
+            android:id="@+id/standardTrafficLightMulti"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center" />
+    </FrameLayout>
+
+    <!-- Navigation Info Container (Vertical: CurrentRoad, Destination, Distance/ETA) -->
+    <LinearLayout
+        android:id="@+id/standardNaviInfoContainer"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal|top"
+        android:layout_marginTop="220dp"
+        android:orientation="vertical"
+        android:gravity="center_horizontal">
+
+        <!-- Line 1: Current Road -->
+        <TextView
+            android:id="@+id/standardCurrentRoad"
+            android:layout_width="200dp"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:textSize="20sp"
+            android:textColor="#FFFFFF"
+            android:maxLines="1"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="12sp"
+            android:autoSizeMaxTextSize="20sp"
+            android:layout_marginBottom="2dp"
+            android:visibility="gone"/>
+
+        <!-- Line 2: Destination -->
+        <TextView
+            android:id="@+id/standardDestination"
+            android:layout_width="200dp"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:textSize="20sp"
+            android:textColor="#FFFFFF"
+            android:maxLines="1"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="12sp"
+            android:autoSizeMaxTextSize="20sp"
+            android:layout_marginBottom="2dp"
+            android:visibility="gone"/>
+
+        <!-- Line 3: Existing Info Row (Distance & ETA) -->
+        <LinearLayout
+            android:id="@+id/standardNaviInfoRow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/standardNaviDistance"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="20sp"
+                android:textColor="#FFFFFF"
+                android:layout_marginEnd="16dp"/>
+
+            <TextView
+                android:id="@+id/standardNaviEta"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="20sp"
+                android:textColor="#AAAAAA"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 底部信息区 (Odometer & Fuel) -->
+    <LinearLayout
+        android:id="@+id/standardInfoBottom"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="32dp"
+        android:orientation="horizontal">
+        <!-- 总里程 (Odometer) -->
+        <TextView
+            android:id="@+id/standardOdometer"
+            android:layout_width="170dp"
+            android:layout_height="wrap_content"
+            android:gravity="start"
+            android:text="总里程: --km"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp" />
+        <!-- 油量 -->
+        <TextView
+            android:id="@+id/standardFuelRemain"
+            android:layout_width="170dp"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:text="油量: --L"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+    <!-- 车内温度 (右上角) -->
+    <TextView
+        android:id="@+id/standardTempIn"
+        android:layout_width="120dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginEnd="100dp"
+        android:layout_marginTop="12dp"
+        android:gravity="start"
+        android:text="In: --°C"
+        android:textColor="#AAAAAA"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
 </FrameLayout>
