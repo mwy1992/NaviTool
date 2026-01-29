@@ -393,18 +393,14 @@ public class KeepAliveAccessibilityService extends AccessibilityService implemen
     private final Runnable mStartDrivingTask = () -> {
         DebugLogger.d(TAG, "Engine ready (3s delayed). Starting Driving View...");
 
-        // 1. Ensure UI is ready (Cluster + HUD)
-        // Note: Presentation stays on top (TYPE_APPLICATION_OVERLAY) regardless of delay
-        ClusterHudManager.getInstance(this).ensureUiVisible();
-
-        // 2. Apply Logic (Switch Mode)
-        DebugLogger.i(TAG, "Ignition + 3s: Auto-Switching to NaviMode 3 (Instrument Mode)");
-        ClusterHudManager.getInstance(this).applyNaviMode(3);
+        // [FIX 2026-01-29] Simplified Startup Pipeline
+        // All logic consolidated into ensureStartUp(): NaviMode -> DisplayContext -> Presentation -> Type 2038
+        ClusterHudManager.getInstance(this).ensureStartUp();
         
-        // 3. Attempt to execute command
-        // This will attempt to use ADB Shell to execute the command if 'su' fails directly
-        DebugLogger.i(TAG, "Executing command: " + CMD_FORCE_STOP_HUD);
-        AdbShell.getInstance(this).exec(CMD_FORCE_STOP_HUD);
+        // [DISABLED 2026-01-29] 暂时禁用，观察启动是否稳定后再决定是否启用
+        // Attempt to execute command (Kill stock HUD)
+        // DebugLogger.i(TAG, "Executing command: " + CMD_FORCE_STOP_HUD);
+        // AdbShell.getInstance(this).exec(CMD_FORCE_STOP_HUD);
     };
 
     public void handleIgnitionDriving() { // Made Public for Receiver

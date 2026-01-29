@@ -64,6 +64,31 @@ public class HudComponentRenderer {
             case "traffic_light":
                 view = createTrafficLightComponent(context, scale);
                 break;
+            
+            // [Step 3] New Component Types
+            case "traffic_light_cruise":
+                view = createCruiseTrafficLightComponent(context, scale);
+                break;
+            
+            case "location_current": {
+                // [FIX] Use cached data when available, fallback to example text
+                cn.navitool.managers.NaviInfoManager nim = cn.navitool.managers.NaviInfoManager.getInstance();
+                cn.navitool.model.GuideInfo cachedInfo = (nim != null) ? nim.getCachedGuideInfo() : null;
+                String currentRoad = (cachedInfo != null && cachedInfo.currentRoadName != null && !cachedInfo.currentRoadName.isEmpty()) 
+                        ? cachedInfo.currentRoadName : "当前路名示例";
+                view = createGenericTextComponent(context, type, currentRoad, scale, color);
+                break;
+            }
+            
+            case "location_dest": {
+                // [FIX] Use cached data when available, fallback to example text
+                cn.navitool.managers.NaviInfoManager nim = cn.navitool.managers.NaviInfoManager.getInstance();
+                cn.navitool.model.GuideInfo cachedInfo = (nim != null) ? nim.getCachedGuideInfo() : null;
+                String destName = (cachedInfo != null && cachedInfo.destinationName != null && !cachedInfo.destinationName.isEmpty()) 
+                        ? cachedInfo.destinationName : "目的地示例";
+                view = createGenericTextComponent(context, type, destName, scale, color);
+                break;
+            }
 
             case "turn_signal":
                 view = createTurnSignalComponent(context, scale, data.scale);
@@ -142,7 +167,7 @@ public class HudComponentRenderer {
         float textSize = 22 * scale; // Base 22px for real HUD
 
         // Title
-        TextView tvTitle = new TextView(context);
+        TightTextView tvTitle = new TightTextView(context);
         tvTitle.setText(title);
         tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSize);
         tvTitle.setTextColor(color);
@@ -155,7 +180,7 @@ public class HudComponentRenderer {
 
         // Artist (only for song_2line)
         if ("song_2line".equals(type)) {
-            TextView tvArtist = new TextView(context);
+            TightTextView tvArtist = new TightTextView(context);
             tvArtist.setText(artist);
             tvArtist.setTextSize(TypedValue.COMPLEX_UNIT_PX, textSize);
             tvArtist.setTextColor(color);
@@ -168,7 +193,7 @@ public class HudComponentRenderer {
             LinearLayout.LayoutParams artistParams = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
-            artistParams.topMargin = (int) (-4 * scale); // Reduce line spacing
+            artistParams.topMargin = (int) (2 * scale); // [FIX] Adjusted line spacing to prevent overlap with TightTextView
             ll.addView(tvArtist, artistParams);
         }
 
@@ -193,10 +218,11 @@ public class HudComponentRenderer {
         tvEmoji.setBackgroundColor(Color.TRANSPARENT);
         tvEmoji.setPadding(0, 0, (int) (4 * scale), 0);
         tvEmoji.setIncludeFontPadding(false);
-
+        
         // Value
-        TextView tvValue = new TextView(context);
-        String valText = text.replace("⛽", "").trim();
+        TightTextView tvValue = new TightTextView(context);
+        // Replace Emoji and standard Pipe '|' with 'I' (shorter vertical line) for better alignment
+        String valText = text.replace("⛽", "").replace("|", "I").trim();
         tvValue.setText(" " + valText);
         tvValue.setTextSize(TypedValue.COMPLEX_UNIT_PX, 24 * scale);
         tvValue.setTextColor(color);
@@ -204,6 +230,9 @@ public class HudComponentRenderer {
         tvValue.setIncludeFontPadding(false);
         tvValue.setSingleLine(true);
         tvValue.setEllipsize(TextUtils.TruncateAt.END);
+        // [FIX] Ensure text aligns to right edge of the view (removing Advance vs Ink gap)
+        tvValue.setGravity(Gravity.END);
+        tvValue.setPadding(0, 0, 0, 0);
 
         ll.addView(tvEmoji);
         ll.addView(tvValue);
@@ -220,15 +249,8 @@ public class HudComponentRenderer {
     private static View createTrafficLightComponent(Context context, float scale) {
         TrafficLightView tlv = new TrafficLightView(context);
         
-        // [UPDATE] Preview state: 3 lights - Left Red, Straight Green, Right Green, all 66s
-        java.util.List<TrafficLightView.LightState> previewStates = new java.util.ArrayList<>();
-        previewStates.add(new TrafficLightView.LightState(TrafficLightView.STATUS_RED, 66, 1));   // Left - Red
-        previewStates.add(new TrafficLightView.LightState(TrafficLightView.STATUS_GREEN, 66, 0)); // Straight - Green
-        previewStates.add(new TrafficLightView.LightState(TrafficLightView.STATUS_GREEN, 66, 2)); // Right - Green
-        tlv.updateMultiLights(previewStates);
-        
-        // HUD uses right alignment (extends left)
-        tlv.setAlignment(TrafficLightView.ALIGN_RIGHT);
+        // [RESTORE] Preview state: Single Red Light, 66s, Straight (Original Style)
+        tlv.updateState(TrafficLightView.STATUS_RED, 66, 0);
         tlv.setPreviewScale(scale);
 
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
@@ -237,6 +259,24 @@ public class HudComponentRenderer {
         tlv.setLayoutParams(params);
 
         return tlv;
+    }
+    
+    /**
+     * [Step 3] 创建巡航模式红绿灯组件 (矩阵样式)
+     */
+    private static View createCruiseTrafficLightComponent(Context context, float scale) {
+        MatrixTrafficLightView mtv = new MatrixTrafficLightView(context);
+        
+        // Preview: Show sample data (Left Red, Straight Green, Right Red)
+        mtv.setPreviewData();
+        mtv.setPreviewScale(scale);
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT);
+        mtv.setLayoutParams(params);
+
+        return mtv;
     }
 
     private static View createTurnSignalComponent(Context context, float scale, float componentScale) {
@@ -378,7 +418,7 @@ public class HudComponentRenderer {
     }
 
     private static View createTimeComponent(Context context, float scale, int color) {
-        TextClock tc = new TextClock(context);
+        TightTextClock tc = new TightTextClock(context);
         tc.setFormat12Hour("HH:mm");
         tc.setFormat24Hour("HH:mm");
         tc.setTimeZone(null);
@@ -396,7 +436,7 @@ public class HudComponentRenderer {
     }
 
     private static View createGearComponent(Context context, String text, float scale, int color, boolean isPreview) {
-        TextView tv = new TextView(context);
+        TightTextView tv = new TightTextView(context);
         tv.setText(text.isEmpty() ? "P" : text);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, 48 * scale);
         tv.setTextColor(color);
@@ -430,7 +470,7 @@ public class HudComponentRenderer {
     }
 
     private static View createRpmComponent(Context context, String text, float scale, int color) {
-        TextView tv = new TextView(context);
+        TightTextView tv = new TightTextView(context);
         tv.setText(text);
         tv.setBackgroundColor(Color.TRANSPARENT);
         tv.setSingleLine(true);
@@ -448,7 +488,7 @@ public class HudComponentRenderer {
     }
 
     private static View createGenericTextComponent(Context context, String type, String text, float scale, int color) {
-        TextView tv = new TextView(context);
+        TightTextView tv = new TightTextView(context);
         tv.setText(text);
         tv.setTextColor(color);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, 24 * scale);
@@ -469,6 +509,13 @@ public class HudComponentRenderer {
         } else if ("range".equals(type)) {
             tv.setGravity(Gravity.END);
             params.width = (int) (120 * scale);
+        } else if ("location_current".equals(type) || "location_dest".equals(type)) {
+            // [Step 3] Location components - wider for road names, 22px like song
+            tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, 22 * scale); // Match song component size
+            tv.setGravity(Gravity.START);
+            params.width = (int) (200 * scale);
+            tv.setSingleLine(true);
+            tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
         }
 
         tv.setLayoutParams(params);
@@ -476,7 +523,7 @@ public class HudComponentRenderer {
     }
 
     private static View createDefaultTextView(Context context, String text, int color) {
-        TextView tv = new TextView(context);
+        TightTextView tv = new TightTextView(context);
         tv.setText(text);
         tv.setTextColor(color);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_PX, 24);

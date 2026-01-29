@@ -41,6 +41,27 @@ public class KeyHandlerManager {
     private static final int ONEOS_KEY_MEDIA_PP = 200085;
     private static final int ONEOS_KEY_WECHAT = 200400;
 
+    // [New] System Media Whitelist (Apps natively supported by system)
+    private static final String[] SYSTEM_MEDIA_WHITELIST = {
+            "com.tencent.wecarflow",           // Tencent WeCarFlow
+            "com.flyme.auto.music",            // Meizu Music
+            "com.netease.cloudmusic.iot",      // NetEase Cloud Music (Car)
+            "cn.kuwo.kwmusiccar",              // Kuwo Music
+            "com.kugou.android.auto",          // Kugou Music
+            "com.sohu.newsclient",             // Sohu News
+            "com.arcvideo.car.video",          // Video App
+            "com.flyme.auto.browser",          // Meizu Browser
+            "com.autoegg",                     // AutoEgg
+            "io.dushu.car",                    // Dushu FanDeng
+            "com.ximalaya.ting.android.car.ecarx", // Ximalaya
+            "com.tencent.qqlive.audiobox",     // Tencent Video/Audio Box
+            "com.geely.gc.cloudautoclient",    // Geely Cloud
+            "com.bytedance.byteautoservice",   // ByteDance / Huoshan
+            "com.bilibili.bilithings",         // Bilibili
+            "com.thunder.carplay",             // Thunder
+            "cn.cmvideo.car.play"              // Migu Video
+    };
+
     private KeyHandlerManager(Context context) {
         // [FIX] Use Service Context directly to allow background callbacks (Bug 5)
         this.mContext = context; // context.getApplicationContext();
@@ -236,16 +257,34 @@ public class KeyHandlerManager {
 
     // --- Key Handling Logic ---
 
-    public void handleShortClick(int keyCode) {
-        DebugLogger.i(TAG, "handleShortClick: " + keyCode);
-
-        if (keyCode == ONEOS_KEY_MEDIA_NEXT || keyCode == ONEOS_KEY_MEDIA_PREV || keyCode == ONEOS_KEY_MEDIA_PP) {
-            SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
-            if (!prefs.getBoolean("steering_wheel_control_v2", true)) {
-                DebugLogger.d(TAG, "Steering wheel control disabled");
-                return;
+    private boolean isPackageWhitelisted(String packageName) {
+        if (packageName == null || packageName.isEmpty()) return false;
+        for (String whitelistedPkg : SYSTEM_MEDIA_WHITELIST) {
+            if (packageName.equals(whitelistedPkg)) {
+                return true;
             }
         }
+        return false;
+    }
+
+    public void handleShortClick(int keyCode) {
+        // [Step 1] Check Global Switch first
+        SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
+        if (!prefs.getBoolean("steering_wheel_control_v2", true)) {
+            // DebugLogger.d(TAG, "Steering wheel control disabled");
+            return;
+        }
+
+        // [Step 2] Check Whitelist
+        if (keyCode == ONEOS_KEY_MEDIA_NEXT || keyCode == ONEOS_KEY_MEDIA_PREV || keyCode == ONEOS_KEY_MEDIA_PP) {
+            cn.navitool.service.MediaInfo currentMedia = ClusterHudManager.getInstance(mContext).getCurrentMediaInfo();
+            if (currentMedia != null && isPackageWhitelisted(currentMedia.packageName)) {
+                DebugLogger.d(TAG, "Skipping control for whitelisted app: " + currentMedia.packageName);
+                return; // Let system handle native apps
+            }
+        }
+
+        DebugLogger.i(TAG, "handleShortClick: " + keyCode);
 
         switch (keyCode) {
             case ONEOS_KEY_MEDIA_NEXT:

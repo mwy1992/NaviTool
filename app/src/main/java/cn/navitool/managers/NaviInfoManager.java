@@ -63,6 +63,9 @@ public class NaviInfoManager {
     private long mLastNaviUpdateTime = 0;
     private static final long NAVI_TIMEOUT_MS = 5000;
     private Runnable mWatchdogRunnable;
+    
+    // [FIX] Cached GuideInfo for HUD preview
+    private GuideInfo mCachedGuideInfo;
 
     private NaviInfoManager(Context context) {
         mContext = context.getApplicationContext();
@@ -95,6 +98,22 @@ public class NaviInfoManager {
             }
         }
         return instance;
+    }
+    
+    /**
+     * [FIX] Get instance without context (for HUD preview use)
+     * Returns null if not initialized.
+     */
+    public static NaviInfoManager getInstance() {
+        return instance;
+    }
+    
+    /**
+     * [FIX] Get cached GuideInfo for HUD preview
+     * @return Cached GuideInfo or null if not available
+     */
+    public GuideInfo getCachedGuideInfo() {
+        return mCachedGuideInfo;
     }
     
     // --- Listener Management ---
@@ -328,6 +347,9 @@ public class NaviInfoManager {
          info.nextRoadName = data.optString("nextRoadName", "");
          info.destinationName = data.optString("endPOIName", ""); // 目的地
          // info.etaText = ... 
+         
+         // [FIX] Cache GuideInfo for HUD preview
+         mCachedGuideInfo = info;
          
          // [Logic] Determine status based on distance/time
          if (info.routeRemainDis > 0 || info.routeRemainTime > 0) {

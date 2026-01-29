@@ -56,6 +56,9 @@ public abstract class BaseThemeController implements IClusterTheme {
 
     // Speed Logic
     protected float mLastSpeed = -1f;
+    
+    // [FIX 2026-01-29 Phase 3] Navigation Status for Cruise Logic
+    protected int mNaviStatus = NaviInfoManager.STATUS_IDLE;
 
     @Override
     public void bindViews(View rootView) {
@@ -229,8 +232,19 @@ public abstract class BaseThemeController implements IClusterTheme {
             return;
         }
         
-        if (mNaviInfoRow != null && mNaviInfoRow.getVisibility() != View.VISIBLE) {
-            mNaviInfoRow.setVisibility(View.VISIBLE);
+        // [FIX 2026-01-29 Phase 3] Cruise Mode Logic: Only show Distance/ETA row in strict NAVI mode
+        boolean showNaviInfo = (mNaviStatus == NaviInfoManager.STATUS_NAVI);
+        
+        if (mNaviInfoRow != null) {
+            if (showNaviInfo) {
+                if (mNaviInfoRow.getVisibility() != View.VISIBLE) {
+                    mNaviInfoRow.setVisibility(View.VISIBLE);
+                }
+            } else {
+                if (mNaviInfoRow.getVisibility() != View.GONE) {
+                    mNaviInfoRow.setVisibility(View.GONE);
+                }
+            }
         }
 
         if (mNaviDistance != null) {
@@ -286,6 +300,10 @@ public abstract class BaseThemeController implements IClusterTheme {
 
     @Override public void setDayMode(boolean isDay) {}
     @Override public void setNavigating(boolean isNavigating) {}
+    /** [FIX 2026-01-29 Phase 3] Store Status to control UI logic */
+    @Override public void setNaviStatus(int status) {
+        this.mNaviStatus = status;
+    }
     @Override public void updateRpm(float rpm) {}
     @Override public void updateTripInfo(float distance, long duration) {}
     @Override public void updateTirePressure(int index, float pressure) {}
@@ -310,7 +328,8 @@ public abstract class BaseThemeController implements IClusterTheme {
     @Override
     public void updateIndoorTemp(float temp) {
         if (mTempInText != null) {
-            mTempInText.setText(String.format(java.util.Locale.US, "In: %.0f°C", temp));
+            // [FIX 2026-01-29 Phase 3] Use %.1f to match runtime format
+            mTempInText.setText(String.format(java.util.Locale.US, "In: %.1f°C", temp));
         }
     }
 

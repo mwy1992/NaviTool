@@ -112,6 +112,14 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center" />
+        
+        <!-- [Step 4] 矩阵红绿灯 (巡航模式) -->
+        <cn.navitool.view.MatrixTrafficLightView
+            android:id="@+id/standardCruiseTrafficLight"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone"/>
     </FrameLayout>
 
     <!-- Navigation Info Container (Vertical: CurrentRoad, Destination, Distance/ETA) -->

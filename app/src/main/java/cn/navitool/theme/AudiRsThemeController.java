@@ -380,8 +380,8 @@ public class AudiRsThemeController extends BaseThemeController {
         int viewHeight = mPointer.getHeight();
 
         if (viewWidth <= 0 || viewHeight <= 0) {
-            mPointer.setVisibility(View.VISIBLE);
-            mPointer.disableClip();
+            // [FIX 2026-01-29 Phase 2] Hide pointer when dimensions not ready to prevent 0-pos artifact
+            mPointer.setVisibility(View.INVISIBLE);
             return;
         }
 

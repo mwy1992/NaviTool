@@ -19,6 +19,9 @@ public interface IClusterTheme {
     void setDayMode(boolean isDay);
     void setNavigating(boolean isNavigating);
     
+    /** [FIX 2026-01-29 Phase 2] For cruise mode logic (hide Distance/ETA) */
+    void setNaviStatus(int status);
+    
     // Driving Data
     void updateSpeed(float speed);
     void updateRpm(float rpm);

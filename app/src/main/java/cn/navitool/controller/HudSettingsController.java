@@ -633,12 +633,22 @@ public class HudSettingsController {
 
                         float offsetTop = 0;
                         float offsetBottom = 0;
+                        // [FIX] Disabled tolerance for Preview Editor as well
+                        /*
                         float FACTOR_TOP = 0.18f;
                         float FACTOR_BOTTOM = 0.2f;
 
                         float minX = 0;
                         float maxXLimit = parentWidth - viewWidth;
 
+                        // [Feature] Relax bounds for guide_line (50% width tolerance)
+                        if (isGuideLine) {
+                            minX = -0.5f * viewWidth;
+                            maxXLimit = parentWidth - (0.5f * viewWidth);
+                        }
+                        */
+                        float minX = 0;
+                        float maxXLimit = parentWidth - viewWidth;
                         // [Feature] Relax bounds for guide_line (50% width tolerance)
                         if (isGuideLine) {
                             minX = -0.5f * viewWidth;
@@ -652,6 +662,7 @@ public class HudSettingsController {
 
                         // ... (rest of logic)
 
+                        /*
                         if (isMusicComponent) {
                              offsetTop = 0;
                              offsetBottom = 0;
@@ -660,37 +671,31 @@ public class HudSettingsController {
                              offsetTop = 10f;
                              offsetBottom = 10f;
                         } else if (isGuideLine) {
-                            newY = 0; // Force Top to 0
-
-                            if (view instanceof ViewGroup) {
-                                ViewGroup vg = (ViewGroup) view;
-                                for (int k = 0; k < vg.getChildCount(); k++) {
-                                    View child = vg.getChildAt(k);
-                                    if (child instanceof TextView) {
-                                        int centerX = (int) (newX + view.getWidth() / 2f);
-                                        ((TextView) child).setText("" + centerX);
-                                    }
-                                }
-                            }
+                             newY = 0; // Force Top to 0
+                             // ...
                         } else if (view instanceof TextView) {
                             float scaledTextSize = ((TextView) view).getTextSize() * view.getScaleY();
                             offsetTop = scaledTextSize * FACTOR_TOP;
                             offsetBottom = scaledTextSize * FACTOR_BOTTOM;
                         } else if (view instanceof LinearLayout) {
-                            LinearLayout ll = (LinearLayout) view;
-                            if (ll.getChildCount() > 0) {
-                                View child = ll.getChildAt(0);
-                                if (ll.getChildCount() > 1 && ll.getChildAt(1) instanceof TextView) {
-                                    child = ll.getChildAt(1);
-                                }
-
-                                if (child instanceof TextView) {
-                                    float scaledTextSize = ((TextView) child).getTextSize() * view.getScaleY();
-                                    offsetTop = scaledTextSize * FACTOR_TOP;
-                                    offsetBottom = scaledTextSize * FACTOR_BOTTOM;
-                                }
-                            }
+                             // ...
                         }
+                        */
+                        
+                        // [FIX] Simplified Logic without Tolerance
+                         if (isGuideLine) {
+                             newY = 0; // Force Top to 0
+                             if (view instanceof ViewGroup) {
+                                 ViewGroup vg = (ViewGroup) view;
+                                 for (int k = 0; k < vg.getChildCount(); k++) {
+                                     View child = vg.getChildAt(k);
+                                     if (child instanceof TextView) {
+                                         int centerX = (int) (newX + view.getWidth() / 2f);
+                                         ((TextView) child).setText("" + centerX);
+                                     }
+                                 }
+                             }
+                         }
 
                         if (newY < -offsetTop)
                             newY = -offsetTop;
@@ -1108,6 +1113,15 @@ public class HudSettingsController {
                             cn.navitool.service.MediaNotificationListener.ACTION_REQUEST_MEDIA_REBROADCAST));
                 } else if ("traffic_light".equals(type)) {
                     createAndAddHudComponent("traffic_light", "红绿灯组件", 0, 0);
+                } else if ("traffic_light_cruise".equals(type)) {
+                    // [Step 3] Cruise Mode Traffic Light
+                    createAndAddHudComponent("traffic_light_cruise", "巡航红绿灯", 0, 0);
+                } else if ("location_current".equals(type)) {
+                    // [Step 3] Current Location
+                    createAndAddHudComponent("location_current", "当前路名", 0, 0);
+                } else if ("location_dest".equals(type)) {
+                    // [Step 3] Destination
+                    createAndAddHudComponent("location_dest", "目的地", 0, 0);
                 } else if ("navi_arrival_time".equals(type)) {
                     createAndAddHudComponent("navi_arrival_time", "12:30", 0, 0);
                 } else if ("navi_distance_remaining".equals(type)) {
@@ -1142,6 +1156,9 @@ public class HudSettingsController {
 
         // Group 3: Navigation
         addButton.accept(colNavi, "导航红绿灯", "traffic_light");
+        addButton.accept(colNavi, "巡航红绿灯", "traffic_light_cruise");  // [Step 3] New
+        addButton.accept(colNavi, "当前位置", "location_current");        // [Step 3] New
+        addButton.accept(colNavi, "目的地", "location_dest");             // [Step 3] New
         addButton.accept(colNavi, "到达时间", "navi_arrival_time");
         addButton.accept(colNavi, "剩余里程", "navi_distance_remaining");
 

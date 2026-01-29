@@ -570,9 +570,120 @@ public class PresentationManager extends android.app.Presentation {
         // Pass full list to theme controller
         if (mThemeController != null) mThemeController.updateTrafficLight(lights);
         
-        // Generic Text Update (for Debug/HUD list if used) - use first item
+        // [FIX 2026-01-29] HUD Multi-Light Support: Convert list to LightState and update all lights
         if (lights != null && !lights.isEmpty()) {
-            updateTrafficLightGeneric(mRealHudComponents, lights.get(0));
+            updateTrafficLightGenericMulti(mRealHudComponents, lights);
+        }
+    }
+    /**
+     * [FIX 2026-01-29 Step 2] Navigation Mode Traffic Light Update (Single Capsule Style)
+     * Routes to TrafficLightView components with SINGLE light only.
+     */
+    public void updateNaviTrafficLight(java.util.List<TrafficLightInfo> lights) {
+        if (!mIsNavigating) return;
+        
+        mMainHandler.removeCallbacks(mTrafficLightTimeoutRunnable);
+        mMainHandler.postDelayed(mTrafficLightTimeoutRunnable, 3000);
+        
+        mLatestTrafficLightList = lights;
+        
+        // Get first light only (Navigation mode = single light)
+        TrafficLightInfo firstLight = (lights != null && !lights.isEmpty()) ? lights.get(0) : null;
+        
+        // Floating window: first light
+        updateFloatingTrafficLightLogic(firstLight);
+        
+        // Theme controller: TrafficLightView (single capsule) - pass first light only
+        if (mThemeController != null && firstLight != null) {
+            java.util.List<TrafficLightInfo> singleLightList = new java.util.ArrayList<>();
+            singleLightList.add(firstLight);
+            mThemeController.updateTrafficLight(singleLightList);
+        } else if (mThemeController != null) {
+            mThemeController.resetTrafficLights();
+        }
+        
+        // HUD: TrafficLightView components - single light update
+        updateTrafficLightGeneric(mRealHudComponents, firstLight);
+        
+        // [Step 2] Hide Matrix view if visible
+        hideCruiseTrafficLightViews();
+    }
+    
+    /**
+     * [FIX 2026-01-29 Step 2] Cruise Mode Traffic Light Update (Matrix Style)
+     * Routes to MatrixTrafficLightView components.
+     */
+    public void updateCruiseTrafficLight(java.util.List<TrafficLightInfo> lights) {
+        if (!mIsNavigating) return;
+        
+        mMainHandler.removeCallbacks(mTrafficLightTimeoutRunnable);
+        mMainHandler.postDelayed(mTrafficLightTimeoutRunnable, 3000);
+        
+        mLatestTrafficLightList = lights;
+        
+        // Floating window: first light (still use capsule style for floating)
+        if (lights != null && !lights.isEmpty()) {
+            updateFloatingTrafficLightLogic(lights.get(0));
+        } else {
+            updateFloatingTrafficLightLogic(null);
+        }
+        
+        // [Step 2] Theme controller: MatrixTrafficLightView
+        if (mThemeController != null) {
+            updateCruiseTrafficLightForTheme(lights);
+        }
+        
+        // [Step 2] HUD: MatrixTrafficLightView components
+        updateCruiseTrafficLightGeneric(mRealHudComponents, lights);
+        
+        // [Step 2] Hide single-capsule views if visible
+        hideNaviTrafficLightViews();
+    }
+    
+    // [Step 2] Helper: Hide Navi traffic light views (TrafficLightView)
+    private void hideNaviTrafficLightViews() {
+        if (mThemeController != null) mThemeController.resetTrafficLights();
+    }
+    
+    // [Step 2] Helper: Hide Cruise traffic light views (MatrixTrafficLightView)
+    private void hideCruiseTrafficLightViews() {
+        // [FIX] Reuse generic logic to hide traffic_light_cruise
+        hideGenericTrafficLightComponents(mRealHudComponents);
+    }
+    
+    // [Step 2] Helper: Update Theme's Matrix view
+    private void updateCruiseTrafficLightForTheme(java.util.List<TrafficLightInfo> lights) {
+        // Delegate to theme controller's matrix view (to be added in layout integration)
+        // For now, fall back to regular update
+        if (mThemeController != null) mThemeController.updateTrafficLight(lights);
+    }
+    
+    // [Step 2] Helper: Update HUD's Matrix components
+    private void updateCruiseTrafficLightGeneric(java.util.List<android.view.View> viewList, java.util.List<TrafficLightInfo> lights) {
+        if (viewList == null || lights == null) return;
+        
+        // Convert to MatrixTrafficLightView.LightState
+        java.util.List<cn.navitool.view.MatrixTrafficLightView.LightState> states = new java.util.ArrayList<>();
+        for (TrafficLightInfo info : lights) {
+            int mappedStatus = NaviInfoManager.mapStatus(info.status);
+            states.add(new cn.navitool.view.MatrixTrafficLightView.LightState(mappedStatus, info.redCountdown, info.direction));
+        }
+        
+        // Find and update MatrixTrafficLightView components
+        for (android.view.View v : viewList) {
+            Object tag = v.getTag();
+            if (tag instanceof ClusterHudManager.HudComponentData) {
+                ClusterHudManager.HudComponentData data = (ClusterHudManager.HudComponentData) tag;
+                if ("traffic_light_cruise".equals(data.type) && v instanceof cn.navitool.view.MatrixTrafficLightView) {
+                    cn.navitool.view.MatrixTrafficLightView mtv = (cn.navitool.view.MatrixTrafficLightView) v;
+                    if (states.isEmpty()) {
+                        mtv.setVisibility(android.view.View.GONE);
+                    } else {
+                        mtv.setVisibility(android.view.View.VISIBLE);
+                        mtv.updateLights(states);
+                    }
+                }
+            }
         }
     }
 
@@ -594,6 +705,14 @@ public class PresentationManager extends android.app.Presentation {
         
         // [FIX] Update floating window visibility immediately when state changes
         updateFloatingTrafficLightVisibility();
+    }
+    
+    /**
+     * [FIX 2026-01-29 Phase 2] Propagate exact NaviStatus to Theme Controller.
+     * Used for Cruise mode logic: hide Distance/ETA when not in NAVI mode.
+     */
+    public void setNaviStatus(int status) {
+        if (mThemeController != null) mThemeController.setNaviStatus(status);
     }
 
     public void updateSpeed(float speed) {
@@ -700,7 +819,9 @@ public class PresentationManager extends android.app.Presentation {
                 if ("navi_arrival_time".equals(data.type) || 
                     "navi_distance_remaining".equals(data.type) ||
                     "navi_current_road".equals(data.type) ||
-                    "navi_next_road".equals(data.type)) {
+                    "navi_next_road".equals(data.type) ||
+                    "location_current".equals(data.type) ||
+                    "location_dest".equals(data.type)) {
                     v.setVisibility(View.GONE);
                     if (v instanceof android.widget.TextView) {
                         ((android.widget.TextView) v).setText(""); // Clear text too
@@ -716,7 +837,7 @@ public class PresentationManager extends android.app.Presentation {
             Object tag = v.getTag();
             if (tag instanceof ClusterHudManager.HudComponentData) {
                 ClusterHudManager.HudComponentData data = (ClusterHudManager.HudComponentData) tag;
-                if ("traffic_light".equals(data.type)) {
+                if ("traffic_light".equals(data.type) || "traffic_light_cruise".equals(data.type)) {
                     v.setVisibility(View.GONE);
                 }
             }
@@ -953,9 +1074,7 @@ public class PresentationManager extends android.app.Presentation {
                     ClusterHudManager.HudComponentData data = (ClusterHudManager.HudComponentData) tag;
                     if ("traffic_light".equals(data.type) && v instanceof cn.navitool.view.TrafficLightView) {
                          cn.navitool.view.TrafficLightView tlv = (cn.navitool.view.TrafficLightView) v;
-                         // [FIX] HUD 使用右对齐，并设置3个槽位占位
-                         tlv.setMaxSlots(3);
-                         tlv.setAlignment(cn.navitool.view.TrafficLightView.ALIGN_RIGHT);
+                         // [RESTORE] Single light, no alignment
                          if (info == null) {
                              tlv.setVisibility(View.GONE);
                          } else {
@@ -964,6 +1083,42 @@ public class PresentationManager extends android.app.Presentation {
                              int mappedStatus = NaviInfoManager.mapStatus(info.status);
                              tlv.updateState(mappedStatus, info.redCountdown, info.direction);
                          }
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * [FIX 2026-01-29] HUD Multi-Light Support
+     * Convert List<TrafficLightInfo> to List<LightState> and update all lights together.
+     */
+    private void updateTrafficLightGenericMulti(List<View> viewList, java.util.List<TrafficLightInfo> lights) {
+        if (viewList == null || lights == null) return;
+        
+        // Convert to LightState list
+        java.util.List<cn.navitool.view.TrafficLightView.LightState> states = new java.util.ArrayList<>();
+        for (TrafficLightInfo info : lights) {
+            int mappedStatus = NaviInfoManager.mapStatus(info.status);
+            states.add(new cn.navitool.view.TrafficLightView.LightState(mappedStatus, info.redCountdown, info.direction));
+        }
+        
+        // Apply to all TrafficLightView components
+        for (View v : viewList) {
+            Object tag = v.getTag();
+            if (tag instanceof ClusterHudManager.HudComponentData) {
+                ClusterHudManager.HudComponentData data = (ClusterHudManager.HudComponentData) tag;
+                if ("traffic_light".equals(data.type) && v instanceof cn.navitool.view.TrafficLightView) {
+                    cn.navitool.view.TrafficLightView tlv = (cn.navitool.view.TrafficLightView) v;
+                    // [RESTORE] Single light, no alignment
+                    
+                    if (states.isEmpty()) {
+                        tlv.setVisibility(View.GONE);
+                    } else {
+                        tlv.setVisibility(View.VISIBLE);
+                        // [RESTORE] Use single updateState with first light
+                        cn.navitool.view.TrafficLightView.LightState first = states.get(0);
+                        tlv.updateState(first.status, first.time, first.direction);
                     }
                 }
             }
@@ -999,6 +1154,18 @@ public class PresentationManager extends android.app.Presentation {
                     if (mIsNavigating) view.setVisibility(View.VISIBLE);
                 } else if ("navi_current_road".equals(data.type) || "navi_next_road".equals(data.type)) {
                     // [FIX] Also ensure road names are visible
+                    if (mIsNavigating) view.setVisibility(View.VISIBLE);
+                } else if ("location_current".equals(data.type)) {
+                    // [Step 3] Current location - bind to currentRoadName
+                    if (info.currentRoadName != null && !info.currentRoadName.isEmpty()) {
+                        ((TextView) view).setText(info.currentRoadName);
+                    }
+                    if (mIsNavigating) view.setVisibility(View.VISIBLE);
+                } else if ("location_dest".equals(data.type)) {
+                    // [Step 3] Destination - bind to destinationName
+                    if (info.destinationName != null && !info.destinationName.isEmpty()) {
+                        ((TextView) view).setText(info.destinationName);
+                    }
                     if (mIsNavigating) view.setVisibility(View.VISIBLE);
                 }
             }
@@ -1078,9 +1245,7 @@ public class PresentationManager extends android.app.Presentation {
                 // 交通灯的导航状态默认可见性
                 if ("traffic_light".equals(data.type) && view instanceof cn.navitool.view.TrafficLightView) {
                     cn.navitool.view.TrafficLightView tlv = (cn.navitool.view.TrafficLightView) view;
-                    // [FIX] HUD 使用右对齐，并设置3个槽位占位
-                    tlv.setMaxSlots(3);
-                    tlv.setAlignment(cn.navitool.view.TrafficLightView.ALIGN_RIGHT);
+                    // [RESTORE] Single light, no alignment (matching original style)
                     tlv.setVisibility(mIsNavigating ? View.VISIBLE : View.GONE);
                     if (mLatestTrafficLightList != null && !mLatestTrafficLightList.isEmpty()) {
                         TrafficLightInfo firstLight = mLatestTrafficLightList.get(0);
@@ -1148,8 +1313,11 @@ public class PresentationManager extends android.app.Presentation {
                 }
 
                 // 容差计算（允许 TextView 稍微超出边界以隐藏字体填充）
+                // 容差计算（允许 TextView 稍微超出边界以隐藏字体填充）
                 float toleranceTop = 0f;
                 float toleranceBottom = 0f;
+                // [FIX] Disabled tolerance as we moved to TightTextView
+                /*
                 float FACTOR_TOP = 0.18f;
                 float FACTOR_BOTTOM = 0.2f;
 
@@ -1181,6 +1349,7 @@ public class PresentationManager extends android.app.Presentation {
                         toleranceBottom = maxTextSize * FACTOR_BOTTOM * data.scale;
                     }
                 }
+                */
 
                 float clampedX = Math.max(minX, Math.min(data.x, maxXLimit));
                 float clampedY = Math.max(-toleranceTop, Math.min(data.y, maxHeight - scaledHeight + toleranceBottom));
@@ -1202,7 +1371,13 @@ public class PresentationManager extends android.app.Presentation {
                 } else if (isVolume) {
                     view.setVisibility(mIsVolumeVisible ? View.VISIBLE : View.GONE);
                 } else {
-                    boolean isNavComponent = (data.type != null && (data.type.startsWith("navi_") || "traffic_light".equals(data.type)));
+                    boolean isNavComponent = (data.type != null && (
+                            data.type.startsWith("navi_") || 
+                            "traffic_light".equals(data.type) ||
+                            "traffic_light_cruise".equals(data.type) ||
+                            "location_current".equals(data.type) ||
+                            "location_dest".equals(data.type)
+                    ));
                     if (isNavComponent) {
                          view.setVisibility(mIsNavigating ? View.VISIBLE : View.GONE);
                     } else {

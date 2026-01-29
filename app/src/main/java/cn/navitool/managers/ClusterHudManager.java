@@ -95,6 +95,9 @@ public class ClusterHudManager
     // [NEW] 点火状态标志 - 仅在收到点火信号后才允许显示PresentationManager
     private boolean mIgnitionReady = false;
 
+    // [FIX 2026-01-29 Step 2] Cache NaviStatus for traffic light routing
+    private int mCurrentNaviStatus = NaviInfoManager.STATUS_IDLE;
+    
     // [Fix] Simulated Gear Support
     private boolean mSimulatedGearEnabled = false;
     // private float mCachedRpm = 0f; // Moved up
@@ -1554,6 +1557,27 @@ public class ClusterHudManager
         }
     }
 
+    /**
+     * [NEW] 启动优化：一站式启动入口。
+     * 严格按照顺序执行：NaviMode -> DisplayContext -> Presentation -> Type 2038 -> Show。
+     * 由 KeepAliveService 在点火3秒后调用。
+     */
+    public void ensureStartUp() {
+        DebugLogger.i(TAG, "ensureStartUp: START (Simplified Pipeline)");
+
+        // 1. [State First] 预设 NaviMode 为仪表模式 (3)
+        // 在创建窗口之前设置，确保 Presentation 一出生就能读取到正确状态
+        applyNaviMode(3, "STARTUP");
+
+        // 2. 设置点火标志 (确保 ensureUiVisible 不会被 Guard 阻挡)
+        mIgnitionReady = true;
+
+        // 3. 调用标准 UI 可见流程 (它会处理 DisplayContext 和 Window 创建)
+        ensureUiVisible();
+        
+        DebugLogger.i(TAG, "ensureStartUp: END");
+    }
+
     // [New] Public method for Activity to trigger UI check
     public void ensureUiVisible() {
         DebugLogger.d(TAG, "ensureUiVisible: Request received. Current Thread: " + Thread.currentThread().getName());
@@ -1742,11 +1766,23 @@ public class ClusterHudManager
             mRetryCount = 0; // Reset retry counter on success
             DebugLogger.d(TAG, "performShowPresentation: [Step 3] Creating PresentationManager Window");
             try {
-                // [FIX] Z-Order Correction: Use standard Presentation constructor
-                // This ensures correct Z-Order handling (system managed)
-                mPresentationManager = new PresentationManager(mContext, targetDisplay);
+                // [FIX 2026-01-29] Z-Order Correction:
+                // 1. Create DisplayContext for target display (critical for Service-started windows)
+                // 2. Use TYPE_APPLICATION_OVERLAY (2038) unconditionally
+                Context displayContext = mContext.createDisplayContext(targetDisplay);
+                DebugLogger.d(TAG, "performShowPresentation: Created DisplayContext for Display " + targetDisplay.getDisplayId());
+                
+                mPresentationManager = new PresentationManager(displayContext, targetDisplay);
                 mCurrentAppliedTheme = -1; // [FIX] Reset state so theme is re-applied to new instance
-                DebugLogger.d(TAG, "performShowPresentation: [Step 4] Presentation Object Created (Standard Presentation)");
+                DebugLogger.d(TAG, "performShowPresentation: [Step 4] Presentation Object Created (DisplayContext Mode)");
+                
+                // [FIX 2026-01-29] Force Window Type to 2038 (TYPE_APPLICATION_OVERLAY)
+                // This is the key fix: Old version (Commit 3fd425e) did this explicitly for stability.
+                // The system default TYPE_PRESENTATION (2037) can be overridden by system UI.
+                if (mPresentationManager.getWindow() != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    mPresentationManager.getWindow().setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
+                    DebugLogger.i(TAG, "performShowPresentation: Forced Window Type to TYPE_APPLICATION_OVERLAY (2038)");
+                }
 
                 // Logging for verification
                 if (mPresentationManager.getWindow() != null) {
@@ -2201,11 +2237,22 @@ public class ClusterHudManager
                     // [FIX] Persist theme immediately to prevent reset after restart/update
                     ConfigManager.getInstance().setInt("cluster_theme_builtin", theme);
                     
-                    // [FIX] Theme Switch State Sync
-                    // Force push current static states to the new theme controller
-                    // Speed/RPM update frequently so they self-correct, but Gear is static.
+                    // [FIX 2026-01-29 Phase 2] Theme Switch State Sync
+                    // Restore ALL cached sensor data to prevent "0" flash on new theme
                     if (mCachedGear != -1) {
                         mPresentationManager.updateGear(mCachedGear);
+                    }
+                    if (mCachedSpeed >= 0) {
+                        mPresentationManager.updateSpeed(mCachedSpeed);
+                    }
+                    if (mCachedRpm > 0) {
+                        mPresentationManager.updateRpm(mCachedRpm);
+                    }
+                    if (mCachedFuelLiters > 0) {
+                        mPresentationManager.updateFuelRemain(mCachedFuelLiters);
+                    }
+                    if (mCachedOdometer > 0) {
+                        mPresentationManager.updateOdometer(mCachedOdometer);
                     }
                 }
             });
@@ -2581,6 +2628,9 @@ public class ClusterHudManager
         /* if (odometer > 0) {
              updateSoftTripDistance(odometer);
         } */
+        
+        // [FIX 2026-01-29 Phase 2] Initialize Turn Signal state to OFF (prevent stale data on boot)
+        updateTurnSignal(false, false);
     }
 
     /**
@@ -2807,9 +2857,15 @@ public class ClusterHudManager
     public void onTrafficLightUpdate(List<TrafficLightInfo> lights) {
         mMainHandler.post(() -> {
             if (mPresentationManager != null && lights != null) {
-                // [FIX] Pass entire list to PresentationManager at once
-                // This fixes the bug where only the last light was displayed
-                mPresentationManager.updateTrafficLight(lights);
+                // [FIX 2026-01-29 Step 2] Route traffic light data based on NaviStatus
+                if (mCurrentNaviStatus == NaviInfoManager.STATUS_NAVI) {
+                    // Navigation Mode: Use single-capsule style (TrafficLightView)
+                    mPresentationManager.updateNaviTrafficLight(lights);
+                } else if (mCurrentNaviStatus == NaviInfoManager.STATUS_CRUISE) {
+                    // Cruise Mode: Use matrix style (MatrixTrafficLightView)
+                    mPresentationManager.updateCruiseTrafficLight(lights);
+                }
+                // IDLE: Do nothing (traffic lights hidden)
             }
         });
     }
@@ -2827,6 +2883,10 @@ public class ClusterHudManager
                 // Update generic cache
                 updateComponentText("navi_current_road", info.currentRoadName);
                 updateComponentText("navi_next_road", info.nextRoadName);
+                
+                // [FIX] Also update location_current and location_dest for HUD preview
+                updateComponentText("location_current", info.currentRoadName);
+                updateComponentText("location_dest", info.destinationName);
                 
                 String distanceText = info.routeRemainDis >= 1000 ? 
                         String.format(Locale.US, "%.1fKM", info.routeRemainDis / 1000f) : 
@@ -2848,6 +2908,14 @@ public class ClusterHudManager
     public void onNaviStatusChanged(int status) {
         mMainHandler.post(() -> {
             DebugLogger.i(TAG, "onNaviStatusChanged: " + status);
+            
+            // [FIX 2026-01-29 Step 2] Cache status for traffic light routing
+            mCurrentNaviStatus = status;
+            
+            // [FIX 2026-01-29 Phase 2] Propagate exact status to PresentationManager for Cruise logic
+            if (mPresentationManager != null) {
+                mPresentationManager.setNaviStatus(status);
+            }
             
             if (status == NaviInfoManager.STATUS_NAVI || status == NaviInfoManager.STATUS_CRUISE) {
                 if (mPresentationManager != null) {
