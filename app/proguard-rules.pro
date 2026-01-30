@@ -55,3 +55,39 @@
 -dontwarn ecarx.adaptapi.**
 -ignorewarnings
 
+
+# ------------------------------------------------------------
+# [ADDED 2026-01-30] Comprehensive Rules for Navitool
+# ------------------------------------------------------------
+
+# 1. Custom Views (Used in XML Layouts)
+-keep class cn.navitool.view.** { *; }
+
+# 2. AIDL Interfaces (AMap & Geely)
+-keep class com.autonavi.amapauto.aidl.** { *; }
+-keep interface com.autonavi.amapauto.aidl.** { *; }
+-keep class com.geely.map.** { *; }
+-keep interface com.geely.map.** { *; }
+
+# 3. Data Models (Prevent obfuscation of fields used in JSON parsing)
+-keep class cn.navitool.model.** { *; }
+
+# 4. Interfaces
+-keep class cn.navitool.interfaces.** { *; }
+
+# 5. Managers & Controllers (Keep public methods for stability)
+-keep class cn.navitool.managers.** {
+    public <methods>;
+    public <init>(...);
+}
+-keep class cn.navitool.theme.** {
+    public <methods>;
+    public <init>(...);
+}
+
+# 6. Third Parties
+# ADB Lib
+-keep class com.tananaev.adblib.** { *; }
+
+# Gson (if used implicitly)
+#-keep class com.google.gson.** { *; }

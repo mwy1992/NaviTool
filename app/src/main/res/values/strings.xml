@@ -206,7 +206,7 @@
     <string name="dialog_debug_title">Debug 版本提示</string>
     <string name="dialog_debug_message">该版本为DEBUG版本，如遇到任何软件运行的问题，可在/sdcard/NaviTool文件夹中找到navitool.debug.txt和navitool.logcat.txt，反馈问题时可提供这两个文件以帮助定位问题原因。也可附带详细问题描述或视频。</string>
     <string name="dialog_release_title">重要提示</string>
-    <string name="dialog_release_message">本软件正在开发中，存在多种不确定的BUG，如遇到问题可安装DEBUG版本，根据相应提示提供反馈日志。</string>
+    <string name="dialog_release_message">本软件使用AI开发，仅适配星越L2021至2023款以及部分安卓9车机的2024款，存在多种不确定的BUG，如遇到问题请及时反馈。\n感谢QQ群友0 Error(s), 0 Warning(s)（AKA @rfvcdewsxzaq）提供的巡航红绿灯及亮度问题的代码！\n感谢QQ群友潇湘夜雨提供的模拟档位计算的代码！\n感谢抖音网友某男仔☤提供的仪表主题图像文件！\n感谢网友的测试与反馈！</string>
     <string name="toast_notification_permission_fix">⚠️ 通知权限未开启，无法获取路名！请点击自动修复。</string>
     <string name="toast_welcome_lamp_enabled">迎宾灯常开已启用</string>
     <string name="toast_sunshade_auto_enabled">遮阳帘自动开启已启用</string>
