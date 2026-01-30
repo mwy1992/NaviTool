@@ -110,6 +110,10 @@ public class HudComponentRenderer {
                 view = createGuideLineComponent(context, scale);
                 break;
 
+            case "guide_line_horizontal":
+                view = createHorizontalGuideLineComponent(context, scale);
+                break;
+
             case "time":
                 view = createTimeComponent(context, scale, color);
                 break;
@@ -372,7 +376,7 @@ public class HudComponentRenderer {
         // Use FrameLayout container for line + coordinate text (preview only)
         FrameLayout container = new FrameLayout(context);
         int width = (int) (50 * scale);
-        int height = (int) (190 * scale);
+        int height = (int) (190 * scale); // 190 * 2 = 380 for preview
         FrameLayout.LayoutParams containerParams = new FrameLayout.LayoutParams(width, height);
         container.setLayoutParams(containerParams);
 
@@ -405,6 +409,58 @@ public class HudComponentRenderer {
             tvCoord.setText("X:0");
             tvCoord.setTextSize(TypedValue.COMPLEX_UNIT_PX, 18 * scale);
             tvCoord.setTextColor(Color.CYAN);
+            tvCoord.setBackgroundColor(0x80000000);
+            tvCoord.setPadding(4, 2, 4, 2);
+            FrameLayout.LayoutParams tvParams = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT);
+            tvParams.gravity = Gravity.CENTER;
+            container.addView(tvCoord, tvParams);
+        }
+
+        return container;
+    }
+
+    /**
+     * 创建横向辅助线组件 (用于调试 Y 坐标)
+     */
+    private static View createHorizontalGuideLineComponent(Context context, float scale) {
+        // Use FrameLayout container for line + coordinate text (preview only)
+        FrameLayout container = new FrameLayout(context);
+        int width = (int) (728 * scale);  // Full width: 728 * 2 = 1456 for preview
+        int height = (int) (50 * scale);  // Touch target
+        FrameLayout.LayoutParams containerParams = new FrameLayout.LayoutParams(width, height);
+        container.setLayoutParams(containerParams);
+
+        // 1. The horizontal dashed line (custom draw)
+        View lineView = new View(context) {
+            private final android.graphics.Paint mPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+            {
+                mPaint.setColor(Color.MAGENTA); // Use Magenta to differentiate from vertical
+                mPaint.setStyle(android.graphics.Paint.Style.STROKE);
+                mPaint.setStrokeWidth(4);
+                mPaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{10, 10}, 0));
+            }
+
+            @Override
+            protected void onDraw(android.graphics.Canvas canvas) {
+                super.onDraw(canvas);
+                float cy = getHeight() / 2f;
+                canvas.drawLine(0, cy, getWidth(), cy, mPaint);
+            }
+        };
+        lineView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        FrameLayout.LayoutParams lineParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT);
+        container.addView(lineView, lineParams);
+
+        // 2. Coordinate text (only in preview mode, scale > 1)
+        if (scale > 1.0f) {
+            TextView tvCoord = new TextView(context);
+            tvCoord.setText("Y:0");
+            tvCoord.setTextSize(TypedValue.COMPLEX_UNIT_PX, 18 * scale);
+            tvCoord.setTextColor(Color.MAGENTA);
             tvCoord.setBackgroundColor(0x80000000);
             tvCoord.setPadding(4, 2, 4, 2);
             FrameLayout.LayoutParams tvParams = new FrameLayout.LayoutParams(

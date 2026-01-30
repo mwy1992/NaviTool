@@ -683,24 +683,63 @@ public class HudSettingsController {
                         */
                         
                         // [FIX] Simplified Logic without Tolerance
-                         if (isGuideLine) {
-                             newY = 0; // Force Top to 0
+                        boolean isVerticalGuideLine = tagStr.contains("type_guide_line") && !tagStr.contains("horizontal");
+                        boolean isHorizontalGuideLine = tagStr.contains("type_guide_line_horizontal");
+                        
+                        // Set Y tolerance for horizontal guide line (allow edge placement)
+                        float minY = 0;
+                        float maxYLimit = parentHeight - viewHeight;
+                        if (isHorizontalGuideLine) {
+                            minY = -0.5f * viewHeight;
+                            maxYLimit = parentHeight - (0.5f * viewHeight);
+                        }
+                        
+                        if (isVerticalGuideLine) {
+                             newY = 0; // Force Top to 0 for vertical guide
+                        } else if (isHorizontalGuideLine) {
+                             newX = 0; // Force Left to 0 for horizontal guide
+                        }
+                        
+                        // Clamp Y coordinate
+                        if (newY < minY)
+                            newY = minY;
+                        if (newY > maxYLimit)
+                            newY = maxYLimit;
+
+                        // Default Y clamping for other components (offsetTop/offsetBottom = 0)
+                        if (!isVerticalGuideLine && !isHorizontalGuideLine) {
+                            if (newY < -offsetTop)
+                                newY = -offsetTop;
+                            if (newY + viewHeight > parentHeight + offsetBottom)
+                                newY = parentHeight - viewHeight + offsetBottom;
+                        }
+
+                        // Update coordinate display AFTER clamping
+                        if (isVerticalGuideLine) {
                              if (view instanceof ViewGroup) {
                                  ViewGroup vg = (ViewGroup) view;
                                  for (int k = 0; k < vg.getChildCount(); k++) {
                                      View child = vg.getChildAt(k);
                                      if (child instanceof TextView) {
+                                         // Display center X in preview coordinates (clamped)
                                          int centerX = (int) (newX + view.getWidth() / 2f);
-                                         ((TextView) child).setText("" + centerX);
+                                         ((TextView) child).setText("X:" + centerX);
                                      }
                                  }
                              }
-                         }
-
-                        if (newY < -offsetTop)
-                            newY = -offsetTop;
-                        if (newY + viewHeight > parentHeight + offsetBottom)
-                            newY = parentHeight - viewHeight + offsetBottom;
+                        } else if (isHorizontalGuideLine) {
+                             if (view instanceof ViewGroup) {
+                                 ViewGroup vg = (ViewGroup) view;
+                                 for (int k = 0; k < vg.getChildCount(); k++) {
+                                     View child = vg.getChildAt(k);
+                                     if (child instanceof TextView) {
+                                         // Display center Y in preview coordinates (clamped)
+                                         int centerY = (int) (newY + view.getHeight() / 2f);
+                                         ((TextView) child).setText("Y:" + centerY);
+                                     }
+                                 }
+                             }
+                        }
 
                         view.setX(newX);
                         view.setY(newY);
@@ -1128,6 +1167,8 @@ public class HudSettingsController {
                     createAndAddHudComponent("navi_distance_remaining", "9999.9KM", 0, 0);
                 } else if ("guide_line".equals(type)) {
                     createAndAddHudComponent("guide_line", "X:0", 0, 0);
+                } else if ("guide_line_horizontal".equals(type)) {
+                    createAndAddHudComponent("guide_line_horizontal", "Y:0", 0, 0);
                 } else if ("hud_rpm".equals(type)) {
                     String initialText = cn.navitool.managers.ClusterHudManager.getInstance(mActivity).getCurrentRpmText();
                     createAndAddHudComponent("hud_rpm", initialText, 0, 0);
@@ -1145,6 +1186,7 @@ public class HudSettingsController {
         addButton.accept(colBasic, "车内温度", "temp_in");
         addButton.accept(colBasic, "车外温度", "temp_out");
         addButton.accept(colBasic, "辅助线", "guide_line");
+        addButton.accept(colBasic, "辅助线 (横)", "guide_line_horizontal");
 
         // Group 2: Driving
         addButton.accept(colDrive, "剩余油量", "fuel");

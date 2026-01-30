@@ -9,6 +9,7 @@ import cn.navitool.interfaces.IClusterTheme;
 import cn.navitool.managers.NaviInfoManager;
 import cn.navitool.model.GuideInfo;
 import cn.navitool.model.TrafficLightInfo;
+import cn.navitool.view.MatrixTrafficLightView;
 import cn.navitool.view.TrafficLightView;
 
 /**
@@ -28,12 +29,111 @@ public abstract class BaseThemeController implements IClusterTheme {
     
     // Traffic Light & Navi Views (Shared - Subclasses assign in onBindViews)
     protected TrafficLightView mTrafficLightMulti;
+    protected MatrixTrafficLightView mMatrixTrafficLight; // [FIX] Added Cruise Light View
     protected View mNaviTrafficContainer;
     protected View mNaviInfoRow;
     protected TextView mCurrentRoadText;
     protected TextView mDestinationText;
     protected TextView mNaviDistance;
     protected TextView mNaviEta;
+
+    @Override
+    public void detachViews() {
+        mRootView = null;
+        mContext = null;
+        mSpeedText = null;
+        mGearText = null;
+        // Traffic Light & Navi
+        mTrafficLightMulti = null;
+        mMatrixTrafficLight = null;
+        mNaviTrafficContainer = null;
+        mNaviInfoRow = null;
+        mCurrentRoadText = null;
+        mDestinationText = null;
+        mNaviDistance = null;
+        mNaviEta = null;
+        // Sensor Views
+        mOdometerText = null;
+        mFuelRemainText = null;
+        mTempInText = null;
+        mInstantFuelText = null;
+    }
+
+    @Override
+    public void updateTrafficLight(java.util.List<TrafficLightInfo> lights) {
+        // [FIX] Ensure Cruise Light is hidden when in Navi Mode
+        if (mMatrixTrafficLight != null) mMatrixTrafficLight.setVisibility(View.GONE);
+
+        if (lights == null || lights.isEmpty()) {
+            // Only hide Navi light, allow reset to handle global clear
+             if (mTrafficLightMulti != null) mTrafficLightMulti.setVisibility(View.GONE);
+             if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
+            return;
+        }
+
+        java.util.List<TrafficLightView.LightState> lightStates = new java.util.ArrayList<>();
+        
+        for (TrafficLightInfo info : lights) {
+            if (info == null) continue;
+            
+            int mappedStatus = NaviInfoManager.mapStatus(info.status);
+            boolean isValidStatus = (mappedStatus == TrafficLightView.STATUS_RED || 
+                                   mappedStatus == TrafficLightView.STATUS_YELLOW || 
+                                   mappedStatus == TrafficLightView.STATUS_GREEN);
+
+            if (isValidStatus || info.redCountdown > 0) {
+                lightStates.add(new TrafficLightView.LightState(mappedStatus, info.redCountdown, info.direction));
+            }
+        }
+        
+        if (lightStates.isEmpty()) {
+            if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
+            return;
+        }
+
+        if (mNaviTrafficContainer != null) {
+            mNaviTrafficContainer.setVisibility(View.VISIBLE);
+        }
+        
+        if (mTrafficLightMulti != null) {
+            mTrafficLightMulti.setVisibility(View.VISIBLE);
+            mTrafficLightMulti.updateMultiLights(lightStates);
+        }
+    }
+
+    @Override
+    public void updateCruiseTrafficLight(java.util.List<TrafficLightInfo> lights) {
+        // [FIX] Ensure Navi Light is hidden when in Cruise Mode
+        if (mTrafficLightMulti != null) mTrafficLightMulti.setVisibility(View.GONE);
+        if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
+
+        if (mMatrixTrafficLight == null) return;
+
+        if (lights == null || lights.isEmpty()) {
+            mMatrixTrafficLight.setVisibility(View.GONE);
+            return;
+        }
+
+        java.util.List<MatrixTrafficLightView.LightState> states = new java.util.ArrayList<>();
+        for (TrafficLightInfo info : lights) {
+            int mappedStatus = NaviInfoManager.mapStatus(info.status);
+            states.add(new MatrixTrafficLightView.LightState(mappedStatus, info.redCountdown, info.direction));
+        }
+
+        if (states.isEmpty()) {
+             mMatrixTrafficLight.setVisibility(View.GONE);
+        } else {
+             mMatrixTrafficLight.setVisibility(View.VISIBLE);
+             mMatrixTrafficLight.updateLights(states);
+        }
+    }
+
+    @Override
+    public void resetTrafficLights() {
+        if (mTrafficLightMulti != null) mTrafficLightMulti.setVisibility(View.GONE);
+        if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
+        if (mMatrixTrafficLight != null) mMatrixTrafficLight.setVisibility(View.GONE);
+    }
     
     // Sensor Views (Shared - Subclasses assign in onBindViews)
     protected TextView mOdometerText;
@@ -72,29 +172,6 @@ public abstract class BaseThemeController implements IClusterTheme {
      * Abstract method for subclasses to bind their specific views
      */
     protected abstract void onBindViews(View rootView);
-
-    @Override
-    public void detachViews() {
-        mRootView = null;
-        mContext = null;
-        mSpeedText = null;
-        mGearText = null;
-        // Traffic Light & Navi
-        mTrafficLightMulti = null;
-        mNaviTrafficContainer = null;
-        mNaviInfoRow = null;
-        mCurrentRoadText = null;
-        mDestinationText = null;
-        mNaviDistance = null;
-        mNaviEta = null;
-        // Sensor Views
-        mOdometerText = null;
-        mFuelRemainText = null;
-        mTempInText = null;
-        mInstantFuelText = null;
-    }
-
-    // --- Common Gear Implementation ---
 
     @Override
     public void setGear(int gearValue) {
@@ -173,97 +250,16 @@ public abstract class BaseThemeController implements IClusterTheme {
         // Default empty
     }
 
-    // --- Traffic Light Implementation (Shared) ---
-
-    @Override
-    public void updateTrafficLight(java.util.List<TrafficLightInfo> lights) {
-        if (lights == null || lights.isEmpty()) {
-            resetTrafficLights();
-            return;
-        }
-
-        java.util.List<TrafficLightView.LightState> lightStates = new java.util.ArrayList<>();
-        
-        for (TrafficLightInfo info : lights) {
-            if (info == null) continue;
-            
-            int mappedStatus = NaviInfoManager.mapStatus(info.status);
-            boolean isValidStatus = (mappedStatus == TrafficLightView.STATUS_RED || 
-                                   mappedStatus == TrafficLightView.STATUS_YELLOW || 
-                                   mappedStatus == TrafficLightView.STATUS_GREEN);
-
-            if (isValidStatus || info.redCountdown > 0) {
-                lightStates.add(new TrafficLightView.LightState(mappedStatus, info.redCountdown, info.direction));
-            }
-        }
-        
-        if (lightStates.isEmpty()) {
-            if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
-            return;
-        }
-
-        if (mNaviTrafficContainer != null) {
-            mNaviTrafficContainer.setVisibility(View.VISIBLE);
-        }
-        
-        if (mTrafficLightMulti != null) {
-            mTrafficLightMulti.setVisibility(View.VISIBLE);
-            mTrafficLightMulti.updateMultiLights(lightStates);
-        }
-    }
-
-    @Override
-    public void resetTrafficLights() {
-        if (mTrafficLightMulti != null) mTrafficLightMulti.setVisibility(View.GONE);
-        if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
-    }
-
     // --- Navigation Info Implementation (Shared) ---
 
     @Override
     public void updateGuideInfo(GuideInfo info) {
         if (info == null) {
-            if (mNaviInfoRow != null) mNaviInfoRow.setVisibility(View.GONE);
+            resetNaviInfo();
             return;
         }
         
-        if (info.routeRemainDis < 0) {
-            if (mNaviInfoRow != null) mNaviInfoRow.setVisibility(View.GONE);
-            return;
-        }
-        
-        // [FIX 2026-01-29 Phase 3] Cruise Mode Logic: Only show Distance/ETA row in strict NAVI mode
-        boolean showNaviInfo = (mNaviStatus == NaviInfoManager.STATUS_NAVI);
-        
-        if (mNaviInfoRow != null) {
-            if (showNaviInfo) {
-                if (mNaviInfoRow.getVisibility() != View.VISIBLE) {
-                    mNaviInfoRow.setVisibility(View.VISIBLE);
-                }
-            } else {
-                if (mNaviInfoRow.getVisibility() != View.GONE) {
-                    mNaviInfoRow.setVisibility(View.GONE);
-                }
-            }
-        }
-
-        if (mNaviDistance != null) {
-            String distText = "";
-            if (info.routeRemainDis >= 1000) {
-                 distText = String.format(java.util.Locale.US, "%.1fKM", info.routeRemainDis / 1000f);
-            } else {
-                 distText = info.routeRemainDis + "M";
-            }
-            mNaviDistance.setText(distText);
-        }
-
-        if (mNaviEta != null) {
-            String eta = NaviInfoManager.calculateEta(info.routeRemainTime);
-            String displayEta = eta.isEmpty() ? "" : "ETA " + eta;
-            mNaviEta.setText(displayEta);
-        }
-        
-        // Current Road
+        // === 当前位置：导航/巡航模式都显示 ===
         if (mCurrentRoadText != null) {
             if (info.currentRoadName != null && !info.currentRoadName.isEmpty()) {
                 mCurrentRoadText.setText("当前：" + info.currentRoadName);
@@ -273,14 +269,39 @@ public abstract class BaseThemeController implements IClusterTheme {
             }
         }
         
-        // Destination
+        // === 以下数据只在导航模式 (STATUS_NAVI) 显示 ===
+        boolean isNaviMode = (mNaviStatus == NaviInfoManager.STATUS_NAVI);
+        
+        // 目的地
         if (mDestinationText != null) {
-            if (info.destinationName != null && !info.destinationName.isEmpty()) {
+            if (isNaviMode && info.destinationName != null && !info.destinationName.isEmpty()) {
                 mDestinationText.setText("目的地：" + info.destinationName);
                 mDestinationText.setVisibility(View.VISIBLE);
             } else {
                 mDestinationText.setVisibility(View.GONE);
             }
+        }
+        
+        // 距离/ETA 信息行
+        if (mNaviInfoRow != null) {
+            if (isNaviMode && info.routeRemainDis >= 0) {
+                mNaviInfoRow.setVisibility(View.VISIBLE);
+            } else {
+                mNaviInfoRow.setVisibility(View.GONE);
+            }
+        }
+        
+        // 更新文本内容（即使隐藏也更新，以便状态切换时立即可用）
+        if (mNaviDistance != null) {
+            String distText = info.routeRemainDis >= 1000 
+                ? String.format(java.util.Locale.US, "%.1fKM", info.routeRemainDis / 1000f)
+                : info.routeRemainDis + "M";
+            mNaviDistance.setText(distText);
+        }
+        
+        if (mNaviEta != null) {
+            String eta = NaviInfoManager.calculateEta(info.routeRemainTime);
+            mNaviEta.setText(eta.isEmpty() ? "" : "ETA " + eta);
         }
     }
 

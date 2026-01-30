@@ -154,6 +154,14 @@ public class AudiRsThemeController extends BaseThemeController {
             mTrafficLightMulti.setPreviewScale(2f);
         }
         
+        // [Step 4] Bind Matrix Traffic Light (Cruise Mode)
+        mMatrixTrafficLight = rootView.findViewById(R.id.audiRsCruiseTrafficLight);
+        if (mMatrixTrafficLight != null) {
+             mMatrixTrafficLight.setVisibility(View.GONE);
+             // Scale adjustment if needed
+             mMatrixTrafficLight.setScale(1.5f);
+        }
+        
         mNaviDistance = rootView.findViewById(R.id.audiRsNaviDistance);
         mNaviEta = rootView.findViewById(R.id.audiRsNaviEta);
         

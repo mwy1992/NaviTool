@@ -55,9 +55,168 @@ public class PresentationManager extends android.app.Presentation {
     private View mFloatingTrafficLightContainer;
     // Long Capsule TrafficLightView (1个多灯合一，左对齐)
     private TrafficLightView mFloatingTrafficLightMulti;
+    // [FIX] Matrix Style for Cruise Mode
+    private cn.navitool.view.MatrixTrafficLightView mFloatingTrafficLightMatrix;
     private boolean mIsFloatingEnabled = false;
+    /**
+     * [FIX 2026-01-29 Step 2] Navigation Mode Traffic Light Update (Single Capsule Style)
+     * Routes to TrafficLightView components with SINGLE light only.
+     */
+    public void updateNaviTrafficLight(java.util.List<TrafficLightInfo> lights) {
+        if (!mIsNavigating) return;
+        
+        mMainHandler.removeCallbacks(mTrafficLightTimeoutRunnable);
+        mMainHandler.postDelayed(mTrafficLightTimeoutRunnable, 3000);
+        
+        mLatestTrafficLightList = lights;
+        
+        // Get first light only (Navigation mode = single light)
+        TrafficLightInfo firstLight = (lights != null && !lights.isEmpty()) ? lights.get(0) : null;
+        
+        // Floating window: Navi Style (Capsule)
+        updateFloatingTrafficLightLogicNavi(firstLight);
+        
+        // Theme controller: TrafficLightView (single capsule) - pass first light only
+        if (mThemeController != null && firstLight != null) {
+            java.util.List<TrafficLightInfo> singleLightList = new java.util.ArrayList<>();
+            singleLightList.add(firstLight);
+            mThemeController.updateTrafficLight(singleLightList);
+        } else if (mThemeController != null) {
+            mThemeController.resetTrafficLights();
+        }
+        
+        // HUD: TrafficLightView components - single light update
+        updateTrafficLightGeneric(mRealHudComponents, firstLight);
+        
+        // [Step 2] Hide Matrix view if visible
+        hideCruiseTrafficLightViews();
+    }
     
-    // Data Cache to prevent flickering
+    /**
+     * [FIX 2026-01-29 Step 2] Cruise Mode Traffic Light Update (Matrix Style)
+     * Routes to MatrixTrafficLightView components.
+     */
+    public void updateCruiseTrafficLight(java.util.List<TrafficLightInfo> lights) {
+        if (!mIsNavigating) return;
+        
+        mMainHandler.removeCallbacks(mTrafficLightTimeoutRunnable);
+        mMainHandler.postDelayed(mTrafficLightTimeoutRunnable, 3000);
+        
+        mLatestTrafficLightList = lights;
+        
+        // Floating window: Cruise Style (Matrix)
+        updateFloatingTrafficLightLogicCruise(lights);
+        
+        // [Step 2] Theme controller: MatrixTrafficLightView
+        if (mThemeController != null) {
+            // [FIX] Use updateCruiseTrafficLight interface method
+            mThemeController.updateCruiseTrafficLight(lights);
+        }
+        
+        // [Step 2] HUD: MatrixTrafficLightView components
+        updateCruiseTrafficLightGeneric(mRealHudComponents, lights);
+        
+        // [Step 2] Hide single-capsule views if visible
+        hideNaviTrafficLightViews();
+    }
+    
+    private void updateFloatingTrafficLightLogicNavi(TrafficLightInfo info) {
+        if (mFloatingTrafficLightContainer == null) initializeFloatingTrafficLight();
+        if (mFloatingTrafficLightContainer == null) return;
+
+        // Hide Matrix
+        if (mFloatingTrafficLightMatrix != null) mFloatingTrafficLightMatrix.setVisibility(View.GONE);
+
+        if (!mIsFloatingEnabled && !mIsTempShowing) {
+            hideAllFloatingCapsules();
+            updateFloatingTrafficLightVisibility();
+            return;
+        }
+        if (info == null && !mIsTempShowing) {
+            hideAllFloatingCapsules();
+            updateFloatingTrafficLightVisibility();
+            return;
+        }
+
+        int mappedStatus = (info != null) ? NaviInfoManager.mapStatus(info.status) : 0;
+        int time = (info != null) ? info.redCountdown : 0;
+        
+        if (mappedStatus == 0 && time <= 0 && !mIsTempShowing) {
+            hideAllFloatingCapsules();
+            updateFloatingTrafficLightVisibility();
+            return;
+        }
+
+        updateFloatingTrafficLightVisibility();
+        mFloatingTrafficLightContainer.setBackgroundResource(0);
+        
+        // Build light states list for multi-light view
+        java.util.List<TrafficLightView.LightState> lightStates = new java.util.ArrayList<>();
+        
+        if (mappedStatus != 0) {
+            lightStates.add(new TrafficLightView.LightState(mappedStatus, time, (info != null ? info.direction : 0)));
+        }
+        
+        // Update multi view
+        if (mFloatingTrafficLightMulti != null && !lightStates.isEmpty()) {
+            mFloatingTrafficLightMulti.setVisibility(View.VISIBLE);
+            mFloatingTrafficLightMulti.updateMultiLights(lightStates);
+        } else {
+            // Only hide multi if empty, Matrix is already hidden
+             if (mFloatingTrafficLightMulti != null) mFloatingTrafficLightMulti.setVisibility(View.GONE);
+        }
+    }
+    
+    private void updateFloatingTrafficLightLogicCruise(java.util.List<TrafficLightInfo> lights) {
+        if (mFloatingTrafficLightContainer == null) initializeFloatingTrafficLight();
+        if (mFloatingTrafficLightContainer == null) return;
+        
+        // Hide Capsule
+        if (mFloatingTrafficLightMulti != null) mFloatingTrafficLightMulti.setVisibility(View.GONE);
+        
+        // Logic for Cruise visibility
+        if (!mIsFloatingEnabled && !mIsTempShowing) {
+             hideAllFloatingCapsules();
+             updateFloatingTrafficLightVisibility();
+             return;
+        }
+        
+        if ((lights == null || lights.isEmpty()) && !mIsTempShowing) {
+             hideAllFloatingCapsules();
+             updateFloatingTrafficLightVisibility();
+             return;
+        }
+        
+        updateFloatingTrafficLightVisibility();
+        
+        // Update Matrix View
+        if (mFloatingTrafficLightMatrix != null) {
+            java.util.List<cn.navitool.view.MatrixTrafficLightView.LightState> states = new java.util.ArrayList<>();
+            if (lights != null) {
+                for(TrafficLightInfo info : lights) {
+                    states.add(new cn.navitool.view.MatrixTrafficLightView.LightState(
+                        NaviInfoManager.mapStatus(info.status), info.redCountdown, info.direction));
+                }
+            }
+            
+            if (!states.isEmpty()) {
+                 mFloatingTrafficLightMatrix.setVisibility(View.VISIBLE);
+                 mFloatingTrafficLightMatrix.updateLights(states);
+            } else {
+                 mFloatingTrafficLightMatrix.setVisibility(View.GONE);
+            }
+        }
+    }
+    
+    private void hideAllFloatingCapsules() {
+        if (mFloatingTrafficLightMulti != null) mFloatingTrafficLightMulti.setVisibility(View.GONE);
+        if (mFloatingTrafficLightMatrix != null) mFloatingTrafficLightMatrix.setVisibility(View.GONE);
+    }
+    
+    // [Legacy] updateFloatingTrafficLightLogic redirect
+    private void updateFloatingTrafficLightLogic(TrafficLightInfo info) {
+         updateFloatingTrafficLightLogicNavi(info);
+    }
     private int mLastSpeed = -1;
     private int mLastRpm = -1; // [FIX] Added missing field
     private int mLastGear = -1;
@@ -225,6 +384,12 @@ public class PresentationManager extends android.app.Presentation {
                 mFloatingTrafficLightMulti.setAlignment(TrafficLightView.ALIGN_LEFT);
                 mFloatingTrafficLightMulti.setPreviewScale(1.5f);
             }
+            
+            // [FIX] Bind Matrix View for Cruise Mode
+            mFloatingTrafficLightMatrix = mFloatingTrafficLightContainer.findViewById(R.id.floatingTrafficLightMatrix);
+            if (mFloatingTrafficLightMatrix != null) {
+                mFloatingTrafficLightMatrix.setScale(1.5f); // Match capsule scale
+            }
 
             mFloatingTrafficLightContainer.setOnTouchListener(new android.view.View.OnTouchListener() {
                 private float initialTouchX, initialTouchY;
@@ -346,54 +511,6 @@ public class PresentationManager extends android.app.Presentation {
                 mIsFloatingViewAdded = false;
             }
         }
-    }
-    private void updateFloatingTrafficLightLogic(TrafficLightInfo info) {
-        // Note: mLatestTrafficLightList is now updated in updateTrafficLight(List) method
-        if (mFloatingTrafficLightContainer == null) initializeFloatingTrafficLight();
-        if (mFloatingTrafficLightContainer == null) return;
-
-        if (!mIsFloatingEnabled && !mIsTempShowing) {
-            hideAllFloatingCapsules();
-            updateFloatingTrafficLightVisibility();
-            return;
-        }
-        if (info == null && !mIsTempShowing) {
-            hideAllFloatingCapsules();
-            updateFloatingTrafficLightVisibility();
-            return;
-        }
-
-        // [FIX] Strict Validity Check: If status is 0 (Invalid) AND no countdown, HIDE
-        int mappedStatus = NaviInfoManager.mapStatus(info.status);
-        int time = info.redCountdown;
-        
-        if (mappedStatus == 0 && time <= 0) {
-            hideAllFloatingCapsules();
-            updateFloatingTrafficLightVisibility();
-            return;
-        }
-
-        updateFloatingTrafficLightVisibility();
-        mFloatingTrafficLightContainer.setBackgroundResource(0);
-        
-        // Build light states list for multi-light view
-        java.util.List<TrafficLightView.LightState> lightStates = new java.util.ArrayList<>();
-        
-        if (mappedStatus != 0) {
-            lightStates.add(new TrafficLightView.LightState(mappedStatus, time, info.direction));
-        }
-        
-        // Update multi view
-        if (mFloatingTrafficLightMulti != null && !lightStates.isEmpty()) {
-            mFloatingTrafficLightMulti.setVisibility(View.VISIBLE);
-            mFloatingTrafficLightMulti.updateMultiLights(lightStates);
-        } else {
-            hideAllFloatingCapsules();
-        }
-    }
-    
-    private void hideAllFloatingCapsules() {
-        if (mFloatingTrafficLightMulti != null) mFloatingTrafficLightMulti.setVisibility(View.GONE);
     }
 
     public void setHudVisible(boolean visible) {
@@ -575,80 +692,18 @@ public class PresentationManager extends android.app.Presentation {
             updateTrafficLightGenericMulti(mRealHudComponents, lights);
         }
     }
-    /**
-     * [FIX 2026-01-29 Step 2] Navigation Mode Traffic Light Update (Single Capsule Style)
-     * Routes to TrafficLightView components with SINGLE light only.
-     */
-    public void updateNaviTrafficLight(java.util.List<TrafficLightInfo> lights) {
-        if (!mIsNavigating) return;
-        
-        mMainHandler.removeCallbacks(mTrafficLightTimeoutRunnable);
-        mMainHandler.postDelayed(mTrafficLightTimeoutRunnable, 3000);
-        
-        mLatestTrafficLightList = lights;
-        
-        // Get first light only (Navigation mode = single light)
-        TrafficLightInfo firstLight = (lights != null && !lights.isEmpty()) ? lights.get(0) : null;
-        
-        // Floating window: first light
-        updateFloatingTrafficLightLogic(firstLight);
-        
-        // Theme controller: TrafficLightView (single capsule) - pass first light only
-        if (mThemeController != null && firstLight != null) {
-            java.util.List<TrafficLightInfo> singleLightList = new java.util.ArrayList<>();
-            singleLightList.add(firstLight);
-            mThemeController.updateTrafficLight(singleLightList);
-        } else if (mThemeController != null) {
-            mThemeController.resetTrafficLights();
-        }
-        
-        // HUD: TrafficLightView components - single light update
-        updateTrafficLightGeneric(mRealHudComponents, firstLight);
-        
-        // [Step 2] Hide Matrix view if visible
-        hideCruiseTrafficLightViews();
-    }
-    
-    /**
-     * [FIX 2026-01-29 Step 2] Cruise Mode Traffic Light Update (Matrix Style)
-     * Routes to MatrixTrafficLightView components.
-     */
-    public void updateCruiseTrafficLight(java.util.List<TrafficLightInfo> lights) {
-        if (!mIsNavigating) return;
-        
-        mMainHandler.removeCallbacks(mTrafficLightTimeoutRunnable);
-        mMainHandler.postDelayed(mTrafficLightTimeoutRunnable, 3000);
-        
-        mLatestTrafficLightList = lights;
-        
-        // Floating window: first light (still use capsule style for floating)
-        if (lights != null && !lights.isEmpty()) {
-            updateFloatingTrafficLightLogic(lights.get(0));
-        } else {
-            updateFloatingTrafficLightLogic(null);
-        }
-        
-        // [Step 2] Theme controller: MatrixTrafficLightView
-        if (mThemeController != null) {
-            updateCruiseTrafficLightForTheme(lights);
-        }
-        
-        // [Step 2] HUD: MatrixTrafficLightView components
-        updateCruiseTrafficLightGeneric(mRealHudComponents, lights);
-        
-        // [Step 2] Hide single-capsule views if visible
-        hideNaviTrafficLightViews();
-    }
     
     // [Step 2] Helper: Hide Navi traffic light views (TrafficLightView)
     private void hideNaviTrafficLightViews() {
         if (mThemeController != null) mThemeController.resetTrafficLights();
+        // [FIX] Explicitly hide generic navi traffic light
+        hideGenericTrafficLightComponents(mRealHudComponents, "traffic_light");
     }
     
     // [Step 2] Helper: Hide Cruise traffic light views (MatrixTrafficLightView)
     private void hideCruiseTrafficLightViews() {
-        // [FIX] Reuse generic logic to hide traffic_light_cruise
-        hideGenericTrafficLightComponents(mRealHudComponents);
+        // [FIX] Hide ONLY cruise traffic light (Matrix) to avoid conflict with active Navi light
+        hideGenericTrafficLightComponents(mRealHudComponents, "traffic_light_cruise");
     }
     
     // [Step 2] Helper: Update Theme's Matrix view
@@ -832,13 +887,26 @@ public class PresentationManager extends android.app.Presentation {
     }
 
     private void hideGenericTrafficLightComponents(List<View> viewList) {
+        // Default behavior: Hide ALL traffic light types
+        hideGenericTrafficLightComponents(viewList, null);
+    }
+
+    private void hideGenericTrafficLightComponents(List<View> viewList, String targetType) {
         if (viewList == null) return;
         for (View v : viewList) {
             Object tag = v.getTag();
             if (tag instanceof ClusterHudManager.HudComponentData) {
                 ClusterHudManager.HudComponentData data = (ClusterHudManager.HudComponentData) tag;
-                if ("traffic_light".equals(data.type) || "traffic_light_cruise".equals(data.type)) {
-                    v.setVisibility(View.GONE);
+                
+                // If targetType is null, hide ALL traffic light types.
+                // If targetType is specified, hide ONLY that type.
+                boolean isTrafficLight = "traffic_light".equals(data.type);
+                boolean isCruiseLight = "traffic_light_cruise".equals(data.type);
+
+                if (isTrafficLight || isCruiseLight) {
+                    if (targetType == null || targetType.equals(data.type)) {
+                        v.setVisibility(View.GONE);
+                    }
                 }
             }
         }
@@ -899,7 +967,7 @@ public class PresentationManager extends android.app.Presentation {
         if (mLayoutHud != null) {
             mLayoutHud.setVisibility(View.VISIBLE);
         }
-        syncLayoutGeneric(mLayoutHud, mRealHudComponents, components, 728, 189);
+        syncLayoutGeneric(mLayoutHud, mRealHudComponents, components, 728, 190);
     }
     
     public void clearHudComponents() {
@@ -1313,46 +1381,22 @@ public class PresentationManager extends android.app.Presentation {
                 }
 
                 // 容差计算（允许 TextView 稍微超出边界以隐藏字体填充）
-                // 容差计算（允许 TextView 稍微超出边界以隐藏字体填充）
+                // [FIX] Disabled tolerance as we moved to TightTextView
                 float toleranceTop = 0f;
                 float toleranceBottom = 0f;
-                // [FIX] Disabled tolerance as we moved to TightTextView
-                /*
-                float FACTOR_TOP = 0.18f;
-                float FACTOR_BOTTOM = 0.2f;
 
-                boolean isMusicComponent = "song_2line".equals(data.type) || "song_cover".equals(data.type)
-                        || "song_1line".equals(data.type);
-
-                if (isMusicComponent) {
-                    toleranceTop = 0f;
-                    toleranceBottom = 0f;
-                } else if ("volume".equals(data.type)) {
-                    toleranceTop = 10f;
-                    toleranceBottom = 10f;
-                } else if (view instanceof android.widget.TextView) {
-                    float currentSize = ((android.widget.TextView) view).getTextSize();
-                    toleranceTop = currentSize * FACTOR_TOP * data.scale;
-                    toleranceBottom = currentSize * FACTOR_BOTTOM * data.scale;
-                } else if (view instanceof android.view.ViewGroup) {
-                    android.view.ViewGroup vg = (android.view.ViewGroup) view;
-                    float maxTextSize = 0f;
-                    for (int k = 0; k < vg.getChildCount(); k++) {
-                        View child = vg.getChildAt(k);
-                        if (child instanceof android.widget.TextView) {
-                            float size = ((android.widget.TextView) child).getTextSize();
-                            if (size > maxTextSize) maxTextSize = size;
-                        }
-                    }
-                    if (maxTextSize > 0) {
-                        toleranceTop = maxTextSize * FACTOR_TOP * data.scale;
-                        toleranceBottom = maxTextSize * FACTOR_BOTTOM * data.scale;
-                    }
+                // Y-axis clamping with special handling for horizontal guide line
+                float minY = -toleranceTop;
+                float maxYLimit = maxHeight - scaledHeight + toleranceBottom;
+                
+                // [FIX] Allow horizontal guide line to be placed at edge (50% height tolerance)
+                if ("guide_line_horizontal".equals(data.type)) {
+                    minY = -0.5f * scaledHeight;
+                    maxYLimit = maxHeight - (0.5f * scaledHeight);
                 }
-                */
 
                 float clampedX = Math.max(minX, Math.min(data.x, maxXLimit));
-                float clampedY = Math.max(-toleranceTop, Math.min(data.y, maxHeight - scaledHeight + toleranceBottom));
+                float clampedY = Math.max(minY, Math.min(data.y, maxYLimit));
 
                 view.setX(clampedX);
                 view.setY(clampedY);

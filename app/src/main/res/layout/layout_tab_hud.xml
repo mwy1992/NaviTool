@@ -128,7 +128,7 @@
                 <FrameLayout
                     android:id="@+id/layoutHudPreview"
                     android:layout_width="1456px"
-                    android:layout_height="378px"
+                    android:layout_height="380px"
                     android:clipChildren="false"
                     android:clipToPadding="false"
                     android:background="#000000"

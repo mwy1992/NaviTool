@@ -142,12 +142,13 @@
         android:textStyle="bold" /> -->
 
     <!-- Navigation & Traffic Light Container (Long Capsule Style) -->
-    <!-- [FIX 2026-01-29] Centered horizontally, removed marginStart -->
+    <!-- [FIX 2026-01-30] 与导航信息容器宽度对齐 (250dp)，内部居中 -->
     <FrameLayout
         android:id="@+id/audiRsNaviTrafficContainer"
-        android:layout_width="wrap_content"
+        android:layout_width="250dp"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|center_horizontal"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="0dp"
         android:layout_marginTop="140dp">
 
         <!-- 长胶囊红绿灯 (多灯合一, 居中对齐) - 导航模式 -->
@@ -176,7 +177,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
         android:layout_marginStart="0dp"
-        android:layout_marginTop="180dp"
+        android:layout_marginTop="220dp"
         android:orientation="vertical"
         android:gravity="center_horizontal">
 

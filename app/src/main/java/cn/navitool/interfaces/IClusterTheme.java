@@ -39,6 +39,8 @@ public interface IClusterTheme {
     
     // Navigation & ADAS
     void updateTrafficLight(List<TrafficLightInfo> lights);
+    // [FIX 2026-01-30] Support for Cruise Mode Traffic Light (Matrix Style)
+    void updateCruiseTrafficLight(List<TrafficLightInfo> lights);
     void resetTrafficLights();
     void updateGuideInfo(GuideInfo info);
     void resetNaviInfo();

@@ -96,6 +96,13 @@ public class StandardThemeController extends BaseThemeController {
             mTrafficLightMulti.setAlignment(cn.navitool.view.TrafficLightView.ALIGN_CENTER);
             mTrafficLightMulti.setPreviewScale(2f); // Match Audi RS size
         }
+
+        // [Step 4] Bind Matrix Traffic Light (Cruise Mode)
+        mMatrixTrafficLight = rootView.findViewById(R.id.standardCruiseTrafficLight);
+        if (mMatrixTrafficLight != null) {
+            mMatrixTrafficLight.setVisibility(View.GONE);
+            mMatrixTrafficLight.setScale(2.0f); 
+        }
         
         mNaviInfoRow = rootView.findViewById(R.id.standardNaviInfoRow);
         mCurrentRoadText = rootView.findViewById(R.id.standardCurrentRoad);

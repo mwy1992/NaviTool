@@ -2896,6 +2896,17 @@ public class ClusterHudManager
                 String etaText = NaviInfoManager.calculateEta(info.routeRemainTime);
                 updateComponentText("navi_arrival_time", etaText);
                 
+                // [FIX 2026-01-30] 确保 NaviStatus 在调用 updateGuideInfo 之前已设置
+                // GuideInfo 只在导航模式下发送，所以有效数据意味着导航模式
+                if (info.routeRemainDis > 0 || info.routeRemainTime > 0) {
+                    if (mCurrentNaviStatus != NaviInfoManager.STATUS_NAVI) {
+                        mCurrentNaviStatus = NaviInfoManager.STATUS_NAVI;
+                    }
+                    if (mPresentationManager != null) {
+                        mPresentationManager.setNaviStatus(NaviInfoManager.STATUS_NAVI);
+                    }
+                }
+                
                 // Update HUD / Cluster UI
                 if (mPresentationManager != null) {
                     mPresentationManager.updateGuideInfo(info);

@@ -122,21 +122,48 @@ public class MatrixTrafficLightView extends View {
             invalidate();
         }
     }
+    
+    // Alias for setPreviewScale for consistency with other views
+    public void setScale(float scale) {
+        setPreviewScale(scale);
+    }
 
     private void updateScaledDimensions() {
         mPaintText.setTextSize(mTextSize * mScale);
         mPaintOutline.setStrokeWidth(mOutlineStroke * mScale);
     }
 
+    // Semantically mapped slots: 0=Left, 1=Straight, 2=Right
+    private LightState[] mSemanticSlots = new LightState[3]; 
+
     /**
      * 更新灯状态 (最多3个，分别对应 左/直/右)
+     * [FIX] 使用语义映射: 方向决定位置，而不是列表顺序
      */
     public void updateLights(List<LightState> states) {
-        if (states == null) {
-            mLightStates.clear();
-        } else {
-            mLightStates = new ArrayList<>(states);
+        // Reset slots
+        for(int i=0; i<3; i++) mSemanticSlots[i] = null;
+        mLightStates.clear(); // Keep for compatibility if needed, but we draw from slots
+
+        if (states != null) {
+            mLightStates.addAll(states); // Backup
+
+            for (LightState state : states) {
+                int slotIndex = 1; // Default to Center (Straight)
+
+                if (state.direction == DIRECTION_LEFT || state.direction == DIRECTION_UTURN) {
+                    slotIndex = 0; // Left Column
+                } else if (state.direction == DIRECTION_RIGHT) {
+                    slotIndex = 2; // Right Column
+                } else {
+                    slotIndex = 1; // Straight (0, 4, 8) -> Center Column
+                }
+                
+                // Assign to slot
+                mSemanticSlots[slotIndex] = state;
+            }
         }
+        
         requestLayout();
         invalidate();
     }
@@ -151,25 +178,27 @@ public class MatrixTrafficLightView extends View {
         preview.add(new LightState(STATUS_RED, 45, DIRECTION_RIGHT));
         updateLights(preview);
     }
-
-    // === Measurement ===
+    
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        // Calculate desired size based on 3 circles + padding for horizontal layout
         float scaledCircle = mCircleDiameter * mScale;
         float scaledGapH = mGapHorizontal * mScale;
         float scaledGapV = mGapVertical * mScale;
-        float scaledTextSize = mTextSize * mScale;
         float scaledPaddingH = mPaddingH * mScale;
         float scaledPaddingV = mPaddingV * mScale;
-        
-        // 3 circles + 2 gaps + 2 horizontal paddings
-        float totalWidth = (scaledCircle * 3) + (scaledGapH * 2) + (scaledPaddingH * 2);
-        // Row1: Circle + Row2: Text + Gap + 2 vertical paddings
-        float totalHeight = scaledCircle + scaledGapV + scaledTextSize + (scaledPaddingV * 2);
+        float scaledTextSize = mTextSize * mScale;
 
-        int w = resolveSize((int) totalWidth, widthMeasureSpec);
-        int h = resolveSize((int) totalHeight, heightMeasureSpec);
-        setMeasuredDimension(w, h);
+        // Width: 3 circles + 2 horizontal gaps + horizontal padding
+        int desiredWidth = (int) ((scaledCircle * 3) + (scaledGapH * 2) + (scaledPaddingH * 2));
+        
+        // Height: 1 row of circles + 1 row of text + vertical gap + vertical padding
+        int desiredHeight = (int) (scaledCircle + scaledGapV + scaledTextSize + (scaledPaddingV * 2));
+
+        int measuredWidth = resolveSize(desiredWidth, widthMeasureSpec);
+        int measuredHeight = resolveSize(desiredHeight, heightMeasureSpec);
+        
+        setMeasuredDimension(measuredWidth, measuredHeight);
     }
 
     // === Drawing ===
@@ -177,7 +206,16 @@ public class MatrixTrafficLightView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
-        if (mLightStates.isEmpty()) {
+        // Always draw 3 columns structure, even if empty? 
+        // User asked for "placeholder" behavior if data is missing for a slot.
+        // But if ALL are empty, maybe hide?
+        // Let's check if we have ANY data to draw.
+        boolean hasData = false;
+        for(LightState s : mSemanticSlots) {
+            if(s != null) { hasData = true; break; }
+        }
+        
+        if (!hasData && mLightStates.isEmpty()) {
             return;
         }
 
@@ -213,14 +251,15 @@ public class MatrixTrafficLightView extends View {
         // Row1 Y (圆心)
         float row1CenterY = scaledPaddingV + circleRadius;
         // Row2 Y (文字基线)
-        float row2BaseY = scaledPaddingV + scaledCircle + scaledGapV + scaledTextSize * 0.85f;
+        float row2BaseY = scaledPaddingV + scaledCircle + scaledGapH + scaledTextSize * 0.85f; // [Fix] Use GapH or V? V is better. keeping V 
 
         // 绘制3列 (固定位置: 左/直/右)
         for (int i = 0; i < 3; i++) {
             float columnCenterX = startX + circleRadius + (i * (scaledCircle + scaledGapH));
 
-            LightState state = (i < mLightStates.size()) ? mLightStates.get(i) : null;
-
+            // Get state from Semantic Slots
+            LightState state = mSemanticSlots[i];
+            
             // === Row 1: 灯光圆 + 箭头 (无边框) ===
             if (state != null && state.status != STATUS_OFF) {
                 int color = getStatusColor(state.status);
@@ -231,30 +270,25 @@ public class MatrixTrafficLightView extends View {
 
                 // 绘制箭头
                 if (mArrowDrawable != null) {
-                    int direction = getDefaultDirection(i, state.direction);
+                    int direction = state.direction; // Use actual direction
                     drawRotatedArrow(canvas, columnCenterX, row1CenterY, (int) (circleRadius * 1.6f), direction);
                 }
-            } else {
-                // 绘制灰色占位圆 (无边框)
-                mPaintCircle.setColor(Color.DKGRAY);
-                canvas.drawCircle(columnCenterX, row1CenterY, circleRadius, mPaintCircle);
-            }
+            } 
+            // [CHANGE] Hide placeholders for cleaner UI
+            // else { ... draw gray circle ... } -> Removed
 
             // === Row 2: 倒计时数字 ===
             if (state != null && state.time > 0) {
                 mPaintText.setColor(getStatusColor(state.status));
                 canvas.drawText(String.valueOf(state.time), columnCenterX, row2BaseY, mPaintText);
-            } else {
-                mPaintText.setColor(Color.GRAY);
-                canvas.drawText("--", columnCenterX, row2BaseY, mPaintText);
-            }
+            } 
+            // [CHANGE] Hide placeholder text
+            // else { ... draw "--" ... } -> Removed
         }
     }
 
     private int getDefaultDirection(int columnIndex, int dataDirection) {
-        if (dataDirection >= 0) {
-            return dataDirection;
-        }
+        // [FIX] Strict Semantic Mapping for placeholders
         switch (columnIndex) {
             case 0: return DIRECTION_LEFT;
             case 1: return DIRECTION_STRAIGHT;

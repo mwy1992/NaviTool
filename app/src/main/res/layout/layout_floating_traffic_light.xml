@@ -19,4 +19,12 @@
         android:layout_gravity="start|center_vertical"
         android:visibility="gone"/>
 
+    <!-- 矩阵红绿灯 (巡航模式) -->
+    <cn.navitool.view.MatrixTrafficLightView
+        android:id="@+id/floatingTrafficLightMatrix"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="start|center_vertical"
+        android:visibility="gone"/>
+
 </FrameLayout>
