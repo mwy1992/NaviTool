@@ -376,7 +376,7 @@ public class HudComponentRenderer {
         // Use FrameLayout container for line + coordinate text (preview only)
         FrameLayout container = new FrameLayout(context);
         int width = (int) (50 * scale);
-        int height = (int) (190 * scale); // 190 * 2 = 380 for preview
+        int height = (int) (187 * scale); // 187 * 2 = 374 for preview
         FrameLayout.LayoutParams containerParams = new FrameLayout.LayoutParams(width, height);
         container.setLayoutParams(containerParams);
 

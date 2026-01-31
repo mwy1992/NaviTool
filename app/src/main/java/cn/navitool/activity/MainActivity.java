@@ -205,6 +205,8 @@ public class MainActivity extends AppCompatActivity {
 
         // [Legacy] NaviInfoManager init kept for general readiness (Geely Socket Removed)
         NaviInfoManager.getInstance(this);
+        // [FIX] Enable Amap Hook Mode for traffic light broadcast reception
+        NaviInfoManager.getInstance(this).setHookModeEnabled(true);
 
         // Try to show UI again (in case Service failed or wasn't ready)
         // Now it will use the Activity Context we just injected.

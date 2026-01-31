@@ -409,4 +409,126 @@ public class NaviInfoManager {
         SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
         return sdf.format(new Date(arrivalTime));
     }
+    // --- Hook Broadcast Receiver (Original Amap 9.1+) ---
+    private static final String HOOK_ACTION = "com.autonavi.cruise.LIGHT_INFO";
+    private android.content.BroadcastReceiver mHookReceiver;
+    private boolean mHookModeEnabled = false;
+
+    public void setHookModeEnabled(boolean enabled) {
+        if (mHookModeEnabled == enabled) return;
+        mHookModeEnabled = enabled;
+        if (enabled) {
+            registerHookReceiver();
+        } else {
+            unregisterHookReceiver();
+        }
+        DebugLogger.i(TAG, "Hook Mode set to: " + enabled);
+    }
+    
+    public boolean isHookModeEnabled() {
+        return mHookModeEnabled;
+    }
+
+    private void registerHookReceiver() {
+        if (mHookReceiver != null) return;
+        
+        mHookReceiver = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (!HOOK_ACTION.equals(intent.getAction())) return;
+                
+                try {
+                    // Get Parcelable Wrapper
+                    // Note: Must align with com.autonavi.amapauto.CameraLightInfo.* package structure
+                    intent.setExtrasClassLoader(com.autonavi.amapauto.CameraLightInfo.CameraLightInfoWrapper.class.getClassLoader());
+                    com.autonavi.amapauto.CameraLightInfo.CameraLightInfoWrapper wrapper = 
+                            intent.getParcelableExtra("data");
+                    
+                    if (wrapper != null) {
+                        processHookData(wrapper);
+                    }
+                } catch (Exception e) {
+                    DebugLogger.e(TAG, "Hook Broadcast Parse Error", e);
+                }
+            }
+        };
+        
+        android.content.IntentFilter filter = new android.content.IntentFilter(HOOK_ACTION);
+        mContext.registerReceiver(mHookReceiver, filter);
+        DebugLogger.i(TAG, "Hook Receiver Registered");
+    }
+
+    private void unregisterHookReceiver() {
+        if (mHookReceiver != null) {
+            try {
+                mContext.unregisterReceiver(mHookReceiver);
+            } catch (Exception e) {
+                DebugLogger.e(TAG, "Unregister Hook Receiver failed", e);
+            }
+            mHookReceiver = null;
+            DebugLogger.i(TAG, "Hook Receiver Unregistered");
+        }
+    }
+
+    private void processHookData(com.autonavi.amapauto.CameraLightInfo.CameraLightInfoWrapper wrapper) {
+        // [LOG] Print raw data for debugging
+        DebugLogger.d(TAG, "Hook Received: " + (wrapper != null ? wrapper.toString() : "null"));
+
+        if (wrapper == null || wrapper.a == null || wrapper.a.isEmpty()) return;
+
+        // Start Cruise Mode if not Navigating
+        if (mCurrentStatus != STATUS_NAVI) {
+            updateStatus(STATUS_CRUISE);
+        }
+
+        List<TrafficLightInfo> list = new ArrayList<>();
+        
+        for (com.autonavi.amapauto.CameraLightInfo.CameraLightInfo light : wrapper.a) {
+             TrafficLightInfo info = new TrafficLightInfo();
+             
+             // Convert Dir (Hook -> Internal)
+             // Hook: 0=U-Turn(??), 1=Left, 2=Str, 3=Right (Based on NaviTest log analysis??)
+             // Wait, NaviTest says:
+             // Hook: 0=掉头, 1=左转, 2=直行, 3=右转 (Found in switch case)
+             // App Internal (TrafficLightInfo/NaviTest Defined): 3=U-Turn, 1=Left, 4=Str, 2=Right
+             // Let's match NaviTest logic:
+             switch (light.c) {
+                 case 0: info.direction = 3; break; // U-Turn
+                 case 1: info.direction = 1; break; // Left
+                 case 2: info.direction = 4; break; // Straight
+                 case 3: info.direction = 2; break; // Right
+                 default: info.direction = light.c; break;
+             }
+             
+             // Convert Status (Hook -> Internal)
+             // Hook: 0=Unknown(Red?), 1=Red, 2=Green, 3=Yellow
+             // NaviTest: 
+             // "Hook: 0=红灯, 1=绿灯" -> App: 1=Red, 4=Green
+             // Wait, let's check NaviTest source again for mapping
+             /*
+                // Hook: 0=红灯, 1=绿灯
+                if (light.d == 1) appStatus = 4; // Green
+                else if (light.d == 0) appStatus = 1; // Red
+                else appStatus = 3; // Yellow
+             */
+             if (light.d == 1) {
+                 info.status = 4; // Green
+             } else if (light.d == 0) {
+                 info.status = 1; // Red
+             } else {
+                 info.status = 3; // Yellow
+             }
+             
+             info.redCountdown = light.e;
+             // info.greenCountdown = ?? Hook doesn't seem to provide green countdown, or mixed?
+             // Use same value for now or leave 0
+             
+             list.add(info);
+        }
+        
+        notifyListenersTrafficLight(list);
+        
+        // [FIX] Update watchdog timestamp to prevent "IDLE" reset flickering
+        mLastNaviUpdateTime = System.currentTimeMillis();
+    }
 }

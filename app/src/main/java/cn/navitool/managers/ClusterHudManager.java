@@ -795,14 +795,15 @@ public class ClusterHudManager
     @Override
     public void onRangeChanged(float range) {
         mCachedRangeKm = range;
-        updateFuelRangeComponent();
-        updateComponentText("range", String.format(Locale.US, "%.0fKM", range));
+        // [FIX] Update via helper to ensure mCachedRangeText is updated for Preview
+        updateRange(String.format(Locale.US, "%.0fKM", range));
     }
 
     @Override
     public void onTemperatureChanged(float indoor, float outdoor) {
-        updateComponentText("temp_in", String.format(Locale.US, "%.1f°C", indoor));
-        updateComponentText("temp_out", String.format(Locale.US, "%.1f°C", outdoor));
+        // [FIX] Update via helpers to ensure mCachedTempInText/OutText are updated for Preview
+        updateTempIn(String.format(Locale.US, "%.1f°C", indoor));
+        updateTempOut(String.format(Locale.US, "%.1f°C", outdoor));
         
         // [NEW] Forward to Audi RS Theme
         if (mPresentationManager != null) {

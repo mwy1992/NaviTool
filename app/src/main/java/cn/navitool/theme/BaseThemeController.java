@@ -105,12 +105,16 @@ public abstract class BaseThemeController implements IClusterTheme {
     public void updateCruiseTrafficLight(java.util.List<TrafficLightInfo> lights) {
         // [FIX] Ensure Navi Light is hidden when in Cruise Mode
         if (mTrafficLightMulti != null) mTrafficLightMulti.setVisibility(View.GONE);
-        if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
+        
+        // [BUG FIX] Do NOT hide container here, because standard theme CruiseLight is INSIDE this container!
+        // if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
 
         if (mMatrixTrafficLight == null) return;
 
         if (lights == null || lights.isEmpty()) {
             mMatrixTrafficLight.setVisibility(View.GONE);
+            // Only hide container if both are gone
+            if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
             return;
         }
 
@@ -122,7 +126,11 @@ public abstract class BaseThemeController implements IClusterTheme {
 
         if (states.isEmpty()) {
              mMatrixTrafficLight.setVisibility(View.GONE);
+             if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.GONE);
         } else {
+             // [FIX] Ensure Parent Container is VISIBLE
+             if (mNaviTrafficContainer != null) mNaviTrafficContainer.setVisibility(View.VISIBLE);
+             
              mMatrixTrafficLight.setVisibility(View.VISIBLE);
              mMatrixTrafficLight.updateLights(states);
         }

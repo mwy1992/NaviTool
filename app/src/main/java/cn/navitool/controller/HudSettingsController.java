@@ -449,7 +449,7 @@ public class HudSettingsController {
                     }
 
                     int color = mIsSnowModeEnabled ? 0xFF00FFFF : 0xFFFFFFFF;
-                    // [FIX] Scale coordinates for Real HUD (728x190 = 0.5x of Preview 1456x380)
+                    // [FIX] Scale coordinates for Real HUD (728x187 = 0.5x of Preview 1456x374)
                     ClusterHudManager.HudComponentData data = new ClusterHudManager.HudComponentData(type, text,
                             x * 0.5f, y * 0.5f, color);
                     data.scale = scale;

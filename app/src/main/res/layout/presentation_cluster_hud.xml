@@ -29,7 +29,7 @@
     <FrameLayout
         android:id="@+id/layoutHud"
         android:layout_width="728px"
-        android:layout_height="190px"
+        android:layout_height="187px"
         android:layout_gravity="top|start"
         android:layout_marginTop="720px"
         android:background="@android:color/transparent"

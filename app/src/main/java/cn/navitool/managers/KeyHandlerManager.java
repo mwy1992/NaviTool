@@ -268,7 +268,14 @@ public class KeyHandlerManager {
     }
 
     public void handleShortClick(int keyCode) {
-        // [Step 1] Check Global Switch first
+        // [FIX] WeChat button is independent of steering wheel control
+        if (keyCode == ONEOS_KEY_WECHAT) {
+            DebugLogger.i(TAG, "handleShortClick: WeChat Button (Independent)");
+            handleWechatShortPress();
+            return;
+        }
+
+        // [Step 1] Check Global Switch first (Only for Media Keys)
         SharedPreferences prefs = mContext.getSharedPreferences("navitool_prefs", Context.MODE_PRIVATE);
         if (!prefs.getBoolean("steering_wheel_control_v2", true)) {
             // DebugLogger.d(TAG, "Steering wheel control disabled");
@@ -295,9 +302,6 @@ public class KeyHandlerManager {
                 break;
             case ONEOS_KEY_MEDIA_PP:
                 simulateMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
-                break;
-            case ONEOS_KEY_WECHAT:
-                handleWechatShortPress();
                 break;
         }
     }
